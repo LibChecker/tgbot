@@ -1,5 +1,6 @@
 import { readApkInfo } from "./apk.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
+import { createI18n, resolveTelegramLocale } from "./i18n.js";
 import {
   createRequestTelemetryContext,
   extendTelemetryContext,
@@ -19,16 +20,7 @@ const TELEGRAM_ALLOWED_UPDATES = [
   "channel_post",
   "edited_channel_post",
 ];
-const BOT_COMMANDS = [
-  {
-    command: "start",
-    description: "显示使用说明",
-  },
-  {
-    command: "apkinfo",
-    description: "解析当前或回复的 APK 文件",
-  },
-];
+const MANAGED_COMMAND_LANGUAGE_CODES = [null, "en"];
 
 let cachedBotIdentity = null;
 
@@ -284,13 +276,14 @@ async function handleAdminRequest(request, env, url, telemetry) {
   }
 
   if (request.method === "GET" && url.pathname === "/admin/commands") {
-    const scopes = getManagedCommandScopes();
+    const commandTargets = getManagedCommandTargets();
     const commandsByScope = {};
 
-    for (const scope of scopes) {
-      const scopeKey = getCommandScopeKey(scope);
+    for (const target of commandTargets) {
+      const scopeKey = getCommandScopeKey(target.scope, target.languageCode);
       const commands = await telegramApi(env, "getMyCommands", {
-        scope,
+        scope: target.scope,
+        language_code: target.languageCode || undefined,
       });
       commandsByScope[scopeKey] = commands;
     }
@@ -299,7 +292,7 @@ async function handleAdminRequest(request, env, url, telemetry) {
       admin_action: "commands_info",
       result: "success",
       http_status: 200,
-      scope_count: scopes.length,
+      scope_count: commandTargets.length,
     });
 
     return jsonResponse({
@@ -310,12 +303,14 @@ async function handleAdminRequest(request, env, url, telemetry) {
 
   if (request.method === "POST" && url.pathname === "/admin/commands/set") {
     const payload = await readJsonBody(request);
-    const commands = normalizeBotCommands(payload.commands) || BOT_COMMANDS;
-    const scopes = getManagedCommandScopes();
+    const customCommands = normalizeBotCommands(payload.commands);
+    const commandTargets = getManagedCommandTargets();
 
-    for (const scope of scopes) {
+    for (const target of commandTargets) {
+      const commands = customCommands || getLocalizedBotCommands(target.languageCode);
       await telegramApi(env, "setMyCommands", {
-        scope,
+        scope: target.scope,
+        language_code: target.languageCode || undefined,
         commands,
       });
     }
@@ -324,24 +319,25 @@ async function handleAdminRequest(request, env, url, telemetry) {
       admin_action: "commands_set",
       result: "success",
       http_status: 200,
-      scope_count: scopes.length,
-      command_count: commands.length,
+      scope_count: commandTargets.length,
+      command_count: (customCommands || getLocalizedBotCommands()).length,
     });
 
     return jsonResponse({
       ok: true,
       action: "setMyCommands",
-      scopes: scopes.map(getCommandScopeKey),
-      commands,
+      scopes: commandTargets.map((target) => getCommandScopeKey(target.scope, target.languageCode)),
+      commands: customCommands || getLocalizedBotCommands(),
     });
   }
 
   if (request.method === "POST" && url.pathname === "/admin/commands/delete") {
-    const scopes = getManagedCommandScopes();
+    const commandTargets = getManagedCommandTargets();
 
-    for (const scope of scopes) {
+    for (const target of commandTargets) {
       await telegramApi(env, "deleteMyCommands", {
-        scope,
+        scope: target.scope,
+        language_code: target.languageCode || undefined,
       });
     }
 
@@ -349,13 +345,13 @@ async function handleAdminRequest(request, env, url, telemetry) {
       admin_action: "commands_delete",
       result: "success",
       http_status: 200,
-      scope_count: scopes.length,
+      scope_count: commandTargets.length,
     });
 
     return jsonResponse({
       ok: true,
       action: "deleteMyCommands",
-      scopes: scopes.map(getCommandScopeKey),
+      scopes: commandTargets.map((target) => getCommandScopeKey(target.scope, target.languageCode)),
     });
   }
 
@@ -391,11 +387,13 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
   const isEdited = Boolean(update.edited_message || update.edited_channel_post);
   const contentText = getMessageContentText(message);
   const command = extractPrimaryCommand(contentText);
+  const locale = resolveTelegramLocale(message);
+  const { t } = createI18n(locale);
   const botIdentity = await getBotIdentity(env);
   const botMentioned = isBotMentioned(message, botIdentity);
   const updateTelemetry = extendTelemetryContext(
     telemetry,
-    buildMessageTelemetryFields(update, message, command, botMentioned),
+    buildMessageTelemetryFields(update, message, command, botMentioned, locale),
   );
 
   logInfoEvent(env, updateTelemetry, "telegram.update.received", {
@@ -407,7 +405,7 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
     await sendText(
       env,
       message.chat.id,
-      "你好，直接发送或转发 APK 文件我就会自动解析；在群组和频道里也支持直接发 APK、把 <code>/apkinfo</code> 写在 APK 消息里，或者回复含 APK 的消息发送 <code>/apkinfo</code>。",
+      t("bot.start"),
       message.message_id,
     );
     logInfoEvent(env, updateTelemetry, "command.start.responded", {
@@ -430,7 +428,7 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
       await sendText(
         env,
         message.chat.id,
-        "我没有找到可解析的 APK。你可以直接发送或转发 APK 文件给我，或者把 <code>/apkinfo</code> 写在同一条 APK 消息里；如果是回复解析，也请确认你回复的那条消息本身就是 APK 文件消息。需要注意的是，群组里的转发 APK 有时不会把文件对象完整发给 bot，这种情况下我无法从 Telegram 重新取回它，建议直接在群里发送 APK，或私聊 bot 再转发 APK。若群组开启了 Privacy Mode，请优先使用 <code>/apkinfo@bot_username</code>。",
+        t("bot.apk_not_found"),
         message.message_id,
       );
     }
@@ -451,7 +449,7 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
     { analytics: false },
   );
 
-  await analyzeApkDocument(env, message, targetDocument, requestOrigin, updateTelemetry);
+  await analyzeApkDocument(env, message, targetDocument, requestOrigin, updateTelemetry, locale);
 }
 
 function getTelegramMessage(update) {
@@ -687,8 +685,9 @@ function getExternalReplyDocument(message, extractor) {
   return extractor(message.external_reply);
 }
 
-async function analyzeApkDocument(env, message, document, requestOrigin, telemetry) {
+async function analyzeApkDocument(env, message, document, requestOrigin, telemetry, locale) {
   const startedAt = Date.now();
+  const { t } = createI18n(locale);
 
   if ((document.file_size || 0) > MAX_TELEGRAM_APK_BYTES) {
     logWarnEvent(env, telemetry, "apk.analysis.skipped_too_large", {
@@ -699,7 +698,7 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
     await sendText(
       env,
       message.chat.id,
-      "这个 APK 超过 Telegram 官方 Bot API 当前可下载的 20MB 限制，Worker 无法直接解析。",
+      t("bot.apk_too_large"),
       message.message_id,
     );
     return;
@@ -722,12 +721,12 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
   );
 
   try {
-    const apkBuffer = await downloadTelegramFile(env, document.file_id);
+    const apkBuffer = await downloadTelegramFile(env, document.file_id, locale);
     const apkInfo = await readApkInfo(apkBuffer);
     const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
-    const report = buildApkReport(message, document, apkInfo, publicBaseUrl);
+    const report = buildApkReport(message, document, apkInfo, publicBaseUrl, locale);
     const telegraphPage = await createApkTelegraphPage(env, report);
-    const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path);
+    const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
 
     logInfoEvent(env, telemetry, "apk.analysis.succeeded", {
       result: "success",
@@ -751,7 +750,7 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       message.chat.id,
       formatApkSummary(report),
       message.message_id,
-      buildReportReplyMarkup(message.chat, reportUrl),
+      buildReportReplyMarkup(message.chat, reportUrl, t("bot.open_full_report")),
     );
   } catch (error) {
     logErrorEvent(env, telemetry, "apk.analysis.failed", {
@@ -766,7 +765,9 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
     await sendText(
       env,
       message.chat.id,
-      `解析 APK 失败：<code>${escapeHtml(getErrorMessage(error))}</code>`,
+      t("bot.parse_failed", {
+        message: escapeHtml(getLocalizedErrorMessage(error, locale)),
+      }),
       message.message_id,
     );
   }
@@ -855,8 +856,37 @@ function getManagedCommandScopes() {
   ];
 }
 
-function getCommandScopeKey(scope) {
-  return scope?.type || "default";
+function getManagedCommandTargets() {
+  const targets = [];
+
+  for (const scope of getManagedCommandScopes()) {
+    for (const languageCode of MANAGED_COMMAND_LANGUAGE_CODES) {
+      targets.push({
+        scope,
+        languageCode,
+      });
+    }
+  }
+
+  return targets;
+}
+
+function getCommandScopeKey(scope, languageCode = null) {
+  return languageCode ? `${scope?.type || "default"}:${languageCode}` : scope?.type || "default";
+}
+
+function getLocalizedBotCommands(locale = undefined) {
+  const { t } = createI18n(locale);
+  return [
+    {
+      command: "start",
+      description: t("commands.start_description"),
+    },
+    {
+      command: "apkinfo",
+      description: t("commands.apkinfo_description"),
+    },
+  ];
 }
 
 function normalizeBotCommands(value) {
@@ -973,18 +1003,19 @@ function supportsChatAction(chatType) {
   return chatType !== "channel";
 }
 
-function buildApkReport(message, document, apkInfo, publicBaseUrl) {
+function buildApkReport(message, document, apkInfo, publicBaseUrl, locale) {
   const resolveSdkIconUrl = (iconName) => buildSdkIconUrl(publicBaseUrl, iconName);
   const sdkAnnotated = annotateSdkMarkers(apkInfo, resolveSdkIconUrl);
 
   return {
+    locale,
     apkInfo: {
       ...apkInfo,
       ...sdkAnnotated,
     },
     fileName: document.file_name || "unknown.apk",
     fileSizeText: formatBytes(document.file_size || 0),
-    sourceLabel: describeMessageSource(message),
+    sourceLabel: describeMessageSource(message, locale),
     analyzedAt: new Date().toISOString(),
     featureIcons: {
       kotlin: buildFeatureIconUrl(publicBaseUrl, "kotlin"),
@@ -994,20 +1025,24 @@ function buildApkReport(message, document, apkInfo, publicBaseUrl) {
   };
 }
 
-function buildReportViewerUrl(publicBaseUrl, path) {
-  return `${publicBaseUrl}/report?path=${encodeURIComponent(path || "")}`;
+function buildReportViewerUrl(publicBaseUrl, path, locale) {
+  const searchParams = new URLSearchParams({
+    path: path || "",
+    lang: locale,
+  });
+  return `${publicBaseUrl}/report?${searchParams.toString()}`;
 }
 
-function buildReportReplyMarkup(chat, reportUrl) {
+function buildReportReplyMarkup(chat, reportUrl, buttonText) {
   const button = isPrivateChat(chat)
     ? {
-        text: "打开完整报告",
+        text: buttonText,
         web_app: {
           url: reportUrl,
         },
       }
     : {
-        text: "打开完整报告",
+        text: buttonText,
         url: reportUrl,
       };
 
@@ -1018,24 +1053,25 @@ function buildReportReplyMarkup(chat, reportUrl) {
   };
 }
 
-function describeMessageSource(message) {
+function describeMessageSource(message, locale) {
+  const { t } = createI18n(locale);
   if (message.chat?.type === "channel") {
-    return "频道消息";
+    return t("bot.source_channel");
   }
 
   if (isForwardedMessage(message)) {
-    return "转发消息";
+    return t("bot.source_forwarded");
   }
 
   if (isPrivateChat(message.chat)) {
-    return "私聊消息";
+    return t("bot.source_private");
   }
 
   if (message.chat?.type === "supergroup" || message.chat?.type === "group") {
-    return "群组消息";
+    return t("bot.source_group");
   }
 
-  return "Telegram 消息";
+  return t("bot.source_default");
 }
 
 function formatBytes(bytes) {
@@ -1056,10 +1092,11 @@ function formatBytes(bytes) {
   return `${value.toFixed(precision)} ${units[index]}`;
 }
 
-async function downloadTelegramFile(env, fileId) {
-  const file = await telegramApi(env, "getFile", { file_id: fileId });
+async function downloadTelegramFile(env, fileId, locale = undefined) {
+  const { t } = createI18n(locale);
+  const file = await telegramApi(env, "getFile", { file_id: fileId }, locale);
   if (!file?.file_path) {
-    throw new Error("Telegram 没有返回可下载的 file_path");
+    throw new Error(t("errors.telegram_missing_file_path"));
   }
 
   const response = await fetch(`${TELEGRAM_API_BASE}/file/bot${env.BOT_TOKEN}/${file.file_path}`);
@@ -1072,7 +1109,7 @@ async function downloadTelegramFile(env, fileId) {
       http_status: response.status,
       result: "error",
     });
-    throw new Error(`Telegram 文件下载失败 (${response.status})`);
+    throw new Error(t("errors.telegram_file_download_failed", { status: response.status }));
   }
 
   return response.arrayBuffer();
@@ -1096,7 +1133,8 @@ async function sendChatAction(env, chatId, action) {
   });
 }
 
-async function telegramApi(env, method, payload) {
+async function telegramApi(env, method, payload, locale = undefined) {
+  const { t } = createI18n(locale);
   const response = await fetch(`${TELEGRAM_API_BASE}/bot${env.BOT_TOKEN}/${method}`, {
     method: "POST",
     headers: {
@@ -1115,7 +1153,7 @@ async function telegramApi(env, method, payload) {
       chat_id: payload?.chat_id != null ? String(payload.chat_id) : null,
       result: "error",
     });
-    throw new Error(`Telegram API ${method} 请求失败 (${response.status})`);
+    throw new Error(t("errors.telegram_api_request_failed", { method, status: response.status }));
   }
 
   const data = await response.json();
@@ -1127,11 +1165,11 @@ async function telegramApi(env, method, payload) {
       telegram_method: method,
       http_status: response.status,
       error_code: data.error_code || null,
-      error_message: data.description || `Telegram API ${method} 返回失败`,
+      error_message: data.description || t("errors.telegram_api_result_failed", { method }),
       chat_id: payload?.chat_id != null ? String(payload.chat_id) : null,
       result: "error",
     });
-    throw new Error(data.description || `Telegram API ${method} 返回失败`);
+    throw new Error(data.description || t("errors.telegram_api_result_failed", { method }));
   }
 
   return data.result;
@@ -1151,44 +1189,65 @@ async function getBotIdentity(env) {
 }
 
 function formatApkSummary(report) {
+  const { t } = createI18n(report.locale);
   const lines = [
-    "<b>APK 解析完成</b>",
-    `应用名: <b>${escapeHtml(report.apkInfo.appName)}</b>`,
-    `包名: <code>${escapeHtml(report.apkInfo.packageName)}</code>`,
-    `versionName: <code>${escapeHtml(report.apkInfo.versionName)}</code>`,
-    `versionCode: <code>${escapeHtml(report.apkInfo.versionCode)}</code>`,
-    `SDK: <code>Target ${escapeHtml(report.apkInfo.targetSdk)} / Min ${escapeHtml(report.apkInfo.minSdk)} / Compile ${escapeHtml(report.apkInfo.compileSdk)}</code>`,
-    `权限数量: <b>${report.apkInfo.permissions.length}</b>`,
-    `原生库数量: <b>${report.apkInfo.nativeLibraries.length}</b>`,
-    `组件数量: <b>${countComponents(report.apkInfo.components)}</b>`,
-    `meta-data 数量: <b>${countMetaData(report.apkInfo.metaData)}</b>`,
+    t("summary.completed"),
+    t("summary.app_name", {
+      appName: escapeHtml(report.apkInfo.appName),
+    }),
+    t("summary.package_name", {
+      packageName: escapeHtml(report.apkInfo.packageName),
+    }),
+    t("summary.version_name", {
+      versionName: escapeHtml(report.apkInfo.versionName),
+    }),
+    t("summary.version_code", {
+      versionCode: escapeHtml(report.apkInfo.versionCode),
+    }),
+    t("summary.sdk", {
+      targetSdk: escapeHtml(report.apkInfo.targetSdk),
+      minSdk: escapeHtml(report.apkInfo.minSdk),
+      compileSdk: escapeHtml(report.apkInfo.compileSdk),
+    }),
+    t("summary.permissions_count", {
+      count: report.apkInfo.permissions.length,
+    }),
+    t("summary.native_library_count", {
+      count: report.apkInfo.nativeLibraries.length,
+    }),
+    t("summary.component_count", {
+      count: countComponents(report.apkInfo.components),
+    }),
+    t("summary.meta_data_count", {
+      count: countMetaData(report.apkInfo.metaData),
+    }),
   ];
 
-  const sdkMarkerSummary = formatSdkMarkerSummary(report.apkInfo.sdkSummary);
+  const sdkMarkerSummary = formatSdkMarkerSummary(report.apkInfo.sdkSummary, t);
   if (sdkMarkerSummary) {
-    lines.push(`SDK 标记: ${sdkMarkerSummary}`);
+    lines.push(t("summary.sdk_markers", { value: sdkMarkerSummary }));
   }
 
   const featureHtml = formatFeatureChipsHtml(report.apkInfo.buildFeatures);
   if (featureHtml) {
-    lines.push(`特性: ${featureHtml}`);
+    lines.push(t("summary.features", { value: featureHtml }));
   }
 
-  lines.push("", "完整报告请使用下方按钮打开。");
+  lines.push("", t("summary.open_report_hint"));
   return lines.join("\n");
 }
 
-function formatSdkMarkerSummary(sdkSummary) {
+function formatSdkMarkerSummary(sdkSummary, t) {
   if (!sdkSummary) {
     return "";
   }
 
   const parts = [];
   if (sdkSummary.native.length > 0) {
-    parts.push(`原生库 <b>${sdkSummary.native.length}</b>`);
+    parts.push(t("summary.sdk_summary_native", { count: sdkSummary.native.length }));
   }
   if (sdkSummary.components.length > 0) {
-    parts.push(`组件 <b>${sdkSummary.components.length}</b>`);
+    parts.push(t("summary.sdk_summary_components", { count: sdkSummary.components.length }));
   }
 
   return parts.join(" · ");
@@ -1237,9 +1296,10 @@ function countMetaData(metaData) {
   return metaData.application.length;
 }
 
-function buildMessageTelemetryFields(update, message, command, botMentioned) {
+function buildMessageTelemetryFields(update, message, command, botMentioned, locale) {
   return {
     update_type: getUpdateType(update),
+    locale,
     chat_type: message.chat?.type || null,
     chat_id: message.chat?.id != null ? String(message.chat.id) : null,
     message_id: message.message_id || null,
@@ -1288,7 +1348,15 @@ function getErrorMessage(error) {
     return error.message;
   }
 
-  return "未知错误";
+  return "Unknown error";
+}
+
+function getLocalizedErrorMessage(error, locale) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return createI18n(locale).t("errors.unknown");
 }
 
 function getErrorName(error) {

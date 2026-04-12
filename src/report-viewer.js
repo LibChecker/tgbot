@@ -1,32 +1,36 @@
+import { createI18n, normalizeLocale } from "./i18n.js";
 import { fetchTelegraphPage } from "./telegraph.js";
 
 export async function handleReportRequest(url) {
+  const locale = normalizeLocale(url.searchParams.get("lang"));
+  const { t } = createI18n(locale);
   const path = url.searchParams.get("path");
   if (!path) {
     return htmlResponse(
-      renderErrorPage("缺少 report path 参数。"),
+      renderErrorPage(t("report.missing_path"), locale),
       400,
     );
   }
 
   try {
-    const page = await fetchTelegraphPage(path);
-    return htmlResponse(renderReportPage(page), 200);
+    const page = await fetchTelegraphPage(path, locale);
+    return htmlResponse(renderReportPage(page, locale), 200);
   } catch (error) {
     return htmlResponse(
-      renderErrorPage(getErrorMessage(error)),
+      renderErrorPage(getErrorMessage(error, t), locale),
       502,
     );
   }
 }
 
-function renderReportPage(page) {
-  const title = escapeHtml(page.title || "APK 报告");
+function renderReportPage(page, locale) {
+  const { t, languageTag } = createI18n(locale);
+  const title = escapeHtml(page.title || t("report.fallback_title"));
   const content = renderContent(page.content || []);
-  const metaText = buildMetaText(page);
+  const metaText = buildMetaText(page, t);
 
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(languageTag)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -558,13 +562,14 @@ function renderReportPage(page) {
 </html>`;
 }
 
-function renderErrorPage(message) {
+function renderErrorPage(message, locale) {
+  const { t, languageTag } = createI18n(locale);
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(languageTag)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>报告加载失败</title>
+    <title>${escapeHtml(t("report.error_title"))}</title>
     <style>
       body {
         margin: 0;
@@ -599,22 +604,22 @@ function renderErrorPage(message) {
   </head>
   <body>
     <section class="panel">
-      <h1>报告加载失败</h1>
+      <h1>${escapeHtml(t("report.error_title"))}</h1>
       <p>${escapeHtml(message)}</p>
     </section>
   </body>
 </html>`;
 }
 
-function buildMetaText(page) {
+function buildMetaText(page, t) {
   const parts = [];
   if (page.author_name) {
     parts.push(page.author_name);
   }
   if (page.views != null) {
-    parts.push(`浏览 ${page.views}`);
+    parts.push(t("report.views", { count: page.views }));
   }
-  return parts.length > 0 ? parts.join(" · ") : "APK 解析报告";
+  return parts.length > 0 ? parts.join(" · ") : t("report.meta_fallback");
 }
 
 function renderContent(nodes) {
@@ -695,16 +700,13 @@ function renderSectionBody(nodes, sectionTitle) {
 
 function renderGroupGrid(cards, sectionTitle) {
   const className =
-    sectionTitle === "组件" ? "group-grid group-grid--single" : "group-grid";
+    isComponentSectionTitle(sectionTitle) ? "group-grid group-grid--single" : "group-grid";
   return `<div class="${className}">${cards.join("")}</div>`;
 }
 
 function renderGroupCard(headingNode, bodyNodes) {
   const title = extractText(headingNode?.children || []).trim();
-  const className =
-    title.includes("SDK 标记") || title.includes("已标记的 SDK")
-      ? "group-card group-card--wide"
-      : "group-card";
+  const className = isWideGroupTitle(title) ? "group-card group-card--wide" : "group-card";
   return [
     `<article class="${className}">`,
     renderNode(headingNode),
@@ -1166,10 +1168,19 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function getErrorMessage(error) {
+function getErrorMessage(error, t) {
   if (error instanceof Error) {
     return error.message;
   }
 
-  return "未知错误";
+  return t("errors.unknown");
+}
+
+function isComponentSectionTitle(title) {
+  const normalized = title.trim().toLowerCase();
+  return normalized === "组件" || normalized === "components";
+}
+
+function isWideGroupTitle(title) {
+  return title.trim().toLowerCase().includes("sdk");
 }

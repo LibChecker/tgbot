@@ -1,24 +1,28 @@
+import { createI18n } from "./i18n.js";
+
 const TELEGRAPH_API_BASE = "https://api.telegra.ph";
 
 let cachedAccessToken = null;
 
 export async function createApkTelegraphPage(env, report) {
   const accessToken = await getTelegraphAccessToken(env);
-  const content = buildTelegraphContent(report);
+  const { t } = createI18n(report.locale);
+  const content = buildTelegraphContent(report, t);
   return telegraphApi("createPage", {
     access_token: accessToken,
-    title: buildPageTitle(report),
+    title: buildPageTitle(report, t),
     author_name: getAuthorName(env),
     author_url: normalizeText(env.TELEGRAPH_AUTHOR_URL) || undefined,
     content: JSON.stringify(content),
     return_content: false,
-  });
+  }, report.locale);
 }
 
-export async function fetchTelegraphPage(path) {
+export async function fetchTelegraphPage(path, locale = undefined) {
+  const { t } = createI18n(locale);
   const normalizedPath = normalizeTelegraphPath(path);
   if (!normalizedPath) {
-    throw new Error("Telegraph 页面路径无效");
+    throw new Error(t("errors.telegraph_invalid_path"));
   }
 
   const response = await fetch(
@@ -31,12 +35,12 @@ export async function fetchTelegraphPage(path) {
   );
 
   if (!response.ok) {
-    throw new Error(`Telegraph 页面获取失败 (${response.status})`);
+    throw new Error(t("errors.telegraph_fetch_failed", { status: response.status }));
   }
 
   const data = await response.json();
   if (!data.ok) {
-    throw new Error(data.error || "Telegraph 页面获取失败");
+    throw new Error(data.error || t("errors.telegraph_fetch_failed_generic"));
   }
 
   return data.result;
@@ -62,7 +66,8 @@ async function getTelegraphAccessToken(env) {
   return cachedAccessToken;
 }
 
-async function telegraphApi(method, payload) {
+async function telegraphApi(method, payload, locale = undefined) {
+  const { t } = createI18n(locale);
   const body = new URLSearchParams();
   for (const [key, value] of Object.entries(payload)) {
     if (value == null) {
@@ -81,19 +86,24 @@ async function telegraphApi(method, payload) {
   });
 
   if (!response.ok) {
-    throw new Error(`Telegraph API ${method} 请求失败 (${response.status})`);
+    throw new Error(t("errors.telegraph_api_failed", { method, status: response.status }));
   }
 
   const data = await response.json();
   if (!data.ok) {
-    throw new Error(data.error || `Telegraph API ${method} 返回失败`);
+    throw new Error(data.error || t("errors.telegraph_api_result_failed", { method }));
   }
 
   return data.result;
 }
 
-function buildPageTitle(report) {
-  return truncateText(`${report.apkInfo.appName} APK 信息`, 256);
+function buildPageTitle(report, t) {
+  return truncateText(
+    t("telegraph.page_title", {
+      appName: report.apkInfo.appName,
+    }),
+    256,
+  );
 }
 
 function getAuthorName(env) {
@@ -118,27 +128,39 @@ function normalizeTelegraphPath(value) {
   return normalized;
 }
 
-function buildTelegraphContent(report) {
+function buildTelegraphContent(report, t) {
   const featureChips = buildFeatureChips(report);
-  const featureDetails = buildFeatureDetails(report.apkInfo.buildFeatures);
+  const featureDetails = buildFeatureDetails(report.apkInfo.buildFeatures, t);
   const sections = [
-    h3("APK 摘要"),
+    h3(t("telegraph.apk_summary")),
     preBlock([
-      `应用: ${report.apkInfo.appName}`,
-      `包名: ${report.apkInfo.packageName}`,
-      `版本: ${report.apkInfo.versionName} (${report.apkInfo.versionCode})`,
-      `SDK: Target ${report.apkInfo.targetSdk} / Min ${report.apkInfo.minSdk} / Compile ${report.apkInfo.compileSdk}`,
-      `统计: 权限 ${report.apkInfo.permissions.length} · 原生库 ${report.apkInfo.nativeLibraries.length} · 组件 ${countComponents(report.apkInfo.components)} · meta-data ${countMetaData(report.apkInfo.metaData)}`,
+      t("telegraph.line_app", { value: report.apkInfo.appName }),
+      t("telegraph.line_package_name", { value: report.apkInfo.packageName }),
+      t("telegraph.line_version", {
+        versionName: report.apkInfo.versionName,
+        versionCode: report.apkInfo.versionCode,
+      }),
+      t("telegraph.line_sdk", {
+        targetSdk: report.apkInfo.targetSdk,
+        minSdk: report.apkInfo.minSdk,
+        compileSdk: report.apkInfo.compileSdk,
+      }),
+      t("telegraph.line_stats", {
+        permissions: report.apkInfo.permissions.length,
+        nativeLibraries: report.apkInfo.nativeLibraries.length,
+        components: countComponents(report.apkInfo.components),
+        metaData: countMetaData(report.apkInfo.metaData),
+      }),
     ]),
-    h3("文件信息"),
+    h3(t("telegraph.file_info")),
     preBlock([
-      `文件名: ${report.fileName}`,
-      `文件大小: ${report.fileSizeText}`,
-      `消息来源: ${report.sourceLabel}`,
-      `分析时间: ${report.analyzedAt}`,
+      t("telegraph.line_file_name", { value: report.fileName }),
+      t("telegraph.line_file_size", { value: report.fileSizeText }),
+      t("telegraph.line_message_source", { value: report.sourceLabel }),
+      t("telegraph.line_analyzed_at", { value: report.analyzedAt }),
     ]),
     hrNode(),
-    h3("原生库"),
+    h3(t("telegraph.native_libraries")),
   ];
 
   if (featureChips.length > 0 || featureDetails.length > 0) {
@@ -147,36 +169,36 @@ function buildTelegraphContent(report) {
       0,
       ...(featureChips.length > 0 ? [chipParagraph(featureChips)] : []),
       hrNode(),
-      h3("构建特性"),
+      h3(t("telegraph.build_features")),
       ...(featureDetails.length > 0
         ? [unorderedList(featureDetails)]
-        : [paragraph("未识别到构建特性。")]),
+        : [paragraph(t("telegraph.no_build_features"))]),
       hrNode(),
     );
   }
 
-  pushSdkSummarySection(sections, report.apkInfo.sdkSummary?.native, "原生库 SDK 标记");
-  pushNativeLibraries(sections, report.apkInfo.nativeLibraries);
+  pushSdkSummarySection(sections, report.apkInfo.sdkSummary?.native, t("telegraph.native_sdk_markers"));
+  pushNativeLibraries(sections, report.apkInfo.nativeLibraries, t);
 
-  sections.push(hrNode(), h3("权限"));
-  pushPermissions(sections, report.apkInfo.permissions);
+  sections.push(hrNode(), h3(t("telegraph.permissions")));
+  pushPermissions(sections, report.apkInfo.permissions, t);
 
-  sections.push(hrNode(), h3("组件"));
-  pushSdkSummarySection(sections, report.apkInfo.sdkSummary?.components, "已标记的 SDK");
-  pushComponentSection(sections, "Activity", report.apkInfo.components.activities);
-  pushComponentSection(sections, "Service", report.apkInfo.components.services);
-  pushComponentSection(sections, "Receiver", report.apkInfo.components.receivers);
-  pushComponentSection(sections, "Provider", report.apkInfo.components.providers);
+  sections.push(hrNode(), h3(t("telegraph.components")));
+  pushSdkSummarySection(sections, report.apkInfo.sdkSummary?.components, t("telegraph.marked_sdks"));
+  pushComponentSection(sections, "Activity", report.apkInfo.components.activities, t);
+  pushComponentSection(sections, "Service", report.apkInfo.components.services, t);
+  pushComponentSection(sections, "Receiver", report.apkInfo.components.receivers, t);
+  pushComponentSection(sections, "Provider", report.apkInfo.components.providers, t);
 
-  sections.push(hrNode(), h3("Application Meta-Data"));
-  pushMetaDataSection(sections, report.apkInfo.metaData.application);
+  sections.push(hrNode(), h3(t("telegraph.application_meta_data")));
+  pushMetaDataSection(sections, report.apkInfo.metaData.application, t);
 
   return sections;
 }
 
-function pushNativeLibraries(sections, libraries) {
+function pushNativeLibraries(sections, libraries, t) {
   if (libraries.length === 0) {
-    sections.push(paragraph("未发现原生库。"));
+    sections.push(paragraph(t("telegraph.no_native_libraries")));
     return;
   }
 
@@ -193,33 +215,33 @@ function pushNativeLibraries(sections, libraries) {
   }
 }
 
-function pushPermissions(sections, permissions) {
+function pushPermissions(sections, permissions, t) {
   if (permissions.length === 0) {
-    sections.push(paragraph("未声明权限。"));
+    sections.push(paragraph(t("telegraph.no_permissions")));
     return;
   }
 
   sections.push(unorderedList(permissions.map((permission) => permissionItem(permission))));
 }
 
-function pushComponentSection(sections, title, components) {
+function pushComponentSection(sections, title, components, t) {
   sections.push(h4(`${title} (${components.length})`));
 
   if (components.length === 0) {
-    sections.push(paragraph(`未声明 ${title}。`));
+    sections.push(paragraph(t("telegraph.no_component", { title })));
     return;
   }
 
-  sections.push(unorderedList(components.map((component) => componentItem(component))));
+  sections.push(unorderedList(components.map((component) => componentItem(component, t))));
 }
 
-function pushMetaDataSection(sections, metaDataItems) {
+function pushMetaDataSection(sections, metaDataItems, t) {
   if (metaDataItems.length === 0) {
-    sections.push(paragraph("未声明 application 级 meta-data。"));
+    sections.push(paragraph(t("telegraph.no_application_meta_data")));
     return;
   }
 
-  sections.push(unorderedList(metaDataItems.map((item) => metaDataItem(item))));
+  sections.push(unorderedList(metaDataItems.map((item) => metaDataItem(item, t))));
 }
 
 function pushSdkSummarySection(sections, entries, title) {
@@ -253,7 +275,7 @@ function permissionItem(permission) {
   };
 }
 
-function componentItem(component) {
+function componentItem(component, t) {
   const children = [codeNode(component.shortName || component.name)];
 
   if (component.shortName && component.shortName !== component.name) {
@@ -266,7 +288,11 @@ function componentItem(component) {
 
   const detailLines = [];
   if (component.type === "activity-alias") {
-    detailLines.push(`alias -> ${component.targetActivity || "未知"}`);
+    detailLines.push(
+      t("telegraph.alias_target", {
+        target: component.targetActivity || t("telegraph.unknown"),
+      }),
+    );
   }
   if (component.authorities) {
     detailLines.push(`authorities=${component.authorities}`);
@@ -294,7 +320,7 @@ function componentItem(component) {
   };
 }
 
-function metaDataItem(item, scopeLabel = null) {
+function metaDataItem(item, t, scopeLabel = null) {
   const children = [];
 
   if (scopeLabel) {
@@ -304,9 +330,9 @@ function metaDataItem(item, scopeLabel = null) {
   children.push(codeNode(item.name), " = ", codeNode(item.value || "<empty>"));
 
   if (item.resolvedFromResource) {
-    children.push(brNode(), emNode("resolved from string resource"));
+    children.push(brNode(), emNode(t("telegraph.resource_resolved")));
   } else if (item.hasResourceReference) {
-    children.push(brNode(), emNode("resource reference"));
+    children.push(brNode(), emNode(t("telegraph.resource_reference")));
   }
 
   return {
@@ -338,27 +364,39 @@ function buildFeatureChips(report) {
   return chips;
 }
 
-function buildFeatureDetails(buildFeatures) {
+function buildFeatureDetails(buildFeatures, t) {
   const details = [];
 
   if (buildFeatures.kotlinDetected) {
-    details.push(textLine(`Kotlin: ${buildFeatures.kotlinVersion || "已检测到"}`));
+    details.push(
+      textLine(
+        `${t("telegraph.feature_kotlin")}: ${buildFeatures.kotlinVersion || t("telegraph.feature_detected")}`,
+      ),
+    );
   }
 
   if (buildFeatures.composeDetected) {
-    details.push(textLine(`Compose: ${buildFeatures.composeVersion || "已检测到"}`));
+    details.push(
+      textLine(
+        `${t("telegraph.feature_compose")}: ${buildFeatures.composeVersion || t("telegraph.feature_detected")}`,
+      ),
+    );
   }
 
   if (buildFeatures.gradleVersion) {
-    details.push(textLine(`Gradle: ${buildFeatures.gradleVersion}`));
+    details.push(textLine(`${t("telegraph.feature_gradle")}: ${buildFeatures.gradleVersion}`));
   }
 
   if (buildFeatures.agpVersion) {
-    details.push(textLine(`Android Gradle Plugin: ${buildFeatures.agpVersion}`));
+    details.push(textLine(`${t("telegraph.feature_agp")}: ${buildFeatures.agpVersion}`));
   }
 
   if (buildFeatures.appMetadataVersion) {
-    details.push(textLine(`App Metadata Version: ${buildFeatures.appMetadataVersion}`));
+    details.push(
+      textLine(
+        `${t("telegraph.feature_app_metadata_version")}: ${buildFeatures.appMetadataVersion}`,
+      ),
+    );
   }
 
   return details;
