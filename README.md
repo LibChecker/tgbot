@@ -6,37 +6,41 @@
 
 1. 私聊机器人时，直接发送或转发一个 `.apk` 文件消息，Bot 会自动解析。
 2. 在群组或频道里：
-   - 可以直接发送带 `.apk` 的消息，并把 `/apkinfo` 写在 caption 的任意位置
+   - 可以直接发送带 `.apk` 的消息，并把 `/apkinfo` 或 `/apkinfo@你的bot用户名` 写在 caption 的任意位置
    - 或者回复一个带 `.apk` 的消息，再发送 `/apkinfo`
+   - 也可以在消息里直接 `@bot用户名` 并附带 APK，或回复 APK 后 `@bot用户名`
    - 转发自其他频道或群组、且自带 `.apk` 的消息，也会自动解析
    - 文件消息可以同时带说明文字，命令前后有额外文本也能正常解析
-3. Bot 返回一个简短摘要，并附带一个 Telegraph 链接。
-4. 完整信息会展示在 Telegraph 页面中：
+3. Bot 返回一个简短摘要，并附带“打开完整报告”按钮。
+4. 私聊场景下会优先通过 Telegram `web_app` 打开 Worker 自带的报告页；Telegraph 作为存储和备用链接保留。
+5. 完整信息会展示在报告页中：
    - 应用名
    - 包名
    - versionName / versionCode
    - minSdk / targetSdk
+   - 构建特性（Kotlin / Compose / AGP 版本）
    - 原生库列表（按 ABI 分组）
-   - 四大组件（Activity / Service / Receiver / Provider）
+   - 组件（Activity / Service / Receiver / Provider）
    - 权限数量
    - 完整权限列表
-   - application 级和组件级 `meta-data`
+   - application 级 `meta-data`（字符串资源引用会尽量解析成人类可读文本）
 
 ## 实现说明
 
 - 运行方式：Telegram webhook + Cloudflare Workers。
 - APK 解析：纯 JavaScript，在 Worker 内直接解析 `AndroidManifest.xml` 与 `resources.arsc`。
-- 展示方式：Telegram 消息仅返回摘要，完整结果发布到 Telegraph 页面。
-- 信息维度：参考 LibChecker 常见 APK 分析视图，输出原生库、四大组件、权限和 `meta-data`。
+- 展示方式：Telegram 消息仅返回摘要，完整结果优先通过 Worker 自带报告页展示，Telegraph 作为存储与备用链接。
+- 信息维度：参考 LibChecker 常见 APK 分析视图，输出构建特性、原生库、组件、权限和 application 级 `meta-data`。
 - 不再依赖 Python、轮询进程或 `androguard`。
 - 自带受保护的 webhook 管理接口，可直接通过 Worker 自动注册 Telegram webhook。
+- 自带受保护的命令管理接口，可直接同步 Telegram 的 `/` 命令菜单。
 - 已支持 `message`、`edited_message`、`channel_post`、`edited_channel_post` 这几类更新。
 
 > 如果应用名来自资源表，Worker 会尽量解析出真实名称；如果资源表异常，会回退显示资源 ID。
 >
 > 受 Telegram 官方 Bot API 当前限制，这种部署方式下只能直接下载并解析不超过 `20MB` 的 APK。
 >
-> 如果你希望 Bot 在群组里对“普通转发的 APK 消息”自动响应，需要在 `@BotFather` 中关闭该 Bot 的 Privacy Mode；如果要在频道里处理消息，需要把 Bot 设为频道管理员。
+> Telegram 群组里的消息能否送达到 bot，受 Privacy Mode 影响很大。开启 Privacy Mode 时，最稳的是使用 `/apkinfo@你的bot用户名`；如果你希望普通 `@bot`、普通转发消息或更自然的群聊交互都能工作，需要在 `@BotFather` 中关闭该 Bot 的 Privacy Mode。频道里则需要把 Bot 设为管理员。
 
 ## 部署
 
@@ -105,11 +109,14 @@ https://your-worker.your-subdomain.workers.dev
 
 ## 自动管理 Webhook
 
-Worker 提供了 3 个管理接口，全部需要管理员鉴权：
+Worker 提供了 webhook 与命令菜单管理接口，全部需要管理员鉴权：
 
 - `GET /admin/webhook`
 - `POST /admin/webhook/set`
 - `POST /admin/webhook/delete`
+- `GET /admin/commands`
+- `POST /admin/commands/set`
+- `POST /admin/commands/delete`
 
 鉴权方式二选一：
 
@@ -176,6 +183,8 @@ $env:ADMIN_TOKEN="<你的 ADMIN_TOKEN>"
 npm run deploy:setup
 ```
 
+这条命令现在还会一并同步 Telegram 的 `/` 命令菜单。
+
 如果你只想单独注册 webhook：
 
 ```bash
@@ -192,6 +201,18 @@ npm run webhook:info
 
 ```bash
 npm run webhook:delete
+```
+
+同步命令菜单：
+
+```bash
+npm run commands:set
+```
+
+查看当前命令菜单：
+
+```bash
+npm run commands:info
 ```
 
 如果想额外传参，也支持这样：

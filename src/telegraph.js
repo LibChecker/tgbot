@@ -5,7 +5,7 @@ let cachedAccessToken = null;
 export async function createApkTelegraphPage(env, report) {
   const accessToken = await getTelegraphAccessToken(env);
   const content = buildTelegraphContent(report);
-  const response = await telegraphApi("createPage", {
+  return telegraphApi("createPage", {
     access_token: accessToken,
     title: buildPageTitle(report),
     author_name: getAuthorName(env),
@@ -13,8 +13,33 @@ export async function createApkTelegraphPage(env, report) {
     content: JSON.stringify(content),
     return_content: false,
   });
+}
 
-  return response.url;
+export async function fetchTelegraphPage(path) {
+  const normalizedPath = normalizeTelegraphPath(path);
+  if (!normalizedPath) {
+    throw new Error("Telegraph 页面路径无效");
+  }
+
+  const response = await fetch(
+    `${TELEGRAPH_API_BASE}/getPage/${encodeURIComponent(normalizedPath)}?return_content=true`,
+    {
+      headers: {
+        accept: "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Telegraph 页面获取失败 (${response.status})`);
+  }
+
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(data.error || "Telegraph 页面获取失败");
+  }
+
+  return data.result;
 }
 
 async function getTelegraphAccessToken(env) {
@@ -84,17 +109,27 @@ function normalizeShortName(value) {
   return truncateText(normalized.replaceAll(/\s+/gu, "-"), 32);
 }
 
+function normalizeTelegraphPath(value) {
+  const normalized = normalizeText(value);
+  if (!normalized || normalized.includes("/") || normalized.includes("?")) {
+    return null;
+  }
+
+  return normalized;
+}
+
 function buildTelegraphContent(report) {
+  const featureChips = buildFeatureChips(report);
+  const featureDetails = buildFeatureDetails(report.apkInfo.buildFeatures);
   const sections = [
     h3("APK 摘要"),
     preBlock([
       `应用: ${report.apkInfo.appName}`,
       `包名: ${report.apkInfo.packageName}`,
       `版本: ${report.apkInfo.versionName} (${report.apkInfo.versionCode})`,
-      `SDK: min ${report.apkInfo.minSdk} / target ${report.apkInfo.targetSdk}`,
+      `SDK: Target ${report.apkInfo.targetSdk} / Min ${report.apkInfo.minSdk} / Compile ${report.apkInfo.compileSdk}`,
       `统计: 权限 ${report.apkInfo.permissions.length} · 原生库 ${report.apkInfo.nativeLibraries.length} · 组件 ${countComponents(report.apkInfo.components)} · meta-data ${countMetaData(report.apkInfo.metaData)}`,
     ]),
-    hrNode(),
     h3("文件信息"),
     preBlock([
       `文件名: ${report.fileName}`,
@@ -106,12 +141,26 @@ function buildTelegraphContent(report) {
     h3("原生库"),
   ];
 
+  if (featureChips.length > 0 || featureDetails.length > 0) {
+    sections.splice(
+      2,
+      0,
+      ...(featureChips.length > 0 ? [chipParagraph(featureChips)] : []),
+      hrNode(),
+      h3("构建特性"),
+      ...(featureDetails.length > 0
+        ? [unorderedList(featureDetails)]
+        : [paragraph("未识别到构建特性。")]),
+      hrNode(),
+    );
+  }
+
   pushNativeLibraries(sections, report.apkInfo.nativeLibraries);
 
   sections.push(hrNode(), h3("权限"));
   pushPermissions(sections, report.apkInfo.permissions);
 
-  sections.push(hrNode(), h3("四大组件"));
+  sections.push(hrNode(), h3("组件"));
   pushComponentSection(sections, "Activity", report.apkInfo.components.activities);
   pushComponentSection(sections, "Service", report.apkInfo.components.services);
   pushComponentSection(sections, "Receiver", report.apkInfo.components.receivers);
@@ -119,9 +168,6 @@ function buildTelegraphContent(report) {
 
   sections.push(hrNode(), h3("Application Meta-Data"));
   pushMetaDataSection(sections, report.apkInfo.metaData.application);
-
-  sections.push(hrNode(), h3("组件 Meta-Data"));
-  pushScopedMetaDataSection(sections, report.apkInfo.metaData.components);
 
   return sections;
 }
@@ -174,21 +220,6 @@ function pushMetaDataSection(sections, metaDataItems) {
   sections.push(unorderedList(metaDataItems.map((item) => metaDataItem(item))));
 }
 
-function pushScopedMetaDataSection(sections, metaDataItems) {
-  if (metaDataItems.length === 0) {
-    sections.push(paragraph("未发现组件级 meta-data。"));
-    return;
-  }
-
-  sections.push(
-    unorderedList(
-      metaDataItems.map((item) =>
-        metaDataItem(item, `${item.ownerType} · ${item.ownerName}`),
-      ),
-    ),
-  );
-}
-
 function nativeLibraryItem(library) {
   return {
     tag: "li",
@@ -233,9 +264,6 @@ function componentItem(component) {
   if (component.enabled != null) {
     detailLines.push(`enabled=${component.enabled}`);
   }
-  if (component.metaData.length > 0) {
-    detailLines.push(`meta-data=${component.metaData.length}`);
-  }
 
   if (detailLines.length > 0) {
     children.push(brNode(), emNode(detailLines.join(" · ")));
@@ -256,13 +284,71 @@ function metaDataItem(item, scopeLabel = null) {
 
   children.push(codeNode(item.name), " = ", codeNode(item.value || "<empty>"));
 
-  if (item.hasResourceReference) {
+  if (item.resolvedFromResource) {
+    children.push(brNode(), emNode("resolved from string resource"));
+  } else if (item.hasResourceReference) {
     children.push(brNode(), emNode("resource reference"));
   }
 
   return {
     tag: "li",
     children,
+  };
+}
+
+function buildFeatureChips(report) {
+  const buildFeatures = report.apkInfo.buildFeatures;
+  const chips = [];
+
+  if (buildFeatures.kotlinDetected) {
+    chips.push(
+      featureChip(report.featureIcons.kotlin, buildFeatureLabel("Kotlin", buildFeatures.kotlinVersion)),
+    );
+  }
+
+  if (buildFeatures.composeDetected) {
+    chips.push(
+      featureChip(report.featureIcons.compose, buildFeatureLabel("Compose", buildFeatures.composeVersion)),
+    );
+  }
+
+  if (buildFeatures.gradleVersion) {
+    chips.push(featureChip(report.featureIcons.gradle, `Gradle ${buildFeatures.gradleVersion}`));
+  }
+
+  return chips;
+}
+
+function buildFeatureDetails(buildFeatures) {
+  const details = [];
+
+  if (buildFeatures.kotlinDetected) {
+    details.push(textLine(`Kotlin: ${buildFeatures.kotlinVersion || "已检测到"}`));
+  }
+
+  if (buildFeatures.composeDetected) {
+    details.push(textLine(`Compose: ${buildFeatures.composeVersion || "已检测到"}`));
+  }
+
+  if (buildFeatures.gradleVersion) {
+    details.push(textLine(`Gradle: ${buildFeatures.gradleVersion}`));
+  }
+
+  if (buildFeatures.agpVersion) {
+    details.push(textLine(`Android Gradle Plugin: ${buildFeatures.agpVersion}`));
+  }
+
+  if (buildFeatures.appMetadataVersion) {
+    details.push(textLine(`App Metadata Version: ${buildFeatures.appMetadataVersion}`));
+  }
+
+  return details;
+}
+
+function textLine(text) {
+  return {
+    tag: "li",
+    children: [text],
   };
 }
 
@@ -276,7 +362,7 @@ function countComponents(components) {
 }
 
 function countMetaData(metaData) {
-  return metaData.application.length + metaData.components.length;
+  return metaData.application.length;
 }
 
 function paragraph(text) {
@@ -307,6 +393,21 @@ function unorderedList(items) {
   };
 }
 
+function chipParagraph(chips) {
+  const children = [];
+  chips.forEach((chip, index) => {
+    if (index > 0) {
+      children.push(" ");
+    }
+    children.push(...chip);
+  });
+
+  return {
+    tag: "p",
+    children,
+  };
+}
+
 function preBlock(lines) {
   return {
     tag: "pre",
@@ -332,6 +433,30 @@ function codeNode(text) {
     tag: "code",
     children: [text],
   };
+}
+
+function imageNode(src) {
+  return {
+    tag: "img",
+    attrs: {
+      src,
+    },
+  };
+}
+
+function featureChip(iconUrl, text) {
+  return [
+    imageNode(iconUrl),
+    " ",
+    {
+      tag: "code",
+      children: [text],
+    },
+  ];
+}
+
+function buildFeatureLabel(name, version) {
+  return version ? `${name} ${version}` : name;
 }
 
 function strongNode(text) {

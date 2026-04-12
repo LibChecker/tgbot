@@ -52,6 +52,26 @@ const actionHandlers = {
       },
     });
   },
+
+  async "commands:info"() {
+    return callAdminApi(workerUrl, adminToken, "/admin/commands", {
+      method: "GET",
+    });
+  },
+
+  async "commands:set"() {
+    return callAdminApi(workerUrl, adminToken, "/admin/commands/set", {
+      method: "POST",
+      body: {},
+    });
+  },
+
+  async "commands:delete"() {
+    return callAdminApi(workerUrl, adminToken, "/admin/commands/delete", {
+      method: "POST",
+      body: {},
+    });
+  },
 };
 
 const handler = actionHandlers[action];

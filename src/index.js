@@ -1,4 +1,6 @@
 import { readApkInfo } from "./apk.js";
+import { buildFeatureIconUrl, handleIconRequest } from "./icons.js";
+import { handleReportRequest } from "./report-viewer.js";
 import { createApkTelegraphPage } from "./telegraph.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -9,10 +11,27 @@ const TELEGRAM_ALLOWED_UPDATES = [
   "channel_post",
   "edited_channel_post",
 ];
+const BOT_COMMANDS = [
+  {
+    command: "start",
+    description: "显示使用说明",
+  },
+  {
+    command: "apkinfo",
+    description: "解析当前或回复的 APK 文件",
+  },
+];
+
+let cachedBotIdentity = null;
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    const iconResponse = handleIconRequest(url.pathname);
+    if (iconResponse) {
+      return iconResponse;
+    }
 
     if (request.method === "GET" && url.pathname === "/") {
       return new Response(
@@ -25,19 +44,23 @@ export default {
       );
     }
 
+    if (request.method === "GET" && url.pathname === "/report") {
+      return handleReportRequest(url);
+    }
+
     if (isAdminPath(url.pathname)) {
       return handleAdminRequest(request, env, url);
     }
 
     if (request.method === "POST" && isWebhookPath(url.pathname)) {
-      return handleWebhookRequest(request, env, ctx);
+      return handleWebhookRequest(request, env, ctx, url.origin);
     }
 
     return new Response("Not Found", { status: 404 });
   },
 };
 
-async function handleWebhookRequest(request, env, ctx) {
+async function handleWebhookRequest(request, env, ctx, requestOrigin) {
   if (!env.BOT_TOKEN) {
     return new Response("BOT_TOKEN is not configured", { status: 500 });
   }
@@ -54,7 +77,7 @@ async function handleWebhookRequest(request, env, ctx) {
   }
 
   ctx.waitUntil(
-    handleUpdate(update, env).catch((error) => {
+    handleUpdate(update, env, requestOrigin).catch((error) => {
       console.error("Failed to handle Telegram update", error);
     }),
   );
@@ -125,10 +148,64 @@ async function handleAdminRequest(request, env, url) {
     });
   }
 
+  if (request.method === "GET" && url.pathname === "/admin/commands") {
+    const scopes = getManagedCommandScopes();
+    const commandsByScope = {};
+
+    for (const scope of scopes) {
+      const scopeKey = getCommandScopeKey(scope);
+      const commands = await telegramApi(env, "getMyCommands", {
+        scope,
+      });
+      commandsByScope[scopeKey] = commands;
+    }
+
+    return jsonResponse({
+      ok: true,
+      commands: commandsByScope,
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/admin/commands/set") {
+    const payload = await readJsonBody(request);
+    const commands = normalizeBotCommands(payload.commands) || BOT_COMMANDS;
+    const scopes = getManagedCommandScopes();
+
+    for (const scope of scopes) {
+      await telegramApi(env, "setMyCommands", {
+        scope,
+        commands,
+      });
+    }
+
+    return jsonResponse({
+      ok: true,
+      action: "setMyCommands",
+      scopes: scopes.map(getCommandScopeKey),
+      commands,
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/admin/commands/delete") {
+    const scopes = getManagedCommandScopes();
+
+    for (const scope of scopes) {
+      await telegramApi(env, "deleteMyCommands", {
+        scope,
+      });
+    }
+
+    return jsonResponse({
+      ok: true,
+      action: "deleteMyCommands",
+      scopes: scopes.map(getCommandScopeKey),
+    });
+  }
+
   return jsonResponse({ ok: false, error: "Not Found" }, 404);
 }
 
-async function handleUpdate(update, env) {
+async function handleUpdate(update, env, requestOrigin) {
   const message = getTelegramMessage(update);
   if (!message?.chat?.id) {
     return;
@@ -137,6 +214,8 @@ async function handleUpdate(update, env) {
   const isEdited = Boolean(update.edited_message || update.edited_channel_post);
   const contentText = getMessageContentText(message);
   const command = extractPrimaryCommand(contentText);
+  const botIdentity = await getBotIdentity(env);
+  const botMentioned = isBotMentioned(message, botIdentity);
 
   if (command === "start") {
     await sendText(
@@ -148,13 +227,13 @@ async function handleUpdate(update, env) {
     return;
   }
 
-  const targetDocument = selectTargetDocument(message, command, isEdited);
+  const targetDocument = selectTargetDocument(message, command, isEdited, botMentioned);
   if (!targetDocument) {
-    if (command === "apkinfo") {
+    if (command === "apkinfo" || botMentioned) {
       await sendText(
         env,
         message.chat.id,
-        "我没有找到可解析的 APK。你可以直接发送或转发 APK 文件给我，或者回复含 APK 的消息后发送 <code>/apkinfo</code>。",
+        "我没有找到可解析的 APK。你可以直接发送或转发 APK 文件给我，或者回复含 APK 的消息后发送 <code>/apkinfo</code>。在群组里如果开启了 Privacy Mode，请优先使用 <code>/apkinfo@bot_username</code>，或者关闭 Privacy Mode 后再直接 @ 我。",
         message.message_id,
       );
     }
@@ -162,7 +241,7 @@ async function handleUpdate(update, env) {
     return;
   }
 
-  await analyzeApkDocument(env, message, targetDocument);
+  await analyzeApkDocument(env, message, targetDocument, requestOrigin);
 }
 
 function getTelegramMessage(update) {
@@ -175,12 +254,13 @@ function getTelegramMessage(update) {
   );
 }
 
-function selectTargetDocument(message, command, isEdited) {
+function selectTargetDocument(message, command, isEdited, botMentioned) {
   const directDocument = getApkDocument(message);
   const repliedDocument = getApkDocument(message.reply_to_message);
+  const externalReplyDocument = getExternalReplyApkDocument(message);
 
-  if (command === "apkinfo") {
-    return directDocument || repliedDocument;
+  if (command === "apkinfo" || botMentioned) {
+    return directDocument || repliedDocument || externalReplyDocument;
   }
 
   if (isEdited) {
@@ -211,7 +291,15 @@ function getApkDocument(message) {
   return isApkDocument(message.document) ? message.document : null;
 }
 
-async function analyzeApkDocument(env, message, document) {
+function getExternalReplyApkDocument(message) {
+  if (!message?.external_reply?.document) {
+    return null;
+  }
+
+  return isApkDocument(message.external_reply.document) ? message.external_reply.document : null;
+}
+
+async function analyzeApkDocument(env, message, document, requestOrigin) {
   if ((document.file_size || 0) > MAX_TELEGRAM_APK_BYTES) {
     await sendText(
       env,
@@ -229,13 +317,16 @@ async function analyzeApkDocument(env, message, document) {
   try {
     const apkBuffer = await downloadTelegramFile(env, document.file_id);
     const apkInfo = await readApkInfo(apkBuffer);
-    const report = buildApkReport(message, document, apkInfo);
-    const telegraphUrl = await createApkTelegraphPage(env, report);
+    const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
+    const report = buildApkReport(message, document, apkInfo, publicBaseUrl);
+    const telegraphPage = await createApkTelegraphPage(env, report);
+    const viewerUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path);
     await sendText(
       env,
       message.chat.id,
-      formatApkSummary(report, telegraphUrl),
+      formatApkSummary(report),
       message.message_id,
+      buildReportReplyMarkup(message.chat, viewerUrl),
     );
   } catch (error) {
     console.error("Failed to parse APK", error);
@@ -256,7 +347,10 @@ function isAdminPath(pathname) {
   return (
     pathname === "/admin/webhook" ||
     pathname === "/admin/webhook/set" ||
-    pathname === "/admin/webhook/delete"
+    pathname === "/admin/webhook/delete" ||
+    pathname === "/admin/commands" ||
+    pathname === "/admin/commands/set" ||
+    pathname === "/admin/commands/delete"
   );
 }
 
@@ -287,6 +381,24 @@ function buildWebhookUrl(url, env) {
   return `${url.origin}/webhook`;
 }
 
+function resolvePublicBaseUrl(env, requestOrigin) {
+  const configured = normalizeBaseUrl(env.PUBLIC_WEBHOOK_URL);
+  if (configured) {
+    return configured;
+  }
+
+  return normalizeBaseUrl(requestOrigin);
+}
+
+function normalizeBaseUrl(value) {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.replace(/\/+$/u, "");
+}
+
 function normalizeWebhookUrl(value) {
   const trimmed = value?.trim();
   if (!trimmed) {
@@ -294,6 +406,39 @@ function normalizeWebhookUrl(value) {
   }
 
   return trimmed.endsWith("/webhook") ? trimmed : `${trimmed.replace(/\/+$/u, "")}/webhook`;
+}
+
+function getManagedCommandScopes() {
+  return [
+    {
+      type: "default",
+    },
+    {
+      type: "all_private_chats",
+    },
+    {
+      type: "all_group_chats",
+    },
+  ];
+}
+
+function getCommandScopeKey(scope) {
+  return scope?.type || "default";
+}
+
+function normalizeBotCommands(value) {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const commands = value
+    .map((item) => ({
+      command: String(item?.command || "").trim().toLowerCase(),
+      description: String(item?.description || "").trim(),
+    }))
+    .filter((item) => item.command && item.description);
+
+  return commands.length > 0 ? commands : null;
 }
 
 async function readJsonBody(request) {
@@ -336,6 +481,37 @@ function extractCommandTokens(text) {
   return matches.map((token) => token.slice(1).split("@")[0].toLowerCase());
 }
 
+function isBotMentioned(message, botIdentity) {
+  if (!botIdentity?.username) {
+    return false;
+  }
+
+  const expectedMention = `@${botIdentity.username.toLowerCase()}`;
+  return (
+    messageContainsBotMention(message.text, message.entities, expectedMention) ||
+    messageContainsBotMention(message.caption, message.caption_entities, expectedMention)
+  );
+}
+
+function messageContainsBotMention(text, entities, expectedMention) {
+  if (!text || !expectedMention) {
+    return false;
+  }
+
+  for (const entity of entities || []) {
+    if (entity?.type !== "mention") {
+      continue;
+    }
+
+    const mentionText = text.slice(entity.offset, entity.offset + entity.length).toLowerCase();
+    if (mentionText === expectedMention) {
+      return true;
+    }
+  }
+
+  return text.toLowerCase().includes(expectedMention);
+}
+
 function isApkDocument(document) {
   const fileName = document.file_name?.toLowerCase() || "";
   const mimeType = document.mime_type?.toLowerCase() || "";
@@ -360,13 +536,42 @@ function supportsChatAction(chatType) {
   return chatType !== "channel";
 }
 
-function buildApkReport(message, document, apkInfo) {
+function buildApkReport(message, document, apkInfo, publicBaseUrl) {
   return {
     apkInfo,
     fileName: document.file_name || "unknown.apk",
     fileSizeText: formatBytes(document.file_size || 0),
     sourceLabel: describeMessageSource(message),
     analyzedAt: new Date().toISOString(),
+    featureIcons: {
+      kotlin: buildFeatureIconUrl(publicBaseUrl, "kotlin"),
+      gradle: buildFeatureIconUrl(publicBaseUrl, "gradle"),
+      compose: buildFeatureIconUrl(publicBaseUrl, "compose"),
+    },
+  };
+}
+
+function buildReportViewerUrl(publicBaseUrl, telegraphPath) {
+  return `${publicBaseUrl}/report?path=${encodeURIComponent(telegraphPath)}`;
+}
+
+function buildReportReplyMarkup(chat, viewerUrl) {
+  const mainButton = isPrivateChat(chat)
+    ? {
+        text: "打开完整报告",
+        web_app: {
+          url: viewerUrl,
+        },
+      }
+    : {
+        text: "打开完整报告",
+        url: viewerUrl,
+      };
+
+  return {
+    inline_keyboard: [
+      [mainButton],
+    ],
   };
 }
 
@@ -422,13 +627,14 @@ async function downloadTelegramFile(env, fileId) {
   return response.arrayBuffer();
 }
 
-async function sendText(env, chatId, text, replyToMessageId) {
+async function sendText(env, chatId, text, replyToMessageId, replyMarkup = undefined) {
   await telegramApi(env, "sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
     reply_to_message_id: replyToMessageId,
+    reply_markup: replyMarkup,
   });
 }
 
@@ -460,22 +666,70 @@ async function telegramApi(env, method, payload) {
   return data.result;
 }
 
-function formatApkSummary(report, telegraphUrl) {
-  return [
+async function getBotIdentity(env) {
+  if (cachedBotIdentity) {
+    return cachedBotIdentity;
+  }
+
+  const identity = await telegramApi(env, "getMe", {});
+  cachedBotIdentity = {
+    id: identity.id,
+    username: identity.username || null,
+  };
+  return cachedBotIdentity;
+}
+
+function formatApkSummary(report) {
+  const lines = [
     "<b>APK 解析完成</b>",
     `应用名: <b>${escapeHtml(report.apkInfo.appName)}</b>`,
     `包名: <code>${escapeHtml(report.apkInfo.packageName)}</code>`,
     `versionName: <code>${escapeHtml(report.apkInfo.versionName)}</code>`,
     `versionCode: <code>${escapeHtml(report.apkInfo.versionCode)}</code>`,
-    `minSdk: <code>${escapeHtml(report.apkInfo.minSdk)}</code>`,
-    `targetSdk: <code>${escapeHtml(report.apkInfo.targetSdk)}</code>`,
+    `SDK: <code>Target ${escapeHtml(report.apkInfo.targetSdk)} / Min ${escapeHtml(report.apkInfo.minSdk)} / Compile ${escapeHtml(report.apkInfo.compileSdk)}</code>`,
     `权限数量: <b>${report.apkInfo.permissions.length}</b>`,
     `原生库数量: <b>${report.apkInfo.nativeLibraries.length}</b>`,
-    `四大组件: <b>${countComponents(report.apkInfo.components)}</b>`,
+    `组件数量: <b>${countComponents(report.apkInfo.components)}</b>`,
     `meta-data 数量: <b>${countMetaData(report.apkInfo.metaData)}</b>`,
-    "",
-    `完整报告: <a href="${escapeHtml(telegraphUrl)}">点击查看 Telegraph 页面</a>`,
-  ].join("\n");
+  ];
+
+  const featureHtml = formatFeatureChipsHtml(report.apkInfo.buildFeatures);
+  if (featureHtml) {
+    lines.push(`特性: ${featureHtml}`);
+  }
+
+  lines.push("", "完整报告请使用下方按钮打开。");
+  return lines.join("\n");
+}
+
+function formatFeatureChipsHtml(buildFeatures) {
+  const chips = [];
+
+  if (buildFeatures.kotlinDetected) {
+    chips.push(buildHtmlChip(`🟣 ${buildFeatureLabel("Kotlin", buildFeatures.kotlinVersion)}`));
+  }
+
+  if (buildFeatures.composeDetected) {
+    chips.push(buildHtmlChip(`🎨 ${buildFeatureLabel("Compose", buildFeatures.composeVersion)}`));
+  }
+
+  if (buildFeatures.gradleVersion) {
+    chips.push(buildHtmlChip(`🟢 Gradle ${buildFeatures.gradleVersion}`));
+  }
+
+  if (buildFeatures.agpVersion) {
+    chips.push(buildHtmlChip(`🧱 AGP ${buildFeatures.agpVersion}`));
+  }
+
+  return chips.join(" ");
+}
+
+function buildHtmlChip(text) {
+  return `<code>${escapeHtml(text)}</code>`;
+}
+
+function buildFeatureLabel(name, version) {
+  return version ? `${name} ${version}` : name;
 }
 
 function countComponents(components) {
@@ -488,7 +742,7 @@ function countComponents(components) {
 }
 
 function countMetaData(metaData) {
-  return metaData.application.length + metaData.components.length;
+  return metaData.application.length;
 }
 
 function escapeHtml(value) {

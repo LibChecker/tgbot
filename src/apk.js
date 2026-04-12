@@ -30,11 +30,21 @@ const AXML_NO_INDEX = 0xffffffff;
 const TABLE_NO_ENTRY_16 = 0xffff;
 
 const utf8Decoder = new TextDecoder();
+// Keep this order aligned with LibChecker's getJetpackComposeVersion().
+const COMPOSE_VERSION_ENTRY_CANDIDATES = [
+  "META-INF/androidx.compose.runtime_runtime.version",
+  "META-INF/androidx.compose.ui_ui.version",
+  "META-INF/androidx.compose.ui_ui-tooling-preview.version",
+  "META-INF/androidx.compose.foundation_foundation.version",
+  "META-INF/androidx.compose.animation_animation.version",
+];
 
 export async function readApkInfo(apkBuffer) {
   const apkBytes = toUint8Array(apkBuffer);
   const zipEntries = parseZipEntries(apkBytes);
   const nativeLibraries = collectNativeLibraries(zipEntries);
+  const buildFeatures = await detectBuildFeatures(apkBytes, zipEntries);
+  const resources = await readApkResources(apkBytes, zipEntries);
 
   const manifestEntry = zipEntries.get("AndroidManifest.xml");
   if (!manifestEntry) {
@@ -45,22 +55,18 @@ export async function readApkInfo(apkBuffer) {
   const manifest = parseAndroidManifest(manifestBytes);
 
   let appName = normalizeText(manifest.applicationLabel);
-  if (!appName && manifest.applicationLabelRef != null) {
-    const resourcesEntry = zipEntries.get("resources.arsc");
-    if (resourcesEntry) {
-      try {
-        const resourcesBytes = await extractZipEntry(apkBytes, resourcesEntry);
-        const resources = parseResourcesTable(resourcesBytes);
-        appName = normalizeText(resources.resolveString(manifest.applicationLabelRef));
-      } catch {
-        appName = null;
-      }
-    }
+  if (!appName && manifest.applicationLabelRef != null && resources) {
+    appName = normalizeText(resources.resolveString(manifest.applicationLabelRef));
   }
 
   if (!appName && manifest.applicationLabelRef != null) {
     appName = formatResourceReference(manifest.applicationLabelRef);
   }
+
+  const metaData = {
+    application: resolveApplicationMetaData(manifest.metaData.application, resources),
+    components: [],
+  };
 
   return {
     appName: appName || "未知",
@@ -69,11 +75,374 @@ export async function readApkInfo(apkBuffer) {
     versionCode: normalizeText(manifest.versionCode) || "未知",
     minSdk: normalizeText(manifest.minSdk) || "未知",
     targetSdk: normalizeText(manifest.targetSdk) || "未知",
+    compileSdk: normalizeText(manifest.compileSdk) || "未知",
     permissions: manifest.permissions,
     nativeLibraries,
     components: manifest.components,
-    metaData: manifest.metaData,
+    metaData,
+    buildFeatures,
   };
+}
+
+async function detectBuildFeatures(apkBytes, zipEntries) {
+  const appMetadata = await readAppMetadata(apkBytes, zipEntries);
+  const composeMetadata = await readComposeMetadata(apkBytes, zipEntries);
+  const featureMarkers = await scanDexFeatureMarkers(apkBytes, zipEntries, {
+    skipComposeDexScan: composeMetadata.detected,
+  });
+  const kotlinTooling = await readKotlinToolingMetadata(apkBytes, zipEntries);
+
+  return {
+    kotlinDetected: featureMarkers.kotlinDetected || kotlinTooling.detected,
+    kotlinVersion: kotlinTooling.kotlinVersion || null,
+    gradleVersion: kotlinTooling.gradleVersion || null,
+    composeDetected: composeMetadata.detected || featureMarkers.composeDetected,
+    composeVersion: composeMetadata.composeVersion || null,
+    agpVersion: appMetadata.androidGradlePluginVersion || null,
+    appMetadataVersion: appMetadata.appMetadataVersion || null,
+  };
+}
+
+async function readAppMetadata(apkBytes, zipEntries) {
+  const metadataEntry =
+    zipEntries.get("META-INF/com/android/build/gradle/app-metadata.properties") ||
+    zipEntries.get("BUNDLE-METADATA/com.android.tools.build.gradle/app-metadata.properties");
+
+  if (!metadataEntry) {
+    return {
+      appMetadataVersion: null,
+      androidGradlePluginVersion: null,
+    };
+  }
+
+  const metadataBytes = await extractZipEntry(apkBytes, metadataEntry);
+  const metadataText = decodeUtf8(metadataBytes);
+  const properties = parseProperties(metadataText);
+
+  return {
+    appMetadataVersion: properties.appMetadataVersion || null,
+    androidGradlePluginVersion: properties.androidGradlePluginVersion || null,
+  };
+}
+
+async function scanDexFeatureMarkers(apkBytes, zipEntries, options = {}) {
+  let kotlinDetected = hasKotlinModule(zipEntries);
+  let composeDetected = Boolean(options.skipComposeDexScan);
+
+  const dexEntries = [...zipEntries.entries()]
+    .filter(([path]) => /^classes\d*\.dex$/u.test(path))
+    .sort(([left], [right]) => left.localeCompare(right));
+
+  const kotlinNeedles = [
+    "Lkotlin/Metadata;",
+    "kotlin/Unit",
+    "kotlin/coroutines/",
+  ];
+
+  for (const [, entry] of dexEntries) {
+    if (kotlinDetected && composeDetected) {
+      break;
+    }
+
+    const dexBytes = await extractZipEntry(apkBytes, entry);
+
+    if (!kotlinDetected && containsAnyAscii(dexBytes, kotlinNeedles)) {
+      kotlinDetected = true;
+    }
+
+    if (!composeDetected && dexDefinesClassWithPrefix(dexBytes, ["Landroidx/compose/"])) {
+      composeDetected = true;
+    }
+  }
+
+  return {
+    kotlinDetected,
+    composeDetected,
+  };
+}
+
+async function readKotlinToolingMetadata(apkBytes, zipEntries) {
+  const entry = zipEntries.get("kotlin-tooling-metadata.json");
+  if (!entry) {
+    return {
+      detected: false,
+      kotlinVersion: null,
+      gradleVersion: null,
+    };
+  }
+
+  try {
+    const bytes = await extractZipEntry(apkBytes, entry);
+    const metadata = JSON.parse(decodeUtf8(bytes));
+    const projectTargets = Array.isArray(metadata?.projectTargets) ? metadata.projectTargets : [];
+    const kotlinAndroidTarget = projectTargets.find(
+      (target) =>
+        target?.target === "org.jetbrains.kotlin.gradle.plugin.mpp.KotlinAndroidTarget",
+    );
+    const kotlinPluginDetected =
+      metadata?.buildPlugin === "org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper" ||
+      Boolean(kotlinAndroidTarget);
+
+    return {
+      detected: Boolean(kotlinPluginDetected),
+      kotlinVersion: kotlinPluginDetected ? normalizeVersionText(metadata?.buildPluginVersion) : null,
+      gradleVersion:
+        metadata?.buildSystem === "Gradle"
+          ? normalizeVersionText(metadata?.buildSystemVersion)
+          : null,
+    };
+  } catch {
+    return {
+      detected: true,
+      kotlinVersion: null,
+      gradleVersion: null,
+    };
+  }
+}
+
+async function readComposeMetadata(apkBytes, zipEntries) {
+  const detected = hasComposeMetaInfEntries(zipEntries);
+  let composeVersion = null;
+
+  for (const path of COMPOSE_VERSION_ENTRY_CANDIDATES) {
+    const entry = zipEntries.get(path);
+    if (!entry) {
+      continue;
+    }
+
+    const bytes = await extractZipEntry(apkBytes, entry);
+    composeVersion = normalizeVersionText(decodeUtf8(bytes));
+    if (composeVersion) {
+      break;
+    }
+  }
+
+  return {
+    detected: detected || Boolean(composeVersion),
+    composeVersion,
+  };
+}
+
+async function readApkResources(apkBytes, zipEntries) {
+  const resourcesEntry = zipEntries.get("resources.arsc");
+  if (!resourcesEntry) {
+    return null;
+  }
+
+  try {
+    const resourcesBytes = await extractZipEntry(apkBytes, resourcesEntry);
+    return parseResourcesTable(resourcesBytes);
+  } catch {
+    return null;
+  }
+}
+
+function resolveApplicationMetaData(items, resources) {
+  return items.map((item) => resolveMetaDataItem(item, resources));
+}
+
+function resolveMetaDataItem(item, resources) {
+  if (!item?.hasResourceReference || item.resourceId == null || !resources) {
+    return item;
+  }
+
+  const resolvedValue = normalizeText(resources.resolveString(item.resourceId));
+  if (!resolvedValue) {
+    return item;
+  }
+
+  return {
+    ...item,
+    value: resolvedValue,
+    resolvedFromResource: true,
+  };
+}
+
+function hasComposeMetaInfEntries(zipEntries) {
+  for (const path of zipEntries.keys()) {
+    if (!path.startsWith("META-INF/") || !path.endsWith(".version")) {
+      continue;
+    }
+
+    const fileName = path.slice("META-INF/".length);
+    if (fileName.startsWith("androidx.compose.ui") || fileName.startsWith("androidx.compose.material")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasKotlinModule(zipEntries) {
+  for (const path of zipEntries.keys()) {
+    if (path.startsWith("META-INF/") && path.endsWith(".kotlin_module")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function containsAnyAscii(bytes, needles) {
+  return needles.some((needle) => containsAscii(bytes, needle));
+}
+
+function containsAscii(bytes, needle) {
+  const encodedNeedle = asciiBytes(needle);
+  if (encodedNeedle.length === 0 || encodedNeedle.length > bytes.length) {
+    return false;
+  }
+
+  const lastStart = bytes.length - encodedNeedle.length;
+  for (let start = 0; start <= lastStart; start += 1) {
+    if (bytes[start] !== encodedNeedle[0]) {
+      continue;
+    }
+
+    let matched = true;
+    for (let index = 1; index < encodedNeedle.length; index += 1) {
+      if (bytes[start + index] !== encodedNeedle[index]) {
+        matched = false;
+        break;
+      }
+    }
+
+    if (matched) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function dexDefinesClassWithPrefix(bytes, prefixes) {
+  try {
+    const strings = parseDexStrings(bytes);
+    if (strings.length === 0) {
+      return false;
+    }
+
+    const typeDescriptors = parseDexTypeDescriptors(bytes, strings);
+    const classDefsSize = readUint32(bytes, 0x60);
+    const classDefsOffset = readUint32(bytes, 0x64);
+
+    for (let index = 0; index < classDefsSize; index += 1) {
+      const classDefOffset = classDefsOffset + index * 32;
+      const classIndex = readUint32(bytes, classDefOffset);
+      const descriptor = typeDescriptors[classIndex];
+      if (descriptor && prefixes.some((prefix) => descriptor.startsWith(prefix))) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function parseDexStrings(bytes) {
+  const size = readUint32(bytes, 0x38);
+  const offset = readUint32(bytes, 0x3c);
+  if (!size || !offset) {
+    return [];
+  }
+
+  const strings = new Array(size);
+  for (let index = 0; index < size; index += 1) {
+    const stringDataOffset = readUint32(bytes, offset + index * 4);
+    strings[index] = readDexString(bytes, stringDataOffset);
+  }
+
+  return strings;
+}
+
+function parseDexTypeDescriptors(bytes, strings) {
+  const size = readUint32(bytes, 0x40);
+  const offset = readUint32(bytes, 0x44);
+  if (!size || !offset) {
+    return [];
+  }
+
+  const descriptors = new Array(size);
+  for (let index = 0; index < size; index += 1) {
+    descriptors[index] = strings[readUint32(bytes, offset + index * 4)] || null;
+  }
+
+  return descriptors;
+}
+
+function readDexString(bytes, offset) {
+  if (!offset) {
+    return "";
+  }
+
+  const lengthInfo = readUleb128(bytes, offset);
+  let end = lengthInfo.nextOffset;
+  while (end < bytes.length && bytes[end] !== 0) {
+    end += 1;
+  }
+
+  return decodeUtf8(bytes.subarray(lengthInfo.nextOffset, end));
+}
+
+function readUleb128(bytes, offset) {
+  let result = 0;
+  let shift = 0;
+  let cursor = offset;
+
+  while (cursor < bytes.length) {
+    const byte = bytes[cursor];
+    result |= (byte & 0x7f) << shift;
+    cursor += 1;
+    if ((byte & 0x80) === 0) {
+      break;
+    }
+    shift += 7;
+  }
+
+  return {
+    value: result >>> 0,
+    nextOffset: cursor,
+  };
+}
+
+function normalizeVersionText(value) {
+  const normalized = normalizeText(value);
+  return normalized ? normalized.replace(/\r?\n/gu, "").trim() : null;
+}
+
+
+function asciiBytes(text) {
+  const bytes = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index += 1) {
+    bytes[index] = text.charCodeAt(index) & 0x7f;
+  }
+  return bytes;
+}
+
+function parseProperties(text) {
+  const result = {};
+
+  for (const rawLine of text.split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || line.startsWith("!")) {
+      continue;
+    }
+
+    const separatorIndex = line.search(/[:=]/u);
+    if (separatorIndex < 0) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    if (key) {
+      result[key] = value;
+    }
+  }
+
+  return result;
 }
 
 function collectNativeLibraries(zipEntries) {
@@ -212,6 +581,7 @@ function parseAndroidManifest(manifestBuffer) {
     versionCode: null,
     minSdk: null,
     targetSdk: null,
+    compileSdk: null,
     applicationLabel: null,
     applicationLabelRef: null,
     components: {
@@ -262,6 +632,9 @@ function handleManifestStartElement(manifest, element, stack, permissions, seenP
   if (element.name === "manifest") {
     manifest.packageName = normalizeText(getAttribute("package")?.displayValue);
     manifest.versionName = normalizeText(getAttribute("versionName")?.displayValue);
+    manifest.compileSdk =
+      normalizeText(getAttribute("compileSdkVersion")?.displayValue) ||
+      normalizeText(getAttribute("platformBuildVersionCode")?.displayValue);
 
     const versionCodeLow = toInteger(getAttribute("versionCode"));
     const versionCodeHigh = toInteger(getAttribute("versionCodeMajor"));
@@ -424,16 +797,6 @@ function collectManifestMetaData(manifest, element, parent) {
 
   if (parent?.kind === "application" || parent?.name === "application") {
     manifest.metaData.application.push(metaData);
-    return;
-  }
-
-  if (parent?.kind === "component" && parent.ref) {
-    parent.ref.metaData.push(metaData);
-    manifest.metaData.components.push({
-      ownerType: parent.ref.type,
-      ownerName: parent.ref.name,
-      ...metaData,
-    });
   }
 }
 
@@ -452,10 +815,12 @@ function buildMetaDataInfo(element) {
   return {
     name,
     value,
+    resourceId: rawAttribute?.resourceId ?? null,
     hasResourceReference: Boolean(
       rawAttribute &&
         (rawAttribute.dataType === TYPE_REFERENCE || rawAttribute.dataType === TYPE_DYNAMIC_REFERENCE),
     ),
+    resolvedFromResource: false,
   };
 }
 
