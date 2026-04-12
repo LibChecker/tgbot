@@ -100,6 +100,7 @@ async function detectBuildFeatures(apkBytes, zipEntries) {
     composeVersion: composeMetadata.composeVersion || null,
     agpVersion: appMetadata.androidGradlePluginVersion || null,
     appMetadataVersion: appMetadata.appMetadataVersion || null,
+    nativeValidation: featureMarkers.nativeValidation,
   };
 }
 
@@ -128,6 +129,9 @@ async function readAppMetadata(apkBytes, zipEntries) {
 async function scanDexFeatureMarkers(apkBytes, zipEntries, options = {}) {
   let kotlinDetected = hasKotlinModule(zipEntries);
   let composeDetected = Boolean(options.skipComposeDexScan);
+  let qihooDetected = false;
+  let secneoDetected = false;
+  let flutterInjectorDetected = false;
 
   const dexEntries = [...zipEntries.entries()]
     .filter(([path]) => /^classes\d*\.dex$/u.test(path))
@@ -150,14 +154,34 @@ async function scanDexFeatureMarkers(apkBytes, zipEntries, options = {}) {
       kotlinDetected = true;
     }
 
-    if (!composeDetected && dexDefinesClassWithPrefix(dexBytes, ["Landroidx/compose/"])) {
-      composeDetected = true;
+    const definedClassDescriptors = parseDexDefinedClassDescriptorsSafe(dexBytes);
+    if (definedClassDescriptors.length > 0) {
+      if (!composeDetected && hasDescriptorWithPrefix(definedClassDescriptors, ["Landroidx/compose/"])) {
+        composeDetected = true;
+      }
+
+      if (!qihooDetected && hasDescriptorWithPrefix(definedClassDescriptors, ["Lcom/qihoo/util/", "Lcom/tianyu/util/"])) {
+        qihooDetected = true;
+      }
+
+      if (!secneoDetected && hasDescriptorWithPrefix(definedClassDescriptors, ["Lcom/secneo/apkwrapper/"])) {
+        secneoDetected = true;
+      }
+
+      if (!flutterInjectorDetected && hasDescriptorWithPrefix(definedClassDescriptors, ["Lio/flutter/FlutterInjector;"])) {
+        flutterInjectorDetected = true;
+      }
     }
   }
 
   return {
     kotlinDetected,
     composeDetected,
+    nativeValidation: {
+      qihooDetected,
+      secneoDetected,
+      flutterInjectorDetected,
+    },
   };
 }
 
@@ -317,28 +341,45 @@ function containsAscii(bytes, needle) {
 
 function dexDefinesClassWithPrefix(bytes, prefixes) {
   try {
-    const strings = parseDexStrings(bytes);
-    if (strings.length === 0) {
-      return false;
-    }
-
-    const typeDescriptors = parseDexTypeDescriptors(bytes, strings);
-    const classDefsSize = readUint32(bytes, 0x60);
-    const classDefsOffset = readUint32(bytes, 0x64);
-
-    for (let index = 0; index < classDefsSize; index += 1) {
-      const classDefOffset = classDefsOffset + index * 32;
-      const classIndex = readUint32(bytes, classDefOffset);
-      const descriptor = typeDescriptors[classIndex];
-      if (descriptor && prefixes.some((prefix) => descriptor.startsWith(prefix))) {
-        return true;
-      }
-    }
-
-    return false;
+    return hasDescriptorWithPrefix(parseDexDefinedClassDescriptors(bytes), prefixes);
   } catch {
     return false;
   }
+}
+
+function parseDexDefinedClassDescriptorsSafe(bytes) {
+  try {
+    return parseDexDefinedClassDescriptors(bytes);
+  } catch {
+    return [];
+  }
+}
+
+function parseDexDefinedClassDescriptors(bytes) {
+  const strings = parseDexStrings(bytes);
+  if (strings.length === 0) {
+    return [];
+  }
+
+  const typeDescriptors = parseDexTypeDescriptors(bytes, strings);
+  const classDefsSize = readUint32(bytes, 0x60);
+  const classDefsOffset = readUint32(bytes, 0x64);
+  const descriptors = [];
+
+  for (let index = 0; index < classDefsSize; index += 1) {
+    const classDefOffset = classDefsOffset + index * 32;
+    const classIndex = readUint32(bytes, classDefOffset);
+    const descriptor = typeDescriptors[classIndex];
+    if (descriptor) {
+      descriptors.push(descriptor);
+    }
+  }
+
+  return descriptors;
+}
+
+function hasDescriptorWithPrefix(descriptors, prefixes) {
+  return descriptors.some((descriptor) => prefixes.some((prefix) => descriptor.startsWith(prefix)));
 }
 
 function parseDexStrings(bytes) {
@@ -681,6 +722,14 @@ function handleManifestStartElement(manifest, element, stack, permissions, seenP
     return;
   }
 
+  if (element.name === "action" && parent?.kind === "intent-filter" && parent.ref?.component) {
+    const action = normalizeText(getAttribute("name")?.displayValue);
+    if (action && !parent.ref.component.actions.includes(action)) {
+      parent.ref.component.actions.push(action);
+    }
+    return;
+  }
+
   if (element.name === "meta-data") {
     collectManifestMetaData(manifest, element, parent);
   }
@@ -701,6 +750,14 @@ function buildManifestStackNode(manifest, element, parent) {
   if (isManifestComponentElement(element.name) && parent?.name === "application") {
     node.kind = "component";
     node.ref = getLatestComponentForElement(manifest, element.name);
+    return node;
+  }
+
+  if (element.name === "intent-filter" && parent?.kind === "component" && parent.ref) {
+    node.kind = "intent-filter";
+    node.ref = {
+      component: parent.ref,
+    };
   }
 
   return node;
@@ -785,6 +842,7 @@ function buildComponentInfo(packageName, element) {
     ),
     label,
     labelRef,
+    actions: [],
     metaData: [],
   };
 }

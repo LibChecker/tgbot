@@ -1,17 +1,32 @@
+import { LIBCHECKER_SDK_ICON_SVGS } from "./generated/libchecker-sdk-icons.js";
+
 const SVG_HEADERS = {
   "content-type": "image/svg+xml; charset=UTF-8",
   "cache-control": "public, max-age=300",
 };
 
 const ICON_VERSION = "libchecker-20260412";
+const SDK_ICON_VERSION = "libchecker-rules-20260412";
 
 export function handleIconRequest(pathname) {
-  const iconName = pathname.match(/^\/assets\/icons\/([a-z0-9_-]+)\.svg$/u)?.[1];
-  if (!iconName) {
+  const featureIconName = pathname.match(/^\/assets\/icons\/([a-z0-9_-]+)\.svg$/u)?.[1];
+  if (featureIconName) {
+    const svg = FEATURE_ICON_SVGS[featureIconName];
+    if (!svg) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    return new Response(svg, {
+      headers: SVG_HEADERS,
+    });
+  }
+
+  const sdkIconName = pathname.match(/^\/assets\/sdk-icons\/([a-z0-9_-]+)\.svg$/u)?.[1];
+  if (!sdkIconName) {
     return null;
   }
 
-  const svg = ICON_SVGS[iconName];
+  const svg = LIBCHECKER_SDK_ICON_SVGS[sdkIconName];
   if (!svg) {
     return new Response("Not Found", { status: 404 });
   }
@@ -25,7 +40,11 @@ export function buildFeatureIconUrl(baseUrl, name) {
   return `${baseUrl.replace(/\/+$/u, "")}/assets/icons/${name}.svg?v=${ICON_VERSION}`;
 }
 
-const ICON_SVGS = {
+export function buildSdkIconUrl(baseUrl, iconName) {
+  return `${baseUrl.replace(/\/+$/u, "")}/assets/sdk-icons/${iconName}.svg?v=${SDK_ICON_VERSION}`;
+}
+
+const FEATURE_ICON_SVGS = {
   kotlin: createSvg(
     `
       <defs>

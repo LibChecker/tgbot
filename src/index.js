@@ -1,6 +1,7 @@
 import { readApkInfo } from "./apk.js";
-import { buildFeatureIconUrl, handleIconRequest } from "./icons.js";
+import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { handleReportRequest } from "./report-viewer.js";
+import { annotateSdkMarkers } from "./sdk-markers.js";
 import { createApkTelegraphPage } from "./telegraph.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -537,8 +538,14 @@ function supportsChatAction(chatType) {
 }
 
 function buildApkReport(message, document, apkInfo, publicBaseUrl) {
+  const resolveSdkIconUrl = (iconName) => buildSdkIconUrl(publicBaseUrl, iconName);
+  const sdkAnnotated = annotateSdkMarkers(apkInfo, resolveSdkIconUrl);
+
   return {
-    apkInfo,
+    apkInfo: {
+      ...apkInfo,
+      ...sdkAnnotated,
+    },
     fileName: document.file_name || "unknown.apk",
     fileSizeText: formatBytes(document.file_size || 0),
     sourceLabel: describeMessageSource(message),
@@ -693,6 +700,11 @@ function formatApkSummary(report) {
     `meta-data 数量: <b>${countMetaData(report.apkInfo.metaData)}</b>`,
   ];
 
+  const sdkMarkerSummary = formatSdkMarkerSummary(report.apkInfo.sdkSummary);
+  if (sdkMarkerSummary) {
+    lines.push(`SDK 标记: ${sdkMarkerSummary}`);
+  }
+
   const featureHtml = formatFeatureChipsHtml(report.apkInfo.buildFeatures);
   if (featureHtml) {
     lines.push(`特性: ${featureHtml}`);
@@ -700,6 +712,22 @@ function formatApkSummary(report) {
 
   lines.push("", "完整报告请使用下方按钮打开。");
   return lines.join("\n");
+}
+
+function formatSdkMarkerSummary(sdkSummary) {
+  if (!sdkSummary) {
+    return "";
+  }
+
+  const parts = [];
+  if (sdkSummary.native.length > 0) {
+    parts.push(`原生库 <b>${sdkSummary.native.length}</b>`);
+  }
+  if (sdkSummary.components.length > 0) {
+    parts.push(`组件 <b>${sdkSummary.components.length}</b>`);
+  }
+
+  return parts.join(" · ");
 }
 
 function formatFeatureChipsHtml(buildFeatures) {

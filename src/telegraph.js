@@ -155,12 +155,14 @@ function buildTelegraphContent(report) {
     );
   }
 
+  pushSdkSummarySection(sections, report.apkInfo.sdkSummary?.native, "原生库 SDK 标记");
   pushNativeLibraries(sections, report.apkInfo.nativeLibraries);
 
   sections.push(hrNode(), h3("权限"));
   pushPermissions(sections, report.apkInfo.permissions);
 
   sections.push(hrNode(), h3("组件"));
+  pushSdkSummarySection(sections, report.apkInfo.sdkSummary?.components, "已标记的 SDK");
   pushComponentSection(sections, "Activity", report.apkInfo.components.activities);
   pushComponentSection(sections, "Service", report.apkInfo.components.services);
   pushComponentSection(sections, "Receiver", report.apkInfo.components.receivers);
@@ -220,14 +222,27 @@ function pushMetaDataSection(sections, metaDataItems) {
   sections.push(unorderedList(metaDataItems.map((item) => metaDataItem(item))));
 }
 
+function pushSdkSummarySection(sections, entries, title) {
+  if (!entries || entries.length === 0) {
+    return;
+  }
+
+  sections.push(h4(title));
+  sections.push(unorderedList(entries.map((entry) => sdkSummaryItem(entry))));
+}
+
 function nativeLibraryItem(library) {
+  const children = [codeNode(library.name)];
+
+  if (library.sdk) {
+    children.push(brNode(), ...sdkChipNodes(library.sdk));
+  }
+
+  children.push(brNode(), emNode(`${formatBytes(library.size)} · ${library.path}`));
+
   return {
     tag: "li",
-    children: [
-      codeNode(library.name),
-      brNode(),
-      emNode(`${formatBytes(library.size)} · ${library.path}`),
-    ],
+    children,
   };
 }
 
@@ -243,6 +258,10 @@ function componentItem(component) {
 
   if (component.shortName && component.shortName !== component.name) {
     children.push(brNode(), emNode(component.name));
+  }
+
+  if (component.sdk) {
+    children.push(brNode(), ...sdkChipNodes(component.sdk));
   }
 
   const detailLines = [];
@@ -343,6 +362,48 @@ function buildFeatureDetails(buildFeatures) {
   }
 
   return details;
+}
+
+function sdkSummaryItem(entry) {
+  const children = [
+    imageNode(entry.iconUrl),
+    " ",
+    strongNode(entry.label),
+    " ",
+    codeNode(String(entry.count)),
+  ];
+
+  if (entry.detail) {
+    children.push(brNode(), emNode(entry.detail));
+  }
+
+  if (entry.previewItems?.length > 0) {
+    children.push(brNode(), ...codeListNodes(entry.previewItems));
+  }
+
+  return {
+    tag: "li",
+    children,
+  };
+}
+
+function sdkChipNodes(sdk) {
+  return [
+    imageNode(sdk.iconUrl),
+    " ",
+    codeNode(sdk.label),
+  ];
+}
+
+function codeListNodes(items) {
+  const children = [];
+  items.forEach((item, index) => {
+    if (index > 0) {
+      children.push(" ");
+    }
+    children.push(codeNode(item));
+  });
+  return children;
 }
 
 function textLine(text) {

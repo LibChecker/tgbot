@@ -17,10 +17,11 @@
    - 应用名
    - 包名
    - versionName / versionCode
-   - minSdk / targetSdk
-   - 构建特性（Kotlin / Compose / AGP 版本）
+   - Target / Min / Compile SDK
+   - 构建特性（Kotlin / Compose / Gradle / AGP，能解析到版本时会直接显示版本）
    - 原生库列表（按 ABI 分组）
    - 组件（Activity / Service / Receiver / Provider）
+   - 基于 LibChecker-Rules-Bundle 的原生库 / 组件 SDK 标记、图标与分布图表
    - 权限数量
    - 完整权限列表
    - application 级 `meta-data`（字符串资源引用会尽量解析成人类可读文本）
@@ -31,6 +32,7 @@
 - APK 解析：纯 JavaScript，在 Worker 内直接解析 `AndroidManifest.xml` 与 `resources.arsc`。
 - 展示方式：Telegram 消息仅返回摘要，完整结果优先通过 Worker 自带报告页展示，Telegraph 作为存储与备用链接。
 - 信息维度：参考 LibChecker 常见 APK 分析视图，输出构建特性、原生库、组件、权限和 application 级 `meta-data`。
+- SDK 标记：原生库与组件会结合 [LibChecker-Rules-Bundle](https://github.com/LibChecker/LibChecker-Rules-Bundle) 规则库匹配 SDK 名称、图标，并生成分布图表；组件匹配逻辑对齐 `DetailViewModel`，优先按类名规则匹配，失败时再用 `intent-filter action` 兜底。
 - 不再依赖 Python、轮询进程或 `androguard`。
 - 自带受保护的 webhook 管理接口，可直接通过 Worker 自动注册 Telegram webhook。
 - 自带受保护的命令管理接口，可直接同步 Telegram 的 `/` 命令菜单。

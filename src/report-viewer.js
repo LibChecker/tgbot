@@ -274,6 +274,10 @@ function renderReportPage(page) {
         border-radius: 18px;
       }
 
+      .group-card.group-card--wide {
+        grid-column: 1 / -1;
+      }
+
       .group-card h4 {
         margin-top: 0;
       }
@@ -324,6 +328,86 @@ function renderReportPage(page) {
       .chip-cloud code {
         margin: 0;
         padding: 0.36em 0.72em;
+      }
+
+      .sdk-chart {
+        display: grid;
+        gap: 14px;
+      }
+
+      .sdk-chart-row {
+        padding: 16px;
+        background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.96));
+        border: 1px solid rgba(229, 231, 235, 0.95);
+        border-radius: 18px;
+      }
+
+      .sdk-chart-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .sdk-chart-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        font-weight: 700;
+        color: #0f172a;
+      }
+
+      .sdk-chart-title img {
+        flex: 0 0 auto;
+        margin: 0;
+      }
+
+      .sdk-chart-label {
+        min-width: 0;
+        word-break: break-word;
+      }
+
+      .sdk-chart-count {
+        flex: 0 0 auto;
+        padding: 0.2em 0.65em;
+        border-radius: 999px;
+        background: var(--code-bg);
+        font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+        font-size: 0.95rem;
+      }
+
+      .sdk-chart-bar-shell {
+        margin-top: 12px;
+        height: 10px;
+        background: rgba(226, 232, 240, 0.9);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .sdk-chart-bar {
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #1d4ed8, #0ea5e9);
+      }
+
+      .sdk-chart-meta {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.7;
+      }
+
+      .sdk-chart-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .sdk-chart-preview code {
+        margin: 0;
+        padding: 0.32em 0.7em;
       }
 
       a {
@@ -505,8 +589,13 @@ function renderGroupGrid(cards, sectionTitle) {
 }
 
 function renderGroupCard(headingNode, bodyNodes) {
+  const title = extractText(headingNode?.children || []).trim();
+  const className =
+    title.includes("SDK 标记") || title.includes("已标记的 SDK")
+      ? "group-card group-card--wide"
+      : "group-card";
   return [
-    '<article class="group-card">',
+    `<article class="${className}">`,
     renderNode(headingNode),
     bodyNodes.map((node) => renderBodyNode(node)).join(""),
     "</article>",
@@ -611,6 +700,10 @@ function renderPlainParagraph(node) {
 }
 
 function renderListNode(node) {
+  if (isSdkSummaryList(node)) {
+    return renderSdkSummaryList(node);
+  }
+
   if (isCodeOnlyList(node)) {
     return renderChipCloud(node);
   }
@@ -655,6 +748,40 @@ function renderChipCloud(node) {
     .join("");
 
   return `<div class="chip-cloud">${chips}</div>`;
+}
+
+function renderSdkSummaryList(node) {
+  const items = parseSdkSummaryItems(node);
+  if (items.length === 0) {
+    return renderListPanel(node);
+  }
+
+  const maxCount = Math.max(...items.map((item) => item.count), 1);
+  return [
+    '<div class="sdk-chart">',
+    items.map((item) => renderSdkSummaryRow(item, maxCount)).join(""),
+    "</div>",
+  ].join("");
+}
+
+function renderSdkSummaryRow(item, maxCount) {
+  const width = Math.max(12, Math.round((item.count / maxCount) * 100));
+  return [
+    '<article class="sdk-chart-row">',
+    '<div class="sdk-chart-header">',
+    '<div class="sdk-chart-title">',
+    item.iconUrl ? `<img src="${escapeHtml(item.iconUrl)}" alt="" loading="lazy">` : "",
+    `<span class="sdk-chart-label">${escapeHtml(item.label)}</span>`,
+    "</div>",
+    `<span class="sdk-chart-count">${escapeHtml(String(item.count))}</span>`,
+    "</div>",
+    `<div class="sdk-chart-bar-shell"><div class="sdk-chart-bar" style="width:${width}%"></div></div>`,
+    item.detail ? `<div class="sdk-chart-meta">${escapeHtml(item.detail)}</div>` : "",
+    item.preview.length > 0
+      ? `<div class="sdk-chart-preview">${item.preview.map((value) => `<code>${escapeHtml(value)}</code>`).join("")}</div>`
+      : "",
+    "</article>",
+  ].join("");
 }
 
 function renderSimpleTextList(node) {
@@ -773,6 +900,63 @@ function isSimpleTextList(node) {
 
     return isPlainTextOnly(child.children || []);
   });
+}
+
+function isSdkSummaryList(node) {
+  if (!node || node.tag !== "ul") {
+    return false;
+  }
+
+  const items = parseSdkSummaryItems(node);
+  const listItems = (node.children || []).filter((child) => child?.tag === "li");
+  return listItems.length > 0 && items.length === listItems.length;
+}
+
+function parseSdkSummaryItems(node) {
+  return (node.children || [])
+    .filter((child) => child?.tag === "li")
+    .map((child) => parseSdkSummaryItem(child))
+    .filter(Boolean);
+}
+
+function parseSdkSummaryItem(node) {
+  const lines = splitChildrenByBreaks(node.children || []).filter((line) => line.length > 0);
+  const firstLine = lines[0] || [];
+  const iconNode = firstLine.find((part) => part?.tag === "img") || null;
+  const labelNode = firstLine.find((part) => part?.tag === "strong") || null;
+  const countNode = firstLine.find((part) => part?.tag === "code") || null;
+  const label = extractText(labelNode?.children || []).trim();
+  const countText = extractText(countNode?.children || []).trim();
+  const count = Number.parseInt(countText, 10);
+
+  if (!label || Number.isNaN(count)) {
+    return null;
+  }
+
+  return {
+    iconUrl: iconNode?.attrs?.src || "",
+    label,
+    count,
+    detail: extractText(lines[1] || []).trim(),
+    preview: parseSdkPreviewLine(lines[2] || []),
+  };
+}
+
+function parseSdkPreviewLine(nodes) {
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    return [];
+  }
+
+  const codes = nodes
+    .filter((node) => node?.tag === "code")
+    .map((node) => extractText(node.children || []).trim())
+    .filter(Boolean);
+  if (codes.length > 0) {
+    return codes;
+  }
+
+  const text = extractText(nodes).trim();
+  return text ? [text] : [];
 }
 
 function isCodeOnlyList(node) {

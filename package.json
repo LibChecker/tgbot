@@ -13,7 +13,7 @@
     "commands:set": "node scripts/manage-webhook.mjs commands:set",
     "commands:info": "node scripts/manage-webhook.mjs commands:info",
     "commands:delete": "node scripts/manage-webhook.mjs commands:delete",
-    "check": "node --check src/index.js && node --check src/apk.js && node --check src/icons.js && node --check src/report-viewer.js && node --check src/telegraph.js && node --check scripts/manage-webhook.mjs"
+    "check": "node --check src/index.js && node --check src/apk.js && node --check src/icons.js && node --check src/sdk-markers.js && node --check src/report-viewer.js && node --check src/telegraph.js && node --check src/generated/libchecker-rules.js && node --check src/generated/libchecker-sdk-icons.js && node --check scripts/manage-webhook.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
