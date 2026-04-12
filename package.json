@@ -1,0 +1,18 @@
+{
+  "name": "tgbot-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:setup": "wrangler deploy && node scripts/manage-webhook.mjs set",
+    "webhook:set": "node scripts/manage-webhook.mjs set",
+    "webhook:info": "node scripts/manage-webhook.mjs info",
+    "webhook:delete": "node scripts/manage-webhook.mjs delete",
+    "check": "node --check src/index.js && node --check src/apk.js && node --check src/telegraph.js && node --check scripts/manage-webhook.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
