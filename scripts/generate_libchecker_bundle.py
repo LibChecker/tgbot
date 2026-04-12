@@ -1,24 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import sys
+import tempfile
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
-RULE_DB_PATH = Path("tmp_rules.db")
 OUTPUT_DIR = Path("src/generated")
 RULES_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules.js"
 ICONS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-sdk-icons.js"
 
-RULES_BUNDLE_RAW_ROOT = (
-    "https://raw.githubusercontent.com/LibChecker/LibChecker-Rules-Bundle/main/library/src/main"
-)
-ICON_RES_MAP_URL = f"{RULES_BUNDLE_RAW_ROOT}/java/com/absinthe/rulesbundle/IconResMap.kt"
-DRAWABLE_BASE_URL = f"{RULES_BUNDLE_RAW_ROOT}/res/drawable"
+DEFAULT_RULES_REF = "main"
 
 RELEVANT_RULE_TYPES = {0, 1, 2, 3, 4, 9}
 
@@ -53,38 +50,51 @@ MANUAL_SVGS = {
 
 
 def main() -> int:
-    if not RULE_DB_PATH.exists():
-        print(f"Missing rules database: {RULE_DB_PATH}", file=sys.stderr)
-        return 1
+    rules_ref = parse_rules_ref(sys.argv[1:])
+    rules_root = build_rules_bundle_root(rules_ref)
+    rule_db_url = f"{rules_root}/assets/lcrules/rules.db"
+    icon_res_map_url = (
+        f"{rules_root}/java/com/absinthe/rulesbundle/IconResMap.kt"
+    )
+    drawable_base_url = f"{rules_root}/res/drawable"
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    temp_rule_db_path: Path | None = None
 
-    icon_map_text = fetch_text(ICON_RES_MAP_URL)
-    icon_index_map, single_color_indexes = parse_icon_res_map(icon_map_text)
-    rules = load_rules(RULE_DB_PATH, icon_index_map, single_color_indexes)
-    icon_names = sorted(
-        {
-            rule["iconName"]
-            for rule in rules
-            if rule.get("iconName")
-        }
-    )
-    icon_svgs = {}
-    placeholder_svg = None
+    try:
+        temp_rule_db_path = download_rule_db_to_temp(rule_db_url)
+        print(f"Using LibChecker-Rules-Bundle ref: {rules_ref}")
+        icon_map_text = fetch_text(icon_res_map_url)
+        icon_index_map, single_color_indexes = parse_icon_res_map(icon_map_text)
+        rules = load_rules(temp_rule_db_path, icon_index_map, single_color_indexes)
+        icon_names = sorted(
+            {
+                rule["iconName"]
+                for rule in rules
+                if rule.get("iconName")
+            }
+        )
+        icon_svgs = {}
+        placeholder_svg = None
 
-    for icon_name in icon_names:
-        svg = MANUAL_SVGS.get(icon_name)
-        if svg is None:
-            xml_text = fetch_text(f"{DRAWABLE_BASE_URL}/{icon_name}.xml")
-            svg = convert_vector_xml_to_svg(xml_text, icon_name)
-        if icon_name == "ic_sdk_placeholder":
-            placeholder_svg = svg
-        icon_svgs[icon_name] = svg
+        for icon_name in icon_names:
+            svg = MANUAL_SVGS.get(icon_name)
+            if svg is None:
+                xml_text = fetch_text(f"{drawable_base_url}/{icon_name}.xml")
+                svg = convert_vector_xml_to_svg(xml_text, icon_name)
+            if icon_name == "ic_sdk_placeholder":
+                placeholder_svg = svg
+            icon_svgs[icon_name] = svg
 
-    if placeholder_svg:
-        for icon_name, svg in list(icon_svgs.items()):
-            if not svg:
-                icon_svgs[icon_name] = placeholder_svg
+        if placeholder_svg:
+            for icon_name, svg in list(icon_svgs.items()):
+                if not svg:
+                    icon_svgs[icon_name] = placeholder_svg
+    except Exception as exc:
+        print(f"Failed to sync rules bundle from GitHub: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        cleanup_temp_rule_db(temp_rule_db_path)
 
     write_rules_module(rules, RULES_OUTPUT_PATH)
     write_icons_module(icon_svgs, ICONS_OUTPUT_PATH)
@@ -92,6 +102,51 @@ def main() -> int:
     print(f"Wrote {len(rules)} rules to {RULES_OUTPUT_PATH}")
     print(f"Wrote {len(icon_svgs)} icons to {ICONS_OUTPUT_PATH}")
     return 0
+
+
+def parse_rules_ref(args: list[str]) -> str:
+    if "--refresh" in args:
+        args = [arg for arg in args if arg != "--refresh"]
+
+    if not args:
+        return DEFAULT_RULES_REF
+
+    if len(args) == 2 and args[0] == "--ref":
+        return args[1]
+
+    for arg in args:
+        if arg.startswith("--ref="):
+            return arg.split("=", 1)[1]
+
+    raise SystemExit("Usage: python scripts/generate_libchecker_bundle.py [--ref <branch|tag|commit>]")
+
+
+def build_rules_bundle_root(rules_ref: str) -> str:
+    return (
+        "https://raw.githubusercontent.com/"
+        f"LibChecker/LibChecker-Rules-Bundle/{rules_ref}/library/src/main"
+    )
+
+
+def download_rule_db_to_temp(rule_db_url: str) -> Path:
+    fd, temp_path = tempfile.mkstemp(prefix="libchecker-rules-", suffix=".db")
+    os.close(fd)
+    db_path = Path(temp_path)
+
+    with urllib.request.urlopen(rule_db_url) as response:  # noqa: S310 - trusted upstream input
+        db_path.write_bytes(response.read())
+
+    return db_path
+
+
+def cleanup_temp_rule_db(db_path: Path | None) -> None:
+    if not db_path:
+        return
+
+    try:
+        db_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def fetch_text(url: str) -> str:

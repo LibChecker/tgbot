@@ -86,7 +86,7 @@ npx wrangler secret put TELEGRAPH_ACCESS_TOKEN
 
 ### 3. 可选配置公开地址
 
-如果你希望 webhook 固定指向某个 URL，可以在 [wrangler.toml](</C:/Users/Absinthe/Documents/GitHub/tgbot/wrangler.toml:1>) 里加：
+如果你希望 webhook 固定指向某个 URL，可以在 [wrangler.toml](wrangler.toml) 里加：
 
 ```toml
 [vars]
@@ -150,7 +150,7 @@ https://your-worker.your-subdomain.workers.dev
 - `error_name`
 - `error_message`
 
-如果后面流量上来了，可以把 [wrangler.toml](</C:/Users/Absinthe/Documents/GitHub/tgbot/wrangler.toml:1>) 里的 `head_sampling_rate` 从 `1` 调低，减少日志采样量。
+如果后面流量上来了，可以把 [wrangler.toml](wrangler.toml) 里的 `head_sampling_rate` 从 `1` 调低，减少日志采样量。
 
 ## 自动管理 Webhook
 
@@ -213,7 +213,7 @@ curl -X POST "https://your-worker.your-subdomain.workers.dev/admin/webhook/delet
 
 ## 一条命令部署并注册
 
-项目还带了一个本地脚本 [scripts/manage-webhook.mjs](</C:/Users/Absinthe/Documents/GitHub/tgbot/scripts/manage-webhook.mjs:1>)，可以直接调用 Worker 的管理接口，所以不需要手写 `curl`。
+项目还带了一个本地脚本 [scripts/manage-webhook.mjs](scripts/manage-webhook.mjs)，可以直接调用 Worker 的管理接口，所以不需要手写 `curl`。
 
 先在 PowerShell 里设置本地环境变量：
 
@@ -274,7 +274,7 @@ npm run webhook:set -- --worker-url=https://your-worker.your-subdomain.workers.d
 
 ## GitHub Actions 自动部署
 
-项目已新增工作流 [deploy.yml](</C:/Users/Absinthe/Documents/GitHub/tgbot/.github/workflows/deploy.yml:1>)：
+项目已新增工作流 [deploy.yml](.github/workflows/deploy.yml)：
 
 - PR 到 `main` / `master` 时自动执行 `npm ci` 和 `npm run check`
 - push 到 `main` / `master` 时自动部署到 Cloudflare Workers
@@ -306,13 +306,41 @@ https://your-worker.your-subdomain.workers.dev
 
 ## 本地开发变量模板
 
-仓库新增了 [.dev.vars.example](</C:/Users/Absinthe/Documents/GitHub/tgbot/.dev.vars.example:1>)，你可以复制成 `.dev.vars` 后本地调试：
+仓库新增了 [.dev.vars.example](.dev.vars.example)，你可以复制成 `.dev.vars` 后本地调试：
 
 ```text
 BOT_TOKEN=...
 ADMIN_TOKEN=...
 TELEGRAM_WEBHOOK_SECRET=...
 PUBLIC_WEBHOOK_URL=https://your-worker.your-subdomain.workers.dev
+```
+
+## 更新规则库
+
+项目已经内置了规则库生成脚本 [generate_libchecker_bundle.py](scripts/generate_libchecker_bundle.py)。以后如果 [LibChecker-Rules-Bundle](https://github.com/LibChecker/LibChecker-Rules-Bundle) 有更新，直接执行：
+
+```bash
+npm run rules:update
+```
+
+这条命令会直接从 GitHub 上的 `LibChecker-Rules-Bundle` 仓库拉取最新规则与图标资源，不再依赖仓库里的本地 `tmp_rules.db` 中间文件。执行时会自动：
+
+1. 下载最新的 `rules.db`
+2. 重新生成：
+   - [src/generated/libchecker-rules.js](src/generated/libchecker-rules.js)
+   - [src/generated/libchecker-sdk-icons.js](src/generated/libchecker-sdk-icons.js)
+
+如果你想固定到某个分支、tag 或 commit，也可以直接运行：
+
+```bash
+python scripts/generate_libchecker_bundle.py --ref main
+python scripts/generate_libchecker_bundle.py --ref <tag-or-commit>
+```
+
+建议更新完规则后再跑一次：
+
+```bash
+npm run check
 ```
 
 ## 项目结构
