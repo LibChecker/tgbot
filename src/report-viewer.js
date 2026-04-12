@@ -48,8 +48,18 @@ function renderReportPage(page) {
         box-sizing: border-box;
       }
 
+      html {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+      }
+
       body {
         margin: 0;
+        min-height: 100vh;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: clip;
         font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
         background:
           radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28rem),
@@ -59,9 +69,9 @@ function renderReportPage(page) {
       }
 
       .page {
-        max-width: 880px;
+        width: min(1160px, calc(100% - clamp(20px, 4vw, 56px)));
         margin: 0 auto;
-        padding: 24px 16px 48px;
+        padding: clamp(16px, 3vw, 28px) 0 clamp(32px, 5vw, 56px);
       }
 
       .card {
@@ -69,7 +79,7 @@ function renderReportPage(page) {
         border: 1px solid rgba(229, 231, 235, 0.9);
         border-radius: 24px;
         box-shadow: var(--shadow);
-        padding: 28px 20px;
+        padding: clamp(20px, 3vw, 34px) clamp(16px, 3vw, 30px);
       }
 
       h1 {
@@ -83,18 +93,41 @@ function renderReportPage(page) {
         margin-top: 10px;
         color: var(--muted);
         font-size: 0.95rem;
+        overflow-wrap: anywhere;
+      }
+
+      .content,
+      .section,
+      .section-shell,
+      .section-body,
+      .group-grid,
+      .group-card,
+      .list-panel,
+      .list-item,
+      .item-line,
+      .kv-card,
+      .kv-row,
+      .sdk-chart,
+      .sdk-chart-row,
+      .sdk-chart-header,
+      .sdk-chart-title,
+      .sdk-chart-label,
+      .sdk-chart-meta,
+      .sdk-chart-preview {
+        min-width: 0;
+        max-width: 100%;
       }
 
       .content {
-        margin-top: 28px;
+        margin-top: clamp(22px, 3vw, 32px);
       }
 
       .section + .section {
-        margin-top: 30px;
+        margin-top: clamp(22px, 3vw, 32px);
       }
 
       .section-shell {
-        padding: 22px 20px;
+        padding: clamp(18px, 2.4vw, 26px) clamp(16px, 2.2vw, 24px);
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
         border: 1px solid rgba(229, 231, 235, 0.95);
         border-radius: 22px;
@@ -103,7 +136,7 @@ function renderReportPage(page) {
 
       .section-body {
         display: grid;
-        gap: 16px;
+        gap: clamp(14px, 2vw, 18px);
       }
 
       h3, h4 {
@@ -113,7 +146,7 @@ function renderReportPage(page) {
 
       h3 {
         margin: 0 0 16px;
-        font-size: 1.75rem;
+        font-size: clamp(1.5rem, 2vw, 1.85rem);
       }
 
       h4 {
@@ -122,8 +155,10 @@ function renderReportPage(page) {
       }
 
       p, li {
-        font-size: 1rem;
+        font-size: clamp(0.98rem, 0.2vw + 0.95rem, 1.04rem);
         line-height: 1.8;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       p {
@@ -147,7 +182,7 @@ function renderReportPage(page) {
 
       pre {
         margin: 0 0 18px;
-        padding: 16px 18px;
+        padding: clamp(14px, 2vw, 18px) clamp(14px, 2vw, 18px);
         background: var(--soft);
         border: 1px solid var(--line);
         border-radius: 18px;
@@ -157,8 +192,13 @@ function renderReportPage(page) {
       }
 
       code {
+        display: inline;
+        max-width: 100%;
         font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
         font-size: 0.94em;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
         background: var(--code-bg);
         border-radius: 999px;
         padding: 0.16em 0.5em;
@@ -191,7 +231,7 @@ function renderReportPage(page) {
       .kv-card {
         display: grid;
         gap: 10px;
-        padding: 18px;
+        padding: clamp(14px, 2vw, 18px);
         background:
           linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.96));
         border: 1px solid var(--line);
@@ -220,7 +260,7 @@ function renderReportPage(page) {
       .feature-grid {
         display: flex;
         flex-wrap: wrap;
-        gap: 12px;
+        gap: clamp(10px, 1.8vw, 14px);
         margin: 0 0 18px;
       }
 
@@ -228,6 +268,8 @@ function renderReportPage(page) {
         display: inline-flex;
         align-items: center;
         gap: 8px;
+        max-width: 100%;
+        min-width: 0;
         padding: 10px 14px;
         background: linear-gradient(180deg, #ffffff, #f8fafc);
         border: 1px solid var(--line);
@@ -237,6 +279,7 @@ function renderReportPage(page) {
       }
 
       .feature-pill code {
+        display: inline;
         margin: 0;
         padding: 0;
         background: transparent;
@@ -259,7 +302,7 @@ function renderReportPage(page) {
       .group-grid {
         display: grid;
         gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
       }
 
       .group-grid.group-grid--single {
@@ -268,7 +311,7 @@ function renderReportPage(page) {
 
       .group-card,
       .list-panel {
-        padding: 18px;
+        padding: clamp(14px, 2vw, 18px);
         background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(248, 250, 252, 0.96));
         border: 1px solid var(--line);
         border-radius: 18px;
@@ -295,7 +338,7 @@ function renderReportPage(page) {
       }
 
       .list-item {
-        padding: 14px 14px 12px;
+        padding: clamp(12px, 1.8vw, 14px) clamp(12px, 1.8vw, 14px) clamp(10px, 1.4vw, 12px);
         background: rgba(248, 250, 252, 0.9);
         border: 1px solid rgba(229, 231, 235, 0.9);
         border-radius: 16px;
@@ -319,6 +362,18 @@ function renderReportPage(page) {
         font-size: 0.95rem;
       }
 
+      .item-line,
+      .item-line code,
+      .item-line a,
+      .kv-value,
+      .kv-value code,
+      .sdk-chart-label,
+      .sdk-chart-meta,
+      .sdk-chart-meta code {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
       .chip-cloud {
         display: flex;
         flex-wrap: wrap;
@@ -326,6 +381,8 @@ function renderReportPage(page) {
       }
 
       .chip-cloud code {
+        display: inline-block;
+        max-width: 100%;
         margin: 0;
         padding: 0.36em 0.72em;
       }
@@ -336,7 +393,7 @@ function renderReportPage(page) {
       }
 
       .sdk-chart-row {
-        padding: 16px;
+        padding: clamp(14px, 2vw, 18px);
         background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.96));
         border: 1px solid rgba(229, 231, 235, 0.95);
         border-radius: 18px;
@@ -406,31 +463,85 @@ function renderReportPage(page) {
       }
 
       .sdk-chart-preview code {
+        display: inline-block;
+        max-width: 100%;
         margin: 0;
         padding: 0.32em 0.7em;
       }
 
       a {
         color: #2563eb;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      @media (max-width: 900px) {
+        .sdk-chart-header {
+          flex-wrap: wrap;
+          align-items: flex-start;
+        }
+
+        .sdk-chart-count {
+          margin-left: auto;
+        }
       }
 
       @media (max-width: 640px) {
         .page {
-          padding: 12px 10px 24px;
+          width: min(calc(100% - 16px), 100%);
+          padding: 8px 0 20px;
         }
 
         .card {
           border-radius: 18px;
-          padding: 22px 14px;
+          padding: 18px 12px;
         }
 
         h3 {
           font-size: 1.5rem;
         }
 
+        h4 {
+          font-size: 1.06rem;
+        }
+
         .kv-row {
           grid-template-columns: 1fr;
           gap: 4px;
+        }
+
+        .feature-pill {
+          width: 100%;
+          justify-content: flex-start;
+          align-items: flex-start;
+          border-radius: 18px;
+        }
+
+        .feature-pill img {
+          margin-top: 2px;
+        }
+
+        .group-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .sdk-chart-header {
+          gap: 10px;
+        }
+
+        .sdk-chart-count {
+          margin-left: 0;
+        }
+
+        .chip-cloud,
+        .sdk-chart-preview {
+          gap: 6px;
+        }
+
+        .chip-cloud code,
+        .sdk-chart-preview code {
+          width: 100%;
+          border-radius: 14px;
         }
       }
     </style>
@@ -466,8 +577,8 @@ function renderErrorPage(message) {
       }
 
       .panel {
-        max-width: 520px;
-        padding: 28px 24px;
+        width: min(520px, calc(100vw - 28px));
+        padding: clamp(22px, 3vw, 28px) clamp(18px, 3vw, 24px);
         background: #fff;
         border: 1px solid #e5e7eb;
         border-radius: 20px;

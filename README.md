@@ -6,13 +6,14 @@
 
 1. 私聊机器人时，直接发送或转发一个 `.apk` 文件消息，Bot 会自动解析。
 2. 在群组或频道里：
+   - 可以直接发送一个 `.apk` 文件消息，Bot 会自动解析
    - 可以直接发送带 `.apk` 的消息，并把 `/apkinfo` 或 `/apkinfo@你的bot用户名` 写在 caption 的任意位置
    - 或者回复一个带 `.apk` 的消息，再发送 `/apkinfo`
    - 也可以在消息里直接 `@bot用户名` 并附带 APK，或回复 APK 后 `@bot用户名`
-   - 转发自其他频道或群组、且自带 `.apk` 的消息，也会自动解析
+   - 转发自其他频道或群组、且自带 `.apk` 的消息会尽量自动解析，但这类消息在群组里是否能拿到文件对象受 Telegram Bot API 限制影响
    - 文件消息可以同时带说明文字，命令前后有额外文本也能正常解析
 3. Bot 返回一个简短摘要，并附带“打开完整报告”按钮。
-4. 私聊场景下会优先通过 Telegram `web_app` 打开 Worker 自带的报告页；Telegraph 作为存储和备用链接保留。
+4. 完整报告通过 Worker 报告页打开；Worker 会再从 Telegraph 拉取内容并渲染成更适合阅读的详情页。
 5. 完整信息会展示在报告页中：
    - 应用名
    - 包名
@@ -30,9 +31,10 @@
 
 - 运行方式：Telegram webhook + Cloudflare Workers。
 - APK 解析：纯 JavaScript，在 Worker 内直接解析 `AndroidManifest.xml` 与 `resources.arsc`。
-- 展示方式：Telegram 消息仅返回摘要，完整结果优先通过 Worker 自带报告页展示，Telegraph 作为存储与备用链接。
+- 展示方式：Telegram 消息仅返回摘要，完整结果通过 Worker 报告页展示；Telegraph 作为内容存储层，Worker 负责渲染更完整的 UI。
 - 信息维度：参考 LibChecker 常见 APK 分析视图，输出构建特性、原生库、组件、权限和 application 级 `meta-data`。
 - SDK 标记：原生库与组件会结合 [LibChecker-Rules-Bundle](https://github.com/LibChecker/LibChecker-Rules-Bundle) 规则库匹配 SDK 名称、图标，并生成分布图表；组件匹配逻辑对齐 `DetailViewModel`，优先按类名规则匹配，失败时再用 `intent-filter action` 兜底。
+- 可观测性：已启用 Cloudflare Workers Observability，并增加结构化 JSON 日志、关键业务埋点、Analytics Engine 数据集与 Worker 版本元数据，便于在后台查看请求量、解析成功率、报告打开量和失败原因。
 - 不再依赖 Python、轮询进程或 `androguard`。
 - 自带受保护的 webhook 管理接口，可直接通过 Worker 自动注册 Telegram webhook。
 - 自带受保护的命令管理接口，可直接同步 Telegram 的 `/` 命令菜单。
@@ -43,6 +45,8 @@
 > 受 Telegram 官方 Bot API 当前限制，这种部署方式下只能直接下载并解析不超过 `20MB` 的 APK。
 >
 > Telegram 群组里的消息能否送达到 bot，受 Privacy Mode 影响很大。开启 Privacy Mode 时，最稳的是使用 `/apkinfo@你的bot用户名`；如果你希望普通 `@bot`、普通转发消息或更自然的群聊交互都能工作，需要在 `@BotFather` 中关闭该 Bot 的 Privacy Mode。频道里则需要把 Bot 设为管理员。
+>
+> 对于“群组里回复一条转发来的 APK 再让 bot 解析”这类场景，即使 bot 已经在群里、也拿到了命令消息，Telegram 也不一定会把原始 `document/file_id` 一并交给 bot。Worker 端无法凭消息 ID 再次向 Bot API 拉取任意历史消息，所以这类转发消息无法保证稳定解析。最稳的方式仍然是直接在群里发送 APK 文件，或私聊 bot 再转发 APK。
 
 ## 部署
 
@@ -108,6 +112,45 @@ npm run deploy
 ```text
 https://your-worker.your-subdomain.workers.dev
 ```
+
+## 日志与用量观测
+
+部署后，Worker 会自动输出结构化 JSON 日志到 Cloudflare Workers 的日志后台，并同时把关键业务事件写入 `tgbot_usage` Analytics Engine 数据集。
+
+建议重点筛选这些事件名：
+
+- `webhook.accepted`
+- `telegram.update.received`
+- `apk.analysis.succeeded`
+- `apk.analysis.failed`
+- `apk.analysis.skipped_too_large`
+- `apk.target_missing`
+- `report.viewed`
+- `admin.webhook.set`
+- `admin.commands.set`
+
+日志和埋点里会尽量附带这些字段，方便你在后台按维度筛：
+
+- `request_id`
+- `route`
+- `update_type`
+- `chat_type`
+- `chat_id`
+- `command`
+- `package_name`
+- `file_name`
+- `report_path`
+- `duration_ms`
+- `file_size_bytes`
+- `permissions_count`
+- `native_library_count`
+- `component_count`
+- `sdk_native_match_count`
+- `sdk_component_match_count`
+- `error_name`
+- `error_message`
+
+如果后面流量上来了，可以把 [wrangler.toml](</C:/Users/Absinthe/Documents/GitHub/tgbot/wrangler.toml:1>) 里的 `head_sampling_rate` 从 `1` 调低，减少日志采样量。
 
 ## 自动管理 Webhook
 
@@ -278,5 +321,6 @@ PUBLIC_WEBHOOK_URL=https://your-worker.your-subdomain.workers.dev
 src/
   apk.js      # APK / AndroidManifest / resources.arsc 解析
   index.js    # Cloudflare Worker 入口、Telegram webhook、管理接口
+  observability.js # 结构化日志与 Analytics Engine 埋点
 wrangler.toml
 ```

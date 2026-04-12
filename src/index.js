@@ -1,5 +1,12 @@
 import { readApkInfo } from "./apk.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
+import {
+  createRequestTelemetryContext,
+  extendTelemetryContext,
+  logErrorEvent,
+  logInfoEvent,
+  logWarnEvent,
+} from "./observability.js";
 import { handleReportRequest } from "./report-viewer.js";
 import { annotateSdkMarkers } from "./sdk-markers.js";
 import { createApkTelegraphPage } from "./telegraph.js";
@@ -28,6 +35,7 @@ let cachedBotIdentity = null;
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const telemetry = createRequestTelemetryContext(request, url, env);
 
     const iconResponse = handleIconRequest(url.pathname);
     if (iconResponse) {
@@ -46,27 +54,74 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/report") {
-      return handleReportRequest(url);
+      const startedAt = Date.now();
+      const reportPath = url.searchParams.get("path") || null;
+      const response = await handleReportRequest(url);
+      const logFields = {
+        result: response.ok ? "success" : "error",
+        http_status: response.status,
+        report_path: reportPath,
+        duration_ms: Date.now() - startedAt,
+      };
+
+      if (response.ok) {
+        logInfoEvent(env, telemetry, "report.viewed", logFields);
+      } else {
+        logWarnEvent(env, telemetry, "report.view_failed", logFields);
+      }
+
+      return response;
     }
 
     if (isAdminPath(url.pathname)) {
-      return handleAdminRequest(request, env, url);
+      return handleAdminRequest(request, env, url, telemetry);
     }
 
     if (request.method === "POST" && isWebhookPath(url.pathname)) {
-      return handleWebhookRequest(request, env, ctx, url.origin);
+      return handleWebhookRequest(request, env, ctx, url.origin, telemetry);
     }
+
+    logWarnEvent(
+      env,
+      telemetry,
+      "worker.route_not_found",
+      {
+        result: "not_found",
+        http_status: 404,
+      },
+      { analytics: false },
+    );
 
     return new Response("Not Found", { status: 404 });
   },
 };
 
-async function handleWebhookRequest(request, env, ctx, requestOrigin) {
+async function handleWebhookRequest(request, env, ctx, requestOrigin, telemetry) {
   if (!env.BOT_TOKEN) {
+    logErrorEvent(
+      env,
+      telemetry,
+      "webhook.misconfigured",
+      {
+        result: "missing_bot_token",
+        http_status: 500,
+      },
+      { analytics: false },
+    );
     return new Response("BOT_TOKEN is not configured", { status: 500 });
   }
 
   if (!isWebhookSecretValid(request, env)) {
+    logWarnEvent(
+      env,
+      telemetry,
+      "webhook.unauthorized",
+      {
+        result: "invalid_secret",
+        http_status: 401,
+      },
+      { analytics: false },
+    );
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -74,24 +129,70 @@ async function handleWebhookRequest(request, env, ctx, requestOrigin) {
   try {
     update = await request.json();
   } catch {
+    logWarnEvent(
+      env,
+      telemetry,
+      "webhook.bad_request",
+      {
+        result: "invalid_json",
+        http_status: 400,
+      },
+      { analytics: false },
+    );
     return new Response("Bad Request", { status: 400 });
   }
 
+  const updateTelemetry = extendTelemetryContext(telemetry, {
+    update_type: getUpdateType(update),
+  });
+
+  logInfoEvent(env, updateTelemetry, "webhook.accepted", {
+    result: "accepted",
+    http_status: 200,
+  });
+
   ctx.waitUntil(
-    handleUpdate(update, env, requestOrigin).catch((error) => {
-      console.error("Failed to handle Telegram update", error);
+    handleUpdate(update, env, requestOrigin, updateTelemetry).catch((error) => {
+      logErrorEvent(env, updateTelemetry, "telegram.update.unhandled_error", {
+        result: "error",
+        error_name: getErrorName(error),
+        error_message: getErrorMessage(error),
+        error_stack: getErrorStack(error),
+      });
     }),
   );
 
   return new Response("OK");
 }
 
-async function handleAdminRequest(request, env, url) {
+async function handleAdminRequest(request, env, url, telemetry) {
   if (!env.BOT_TOKEN) {
+    logErrorEvent(
+      env,
+      telemetry,
+      "admin.misconfigured",
+      {
+        admin_action: url.pathname,
+        result: "missing_bot_token",
+        http_status: 500,
+      },
+      { analytics: false },
+    );
     return jsonResponse({ ok: false, error: "BOT_TOKEN is not configured" }, 500);
   }
 
   if (!env.ADMIN_TOKEN) {
+    logErrorEvent(
+      env,
+      telemetry,
+      "admin.misconfigured",
+      {
+        admin_action: url.pathname,
+        result: "missing_admin_token",
+        http_status: 500,
+      },
+      { analytics: false },
+    );
     return jsonResponse(
       { ok: false, error: "ADMIN_TOKEN is not configured for admin endpoints" },
       500,
@@ -99,11 +200,29 @@ async function handleAdminRequest(request, env, url) {
   }
 
   if (!isAdminAuthorized(request, env.ADMIN_TOKEN)) {
+    logWarnEvent(
+      env,
+      telemetry,
+      "admin.unauthorized",
+      {
+        admin_action: url.pathname,
+        result: "unauthorized",
+        http_status: 401,
+      },
+      { analytics: false },
+    );
     return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
   }
 
   if (request.method === "GET" && url.pathname === "/admin/webhook") {
     const info = await telegramApi(env, "getWebhookInfo", {});
+    logInfoEvent(env, telemetry, "admin.webhook.info", {
+      admin_action: "webhook_info",
+      result: "success",
+      http_status: 200,
+      webhook_url: info.url || null,
+      pending_update_count: info.pending_update_count || 0,
+    });
     return jsonResponse({
       ok: true,
       webhook_url: info.url || null,
@@ -128,6 +247,14 @@ async function handleAdminRequest(request, env, url) {
       drop_pending_updates: Boolean(payload.drop_pending_updates),
     });
 
+    logInfoEvent(env, telemetry, "admin.webhook.set", {
+      admin_action: "webhook_set",
+      result: "success",
+      http_status: 200,
+      webhook_url: webhookUrl,
+      drop_pending_updates: Boolean(payload.drop_pending_updates),
+    });
+
     return jsonResponse({
       ok: true,
       action: "setWebhook",
@@ -139,6 +266,13 @@ async function handleAdminRequest(request, env, url) {
   if (request.method === "POST" && url.pathname === "/admin/webhook/delete") {
     const payload = await readJsonBody(request);
     const result = await telegramApi(env, "deleteWebhook", {
+      drop_pending_updates: Boolean(payload.drop_pending_updates),
+    });
+
+    logInfoEvent(env, telemetry, "admin.webhook.delete", {
+      admin_action: "webhook_delete",
+      result: "success",
+      http_status: 200,
       drop_pending_updates: Boolean(payload.drop_pending_updates),
     });
 
@@ -161,6 +295,13 @@ async function handleAdminRequest(request, env, url) {
       commandsByScope[scopeKey] = commands;
     }
 
+    logInfoEvent(env, telemetry, "admin.commands.info", {
+      admin_action: "commands_info",
+      result: "success",
+      http_status: 200,
+      scope_count: scopes.length,
+    });
+
     return jsonResponse({
       ok: true,
       commands: commandsByScope,
@@ -179,6 +320,14 @@ async function handleAdminRequest(request, env, url) {
       });
     }
 
+    logInfoEvent(env, telemetry, "admin.commands.set", {
+      admin_action: "commands_set",
+      result: "success",
+      http_status: 200,
+      scope_count: scopes.length,
+      command_count: commands.length,
+    });
+
     return jsonResponse({
       ok: true,
       action: "setMyCommands",
@@ -196,6 +345,13 @@ async function handleAdminRequest(request, env, url) {
       });
     }
 
+    logInfoEvent(env, telemetry, "admin.commands.delete", {
+      admin_action: "commands_delete",
+      result: "success",
+      http_status: 200,
+      scope_count: scopes.length,
+    });
+
     return jsonResponse({
       ok: true,
       action: "deleteMyCommands",
@@ -203,12 +359,32 @@ async function handleAdminRequest(request, env, url) {
     });
   }
 
+  logWarnEvent(
+    env,
+    telemetry,
+    "admin.route_not_found",
+    {
+      admin_action: url.pathname,
+      result: "not_found",
+      http_status: 404,
+    },
+    { analytics: false },
+  );
   return jsonResponse({ ok: false, error: "Not Found" }, 404);
 }
 
-async function handleUpdate(update, env, requestOrigin) {
+async function handleUpdate(update, env, requestOrigin, telemetry) {
   const message = getTelegramMessage(update);
   if (!message?.chat?.id) {
+    logInfoEvent(
+      env,
+      telemetry,
+      "telegram.update.ignored",
+      {
+        result: "missing_chat",
+      },
+      { analytics: false },
+    );
     return;
   }
 
@@ -217,24 +393,44 @@ async function handleUpdate(update, env, requestOrigin) {
   const command = extractPrimaryCommand(contentText);
   const botIdentity = await getBotIdentity(env);
   const botMentioned = isBotMentioned(message, botIdentity);
+  const updateTelemetry = extendTelemetryContext(
+    telemetry,
+    buildMessageTelemetryFields(update, message, command, botMentioned),
+  );
+
+  logInfoEvent(env, updateTelemetry, "telegram.update.received", {
+    result: "received",
+    content_length: contentText.length,
+  });
 
   if (command === "start") {
     await sendText(
       env,
       message.chat.id,
-      "你好，私聊直接发送或转发 APK 文件我就会自动解析；在群组或频道里也可以直接把 <code>/apkinfo</code> 写在 APK 消息里，或者回复含 APK 的消息发送 <code>/apkinfo</code>。",
+      "你好，直接发送或转发 APK 文件我就会自动解析；在群组和频道里也支持直接发 APK、把 <code>/apkinfo</code> 写在 APK 消息里，或者回复含 APK 的消息发送 <code>/apkinfo</code>。",
       message.message_id,
     );
+    logInfoEvent(env, updateTelemetry, "command.start.responded", {
+      result: "success",
+    });
     return;
   }
 
-  const targetDocument = selectTargetDocument(message, command, isEdited, botMentioned);
+  let targetDocument = selectTargetDocument(message, command, isEdited, botMentioned);
+  if (!targetDocument && (command === "apkinfo" || botMentioned)) {
+    targetDocument = await recoverReferencedDocument(env, message, updateTelemetry);
+  }
+
   if (!targetDocument) {
     if (command === "apkinfo" || botMentioned) {
+      logWarnEvent(env, updateTelemetry, "apk.target_missing", {
+        result: "missing_target_document",
+        has_related_document: Boolean(findRelatedDocument(message, getRawDocument)),
+      });
       await sendText(
         env,
         message.chat.id,
-        "我没有找到可解析的 APK。你可以直接发送或转发 APK 文件给我，或者回复含 APK 的消息后发送 <code>/apkinfo</code>。在群组里如果开启了 Privacy Mode，请优先使用 <code>/apkinfo@bot_username</code>，或者关闭 Privacy Mode 后再直接 @ 我。",
+        "我没有找到可解析的 APK。你可以直接发送或转发 APK 文件给我，或者把 <code>/apkinfo</code> 写在同一条 APK 消息里；如果是回复解析，也请确认你回复的那条消息本身就是 APK 文件消息。需要注意的是，群组里的转发 APK 有时不会把文件对象完整发给 bot，这种情况下我无法从 Telegram 重新取回它，建议直接在群里发送 APK，或私聊 bot 再转发 APK。若群组开启了 Privacy Mode，请优先使用 <code>/apkinfo@bot_username</code>。",
         message.message_id,
       );
     }
@@ -242,7 +438,20 @@ async function handleUpdate(update, env, requestOrigin) {
     return;
   }
 
-  await analyzeApkDocument(env, message, targetDocument, requestOrigin);
+  logInfoEvent(
+    env,
+    updateTelemetry,
+    "apk.target_resolved",
+    {
+      result: "resolved",
+      file_name: targetDocument.file_name || null,
+      file_size_bytes: targetDocument.file_size || 0,
+      has_apk_document: isApkDocument(targetDocument),
+    },
+    { analytics: false },
+  );
+
+  await analyzeApkDocument(env, message, targetDocument, requestOrigin, updateTelemetry);
 }
 
 function getTelegramMessage(update) {
@@ -257,11 +466,12 @@ function getTelegramMessage(update) {
 
 function selectTargetDocument(message, command, isEdited, botMentioned) {
   const directDocument = getApkDocument(message);
-  const repliedDocument = getApkDocument(message.reply_to_message);
-  const externalReplyDocument = getExternalReplyApkDocument(message);
+  const relatedDocument = findRelatedApkDocument(message);
+  const rawDirectDocument = getRawDocument(message);
+  const rawRelatedDocument = findRelatedDocument(message, getRawDocument);
 
   if (command === "apkinfo" || botMentioned) {
-    return directDocument || repliedDocument || externalReplyDocument;
+    return directDocument || relatedDocument || rawDirectDocument || rawRelatedDocument;
   }
 
   if (isEdited) {
@@ -269,7 +479,7 @@ function selectTargetDocument(message, command, isEdited, botMentioned) {
   }
 
   if (shouldAutoAnalyzeMessage(message)) {
-    return directDocument;
+    return directDocument || getForwardedDocumentFallback(message, rawDirectDocument);
   }
 
   return null;
@@ -281,7 +491,7 @@ function shouldAutoAnalyzeMessage(message) {
     return false;
   }
 
-  return isPrivateChat(message.chat) || isForwardedMessage(message);
+  return isPrivateChat(message.chat) || isGroupOrChannelChat(message.chat) || isForwardedMessage(message);
 }
 
 function getApkDocument(message) {
@@ -292,6 +502,10 @@ function getApkDocument(message) {
   return isApkDocument(message.document) ? message.document : null;
 }
 
+function getRawDocument(message) {
+  return message?.document || null;
+}
+
 function getExternalReplyApkDocument(message) {
   if (!message?.external_reply?.document) {
     return null;
@@ -300,8 +514,188 @@ function getExternalReplyApkDocument(message) {
   return isApkDocument(message.external_reply.document) ? message.external_reply.document : null;
 }
 
-async function analyzeApkDocument(env, message, document, requestOrigin) {
+function findRelatedApkDocument(message, visited = new Set()) {
+  return findRelatedDocument(message, getApkDocument, visited);
+}
+
+function findRelatedDocument(message, extractor, visited = new Set()) {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
+  const messageId =
+    message.message_id != null
+      ? `${message.chat?.id || "chat"}:${message.message_id}`
+      : null;
+
+  if (messageId) {
+    if (visited.has(messageId)) {
+      return null;
+    }
+    visited.add(messageId);
+  }
+
+  const externalReplyDocument = getExternalReplyDocument(message, extractor);
+  if (externalReplyDocument) {
+    return externalReplyDocument;
+  }
+
+  const repliedDocument = extractor(message.reply_to_message);
+  if (repliedDocument) {
+    return repliedDocument;
+  }
+
+  return findRelatedDocument(message.reply_to_message, extractor, visited);
+}
+
+function getForwardedDocumentFallback(message, rawDocument) {
+  if (!rawDocument) {
+    return null;
+  }
+
+  if (message?.is_automatic_forward || isForwardedMessage(message)) {
+    return rawDocument;
+  }
+
+  return null;
+}
+
+async function recoverReferencedDocument(env, message, telemetry) {
+  const candidates = collectReferencedMessageCandidates(message);
+  if (candidates.length > 0) {
+    logInfoEvent(
+      env,
+      telemetry,
+      "apk.reference_recovery_attempted",
+      {
+        result: "attempted",
+        recovery_candidate_count: candidates.length,
+      },
+      { analytics: false },
+    );
+  }
+
+  for (const candidate of candidates) {
+    const recovered = await forwardMessageForDocument(env, message, candidate, telemetry);
+    if (recovered) {
+      logInfoEvent(
+        env,
+        telemetry,
+        "apk.reference_recovery_succeeded",
+        {
+          result: "success",
+          file_name: recovered.file_name || null,
+          file_size_bytes: recovered.file_size || 0,
+        },
+        { analytics: false },
+      );
+      return recovered;
+    }
+  }
+
+  if (candidates.length > 0) {
+    logWarnEvent(
+      env,
+      telemetry,
+      "apk.reference_recovery_failed",
+      {
+        result: "failed",
+        recovery_candidate_count: candidates.length,
+      },
+      { analytics: false },
+    );
+  }
+
+  return null;
+}
+
+function collectReferencedMessageCandidates(message) {
+  const candidates = [];
+
+  if (message?.reply_to_message?.message_id && message?.chat?.id) {
+    candidates.push({
+      fromChatId: message.chat.id,
+      messageId: message.reply_to_message.message_id,
+      threadId: message.message_thread_id || null,
+    });
+  }
+
+  if (message?.external_reply?.chat?.id && message?.external_reply?.message_id) {
+    candidates.push({
+      fromChatId: message.external_reply.chat.id,
+      messageId: message.external_reply.message_id,
+      threadId: message.message_thread_id || null,
+    });
+  }
+
+  return candidates;
+}
+
+async function forwardMessageForDocument(env, message, candidate, telemetry) {
+  try {
+    const forwarded = await telegramApi(env, "forwardMessage", {
+      chat_id: message.chat.id,
+      from_chat_id: candidate.fromChatId,
+      message_id: candidate.messageId,
+      disable_notification: true,
+      message_thread_id: candidate.threadId || undefined,
+    });
+
+    try {
+      return getRawDocument(forwarded);
+    } finally {
+      await deleteTelegramMessage(env, message.chat.id, forwarded?.message_id);
+    }
+  } catch (error) {
+    logWarnEvent(
+      env,
+      telemetry,
+      "apk.reference_recovery_forward_failed",
+      {
+        result: "forward_failed",
+        candidate_chat_id: String(candidate.fromChatId),
+        candidate_message_id: candidate.messageId,
+        error_name: getErrorName(error),
+        error_message: getErrorMessage(error),
+      },
+      { analytics: false },
+    );
+    return null;
+  }
+}
+
+async function deleteTelegramMessage(env, chatId, messageId) {
+  if (!chatId || !messageId) {
+    return;
+  }
+
+  try {
+    await telegramApi(env, "deleteMessage", {
+      chat_id: chatId,
+      message_id: messageId,
+    });
+  } catch (error) {
+    console.warn("Failed to delete temporary Telegram message", error);
+  }
+}
+
+function getExternalReplyDocument(message, extractor) {
+  if (!message?.external_reply) {
+    return null;
+  }
+
+  return extractor(message.external_reply);
+}
+
+async function analyzeApkDocument(env, message, document, requestOrigin, telemetry) {
+  const startedAt = Date.now();
+
   if ((document.file_size || 0) > MAX_TELEGRAM_APK_BYTES) {
+    logWarnEvent(env, telemetry, "apk.analysis.skipped_too_large", {
+      result: "too_large",
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+    });
     await sendText(
       env,
       message.chat.id,
@@ -315,22 +709,60 @@ async function analyzeApkDocument(env, message, document, requestOrigin) {
     await sendChatAction(env, message.chat.id, "typing");
   }
 
+  logInfoEvent(
+    env,
+    telemetry,
+    "apk.analysis.started",
+    {
+      result: "started",
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+    },
+    { analytics: false },
+  );
+
   try {
     const apkBuffer = await downloadTelegramFile(env, document.file_id);
     const apkInfo = await readApkInfo(apkBuffer);
     const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
     const report = buildApkReport(message, document, apkInfo, publicBaseUrl);
     const telegraphPage = await createApkTelegraphPage(env, report);
-    const viewerUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path);
+    const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path);
+
+    logInfoEvent(env, telemetry, "apk.analysis.succeeded", {
+      result: "success",
+      duration_ms: Date.now() - startedAt,
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      package_name: report.apkInfo.packageName,
+      version_name: report.apkInfo.versionName,
+      permissions_count: report.apkInfo.permissions.length,
+      native_library_count: report.apkInfo.nativeLibraries.length,
+      component_count: countComponents(report.apkInfo.components),
+      meta_data_count: countMetaData(report.apkInfo.metaData),
+      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+      report_path: telegraphPage.path || null,
+      source_label: report.sourceLabel,
+    });
+
     await sendText(
       env,
       message.chat.id,
       formatApkSummary(report),
       message.message_id,
-      buildReportReplyMarkup(message.chat, viewerUrl),
+      buildReportReplyMarkup(message.chat, reportUrl),
     );
   } catch (error) {
-    console.error("Failed to parse APK", error);
+    logErrorEvent(env, telemetry, "apk.analysis.failed", {
+      result: "error",
+      duration_ms: Date.now() - startedAt,
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      error_name: getErrorName(error),
+      error_message: getErrorMessage(error),
+      error_stack: getErrorStack(error),
+    });
     await sendText(
       env,
       message.chat.id,
@@ -523,6 +955,10 @@ function isPrivateChat(chat) {
   return chat?.type === "private";
 }
 
+function isGroupOrChannelChat(chat) {
+  return chat?.type === "group" || chat?.type === "supergroup" || chat?.type === "channel";
+}
+
 function isForwardedMessage(message) {
   return Boolean(
     message?.forward_origin ||
@@ -558,26 +994,26 @@ function buildApkReport(message, document, apkInfo, publicBaseUrl) {
   };
 }
 
-function buildReportViewerUrl(publicBaseUrl, telegraphPath) {
-  return `${publicBaseUrl}/report?path=${encodeURIComponent(telegraphPath)}`;
+function buildReportViewerUrl(publicBaseUrl, path) {
+  return `${publicBaseUrl}/report?path=${encodeURIComponent(path || "")}`;
 }
 
-function buildReportReplyMarkup(chat, viewerUrl) {
-  const mainButton = isPrivateChat(chat)
+function buildReportReplyMarkup(chat, reportUrl) {
+  const button = isPrivateChat(chat)
     ? {
         text: "打开完整报告",
         web_app: {
-          url: viewerUrl,
+          url: reportUrl,
         },
       }
     : {
         text: "打开完整报告",
-        url: viewerUrl,
+        url: reportUrl,
       };
 
   return {
     inline_keyboard: [
-      [mainButton],
+      [button],
     ],
   };
 }
@@ -628,6 +1064,14 @@ async function downloadTelegramFile(env, fileId) {
 
   const response = await fetch(`${TELEGRAM_API_BASE}/file/bot${env.BOT_TOKEN}/${file.file_path}`);
   if (!response.ok) {
+    console.error({
+      level: "error",
+      event: "telegram.file_download_failed",
+      timestamp: new Date().toISOString(),
+      file_id: fileId,
+      http_status: response.status,
+      result: "error",
+    });
     throw new Error(`Telegram 文件下载失败 (${response.status})`);
   }
 
@@ -662,11 +1106,31 @@ async function telegramApi(env, method, payload) {
   });
 
   if (!response.ok) {
+    console.error({
+      level: "error",
+      event: "telegram.api_http_error",
+      timestamp: new Date().toISOString(),
+      telegram_method: method,
+      http_status: response.status,
+      chat_id: payload?.chat_id != null ? String(payload.chat_id) : null,
+      result: "error",
+    });
     throw new Error(`Telegram API ${method} 请求失败 (${response.status})`);
   }
 
   const data = await response.json();
   if (!data.ok) {
+    console.warn({
+      level: "warn",
+      event: "telegram.api_result_error",
+      timestamp: new Date().toISOString(),
+      telegram_method: method,
+      http_status: response.status,
+      error_code: data.error_code || null,
+      error_message: data.description || `Telegram API ${method} 返回失败`,
+      chat_id: payload?.chat_id != null ? String(payload.chat_id) : null,
+      result: "error",
+    });
     throw new Error(data.description || `Telegram API ${method} 返回失败`);
   }
 
@@ -773,6 +1237,44 @@ function countMetaData(metaData) {
   return metaData.application.length;
 }
 
+function buildMessageTelemetryFields(update, message, command, botMentioned) {
+  return {
+    update_type: getUpdateType(update),
+    chat_type: message.chat?.type || null,
+    chat_id: message.chat?.id != null ? String(message.chat.id) : null,
+    message_id: message.message_id || null,
+    message_thread_id: message.message_thread_id || null,
+    from_id: message.from?.id != null ? String(message.from.id) : null,
+    command: command || null,
+    bot_mentioned: botMentioned,
+    is_forwarded: isForwardedMessage(message),
+    is_automatic_forward: Boolean(message.is_automatic_forward),
+    has_document: Boolean(message.document),
+    has_apk_document: Boolean(getApkDocument(message)),
+    source_label: describeMessageSource(message),
+  };
+}
+
+function getUpdateType(update) {
+  if (update?.message) {
+    return "message";
+  }
+
+  if (update?.edited_message) {
+    return "edited_message";
+  }
+
+  if (update?.channel_post) {
+    return "channel_post";
+  }
+
+  if (update?.edited_channel_post) {
+    return "edited_channel_post";
+  }
+
+  return "unknown";
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -787,4 +1289,20 @@ function getErrorMessage(error) {
   }
 
   return "未知错误";
+}
+
+function getErrorName(error) {
+  if (error instanceof Error) {
+    return error.name || "Error";
+  }
+
+  return "UnknownError";
+}
+
+function getErrorStack(error) {
+  if (error instanceof Error && error.stack) {
+    return error.stack;
+  }
+
+  return null;
 }
