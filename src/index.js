@@ -1,6 +1,7 @@
 import { readApkInfo } from "./apk.js";
+import { readApkInfoFromUrl } from "./apk-url-preview.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
-import { createI18n, resolveTelegramLocale } from "./i18n.js";
+import { createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
 import {
   createRequestTelemetryContext,
   extendTelemetryContext,
@@ -11,9 +12,11 @@ import {
 import { handleReportRequest } from "./report-viewer.js";
 import { annotateSdkMarkers } from "./sdk-markers.js";
 import { createApkTelegraphPage } from "./telegraph.js";
+import { htmlResponse, renderUploadPage } from "./upload-view.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_TELEGRAM_APK_BYTES = 20 * 1024 * 1024;
+const DEFAULT_DIRECT_UPLOAD_BYTES = 90 * 1024 * 1024;
 const TELEGRAM_ALLOWED_UPDATES = [
   "message",
   "edited_message",
@@ -63,6 +66,10 @@ export default {
       }
 
       return response;
+    }
+
+    if ((request.method === "GET" || request.method === "POST") && url.pathname === "/upload") {
+      return handleUploadRequest(request, env, url, telemetry);
     }
 
     if (isAdminPath(url.pathname)) {
@@ -369,6 +376,138 @@ async function handleAdminRequest(request, env, url, telemetry) {
   return jsonResponse({ ok: false, error: "Not Found" }, 404);
 }
 
+async function handleUploadRequest(request, env, url, telemetry) {
+  const locale = normalizeUploadLocale(url.searchParams.get("lang"));
+  const { t } = createI18n(locale);
+  const publicBaseUrl = resolvePublicBaseUrl(env, url.origin);
+  const uploadUrl = buildUploadUrl(publicBaseUrl, locale);
+  const maxUploadBytes = getMaxDirectUploadBytes(env);
+  const maxSizeText = formatBytes(maxUploadBytes);
+
+  if (request.method === "GET") {
+    logInfoEvent(env, telemetry, "upload.page_viewed", {
+      result: "success",
+      http_status: 200,
+    });
+    return htmlResponse(renderUploadPage({ locale, uploadUrl, maxSizeText }));
+  }
+
+  const startedAt = Date.now();
+  let activeLocale = locale;
+  let activeUploadUrl = uploadUrl;
+
+  try {
+    const formData = await request.formData();
+    const formLocale = normalizeUploadLocale(formData.get("lang") || locale);
+    activeLocale = formLocale;
+    const formI18n = createI18n(formLocale);
+    const apkFile = formData.get("apk");
+    const formUploadUrl = buildUploadUrl(publicBaseUrl, formLocale);
+    activeUploadUrl = formUploadUrl;
+
+    if (!isUploadFile(apkFile)) {
+      return htmlResponse(
+        renderUploadPage({
+          locale: formLocale,
+          uploadUrl: formUploadUrl,
+          maxSizeText,
+          error: formI18n.t("upload.choose_file"),
+        }),
+        400,
+      );
+    }
+
+    if (!isUploadedApkFile(apkFile)) {
+      return htmlResponse(
+        renderUploadPage({
+          locale: formLocale,
+          uploadUrl: formUploadUrl,
+          maxSizeText,
+          error: formI18n.t("upload.invalid_file"),
+        }),
+        400,
+      );
+    }
+
+    if ((apkFile.size || 0) > maxUploadBytes) {
+      logWarnEvent(env, telemetry, "upload.analysis.skipped_too_large", {
+        result: "too_large",
+        file_name: apkFile.name || null,
+        file_size_bytes: apkFile.size || 0,
+      });
+      return htmlResponse(
+        renderUploadPage({
+          locale: formLocale,
+          uploadUrl: formUploadUrl,
+          maxSizeText,
+          error: formI18n.t("upload.too_large", { maxSize: maxSizeText }),
+        }),
+        413,
+      );
+    }
+
+    logInfoEvent(env, telemetry, "upload.analysis.started", {
+      result: "started",
+      file_name: apkFile.name || null,
+      file_size_bytes: apkFile.size || 0,
+    });
+
+    const apkBuffer = await apkFile.arrayBuffer();
+    const apkInfo = await readApkInfo(apkBuffer);
+    const report = buildApkReport(
+      buildWebUploadMessage(formLocale),
+      buildUploadDocument(apkFile),
+      apkInfo,
+      publicBaseUrl,
+      formLocale,
+    );
+    const telegraphPage = await createApkTelegraphPage(env, report);
+    const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, formLocale);
+
+    logInfoEvent(env, telemetry, "upload.analysis.succeeded", {
+      result: "success",
+      duration_ms: Date.now() - startedAt,
+      file_name: apkFile.name || null,
+      file_size_bytes: apkFile.size || 0,
+      package_name: report.apkInfo.packageName,
+      permissions_count: report.apkInfo.permissions.length,
+      native_library_count: report.apkInfo.nativeLibraries.length,
+      component_count: countComponents(report.apkInfo.components),
+      meta_data_count: countMetaData(report.apkInfo.metaData),
+      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+      report_path: telegraphPage.path || null,
+    });
+
+    return new Response(null, {
+      status: 303,
+      headers: {
+        location: reportUrl,
+      },
+    });
+  } catch (error) {
+    logErrorEvent(env, telemetry, "upload.analysis.failed", {
+      result: "error",
+      duration_ms: Date.now() - startedAt,
+      error_name: getErrorName(error),
+      error_message: getErrorMessage(error),
+      error_stack: getErrorStack(error),
+    });
+
+    return htmlResponse(
+      renderUploadPage({
+        locale: activeLocale,
+        uploadUrl: activeUploadUrl,
+        maxSizeText,
+        error: createI18n(activeLocale).t("upload.parse_failed", {
+          message: getLocalizedErrorMessage(error, activeLocale),
+        }),
+      }),
+      500,
+    );
+  }
+}
+
 async function handleUpdate(update, env, requestOrigin, telemetry) {
   const message = getTelegramMessage(update);
   if (!message?.chat?.id) {
@@ -414,16 +553,35 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
     return;
   }
 
+  if (command === "upload") {
+    const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
+    const uploadUrl = buildUploadUrl(publicBaseUrl, locale);
+    await sendText(
+      env,
+      message.chat.id,
+      t("bot.upload_entry"),
+      message.message_id,
+      buildLinkReplyMarkup(message.chat, uploadUrl, t("bot.open_upload_page")),
+    );
+    logInfoEvent(env, updateTelemetry, "command.upload.responded", {
+      result: "success",
+    });
+    return;
+  }
+
   let targetDocument = selectTargetDocument(message, command, isEdited, botMentioned);
   if (!targetDocument && (command === "apkinfo" || botMentioned)) {
     targetDocument = await recoverReferencedDocument(env, message, updateTelemetry);
   }
 
-  if (!targetDocument) {
+  const targetUrl = targetDocument ? null : selectTargetUrl(message, command, isEdited, botMentioned);
+
+  if (!targetDocument && !targetUrl) {
     if (command === "apkinfo" || botMentioned) {
       logWarnEvent(env, updateTelemetry, "apk.target_missing", {
         result: "missing_target_document",
         has_related_document: Boolean(findRelatedDocument(message, getRawDocument)),
+        has_related_url: Boolean(findRelatedUrl(message)),
       });
       await sendText(
         env,
@@ -433,6 +591,23 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
       );
     }
 
+    return;
+  }
+
+  if (targetUrl) {
+    logInfoEvent(
+      env,
+      updateTelemetry,
+      "apk.target_resolved",
+      {
+        result: "resolved_url",
+        url_host: safeUrlHost(targetUrl),
+        url_path: safeUrlPath(targetUrl),
+      },
+      { analytics: false },
+    );
+
+    await analyzeApkUrl(env, message, targetUrl, requestOrigin, updateTelemetry, locale);
     return;
   }
 
@@ -483,6 +658,30 @@ function selectTargetDocument(message, command, isEdited, botMentioned) {
   return null;
 }
 
+function selectTargetUrl(message, command, isEdited, botMentioned) {
+  const directLinks = extractLinksFromMessage(message);
+  const relatedLink = findRelatedUrl(message);
+
+  if (command === "apkinfo" || botMentioned) {
+    return directLinks[0] || relatedLink;
+  }
+
+  if (isEdited) {
+    return null;
+  }
+
+  const directApkLink = directLinks.find(isLikelyApkUrl);
+  if (directApkLink) {
+    return directApkLink;
+  }
+
+  if (isPrivateChat(message.chat)) {
+    return directLinks[0] || null;
+  }
+
+  return null;
+}
+
 function shouldAutoAnalyzeMessage(message) {
   const document = getApkDocument(message);
   if (!document) {
@@ -514,6 +713,38 @@ function getExternalReplyApkDocument(message) {
 
 function findRelatedApkDocument(message, visited = new Set()) {
   return findRelatedDocument(message, getApkDocument, visited);
+}
+
+function findRelatedUrl(message, visited = new Set()) {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
+  const messageId =
+    message.message_id != null
+      ? `${message.chat?.id || "chat"}:${message.message_id}`
+      : null;
+
+  if (messageId) {
+    if (visited.has(messageId)) {
+      return null;
+    }
+    visited.add(messageId);
+  }
+
+  const links = extractLinksFromMessage(message);
+  if (links.length > 0) {
+    return links[0];
+  }
+
+  if (message.external_reply) {
+    const externalReplyLink = findRelatedUrl(message.external_reply, visited);
+    if (externalReplyLink) {
+      return externalReplyLink;
+    }
+  }
+
+  return findRelatedUrl(message.reply_to_message, visited);
 }
 
 function findRelatedDocument(message, extractor, visited = new Set()) {
@@ -688,6 +919,7 @@ function getExternalReplyDocument(message, extractor) {
 async function analyzeApkDocument(env, message, document, requestOrigin, telemetry, locale) {
   const startedAt = Date.now();
   const { t } = createI18n(locale);
+  const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
 
   if ((document.file_size || 0) > MAX_TELEGRAM_APK_BYTES) {
     logWarnEvent(env, telemetry, "apk.analysis.skipped_too_large", {
@@ -700,6 +932,11 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       message.chat.id,
       t("bot.apk_too_large"),
       message.message_id,
+      buildLinkReplyMarkup(
+        message.chat,
+        buildUploadUrl(publicBaseUrl, locale),
+        t("bot.open_upload_page"),
+      ),
     );
     return;
   }
@@ -723,7 +960,6 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
   try {
     const apkBuffer = await downloadTelegramFile(env, document.file_id, locale);
     const apkInfo = await readApkInfo(apkBuffer);
-    const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
     const report = buildApkReport(message, document, apkInfo, publicBaseUrl, locale);
     const telegraphPage = await createApkTelegraphPage(env, report);
     const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
@@ -758,6 +994,91 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       duration_ms: Date.now() - startedAt,
       file_name: document.file_name || null,
       file_size_bytes: document.file_size || 0,
+      error_name: getErrorName(error),
+      error_message: getErrorMessage(error),
+      error_stack: getErrorStack(error),
+    });
+    await sendText(
+      env,
+      message.chat.id,
+      t("bot.parse_failed", {
+        message: escapeHtml(getLocalizedErrorMessage(error, locale)),
+      }),
+      message.message_id,
+    );
+  }
+}
+
+async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, locale) {
+  const startedAt = Date.now();
+  const { t } = createI18n(locale);
+  const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
+
+  if (supportsChatAction(message.chat?.type)) {
+    await sendChatAction(env, message.chat.id, "typing");
+  }
+
+  logInfoEvent(
+    env,
+    telemetry,
+    "apk.link_analysis.started",
+    {
+      result: "started",
+      url_host: safeUrlHost(apkUrl),
+      url_path: safeUrlPath(apkUrl),
+    },
+    { analytics: false },
+  );
+
+  try {
+    const preview = await readApkInfoFromUrl(apkUrl, getLinkPreviewOptions(env));
+    const document = buildUrlPreviewDocument(preview);
+    const report = buildApkReport(
+      buildUrlPreviewMessage(message),
+      document,
+      preview.apkInfo,
+      publicBaseUrl,
+      locale,
+    );
+    const telegraphPage = await createApkTelegraphPage(env, report);
+    const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
+
+    logInfoEvent(env, telemetry, "apk.link_analysis.succeeded", {
+      result: "success",
+      duration_ms: Date.now() - startedAt,
+      url_host: safeUrlHost(preview.url),
+      url_path: safeUrlPath(preview.url),
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      content_length_bytes: preview.fileSize || 0,
+      downloaded_bytes: preview.stats.downloadedBytes || 0,
+      range_request_count: preview.stats.rangeRequestCount || 0,
+      link_preview_mode: preview.stats.mode || null,
+      package_name: report.apkInfo.packageName,
+      version_name: report.apkInfo.versionName,
+      permissions_count: report.apkInfo.permissions.length,
+      native_library_count: report.apkInfo.nativeLibraries.length,
+      component_count: countComponents(report.apkInfo.components),
+      meta_data_count: countMetaData(report.apkInfo.metaData),
+      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+      report_path: telegraphPage.path || null,
+      source_label: report.sourceLabel,
+    });
+
+    await sendText(
+      env,
+      message.chat.id,
+      formatApkSummary(report),
+      message.message_id,
+      buildReportReplyMarkup(message.chat, reportUrl, t("bot.open_full_report")),
+    );
+  } catch (error) {
+    logErrorEvent(env, telemetry, "apk.link_analysis.failed", {
+      result: "error",
+      duration_ms: Date.now() - startedAt,
+      url_host: safeUrlHost(apkUrl),
+      url_path: safeUrlPath(apkUrl),
       error_name: getErrorName(error),
       error_message: getErrorMessage(error),
       error_stack: getErrorStack(error),
@@ -842,6 +1163,22 @@ function normalizeWebhookUrl(value) {
   return trimmed.endsWith("/webhook") ? trimmed : `${trimmed.replace(/\/+$/u, "")}/webhook`;
 }
 
+function safeUrlHost(value) {
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+function safeUrlPath(value) {
+  try {
+    return new URL(value).pathname;
+  } catch {
+    return null;
+  }
+}
+
 function getManagedCommandScopes() {
   return [
     {
@@ -886,6 +1223,10 @@ function getLocalizedBotCommands(locale = undefined) {
       command: "apkinfo",
       description: t("commands.apkinfo_description"),
     },
+    {
+      command: "upload",
+      description: t("commands.upload_description"),
+    },
   ];
 }
 
@@ -925,9 +1266,82 @@ function getMessageContentText(message) {
   return [message?.text, message?.caption].filter(Boolean).join("\n").trim();
 }
 
+function extractLinksFromMessage(message) {
+  const links = [
+    ...extractLinksFromText(message?.text, message?.entities),
+    ...extractLinksFromText(message?.caption, message?.caption_entities),
+  ];
+  return [...new Set(links)];
+}
+
+function extractLinksFromText(text, entities = []) {
+  if (!text) {
+    return [];
+  }
+
+  const links = [];
+  for (const entity of entities || []) {
+    if (entity?.type === "text_link" && entity.url) {
+      const normalized = normalizeCandidateUrl(entity.url);
+      if (normalized) {
+        links.push(normalized);
+      }
+      continue;
+    }
+
+    if (entity?.type === "url") {
+      const normalized = normalizeCandidateUrl(text.slice(entity.offset, entity.offset + entity.length));
+      if (normalized) {
+        links.push(normalized);
+      }
+    }
+  }
+
+  const matches = text.match(/https?:\/\/[^\s<>"']+/giu) || [];
+  for (const match of matches) {
+    const normalized = normalizeCandidateUrl(match);
+    if (normalized) {
+      links.push(normalized);
+    }
+  }
+
+  return links;
+}
+
+function normalizeCandidateUrl(value) {
+  const trimmed = String(value || "")
+    .trim()
+    .replace(/[),.;!?\]}，。；！？、）】》」』]+$/u, "");
+
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isLikelyApkUrl(value) {
+  try {
+    const url = new URL(value);
+    const path = decodeURIComponent(url.pathname).toLowerCase();
+    return path.endsWith(".apk") || path.includes(".apk/");
+  } catch {
+    return false;
+  }
+}
+
 function extractPrimaryCommand(text) {
   for (const token of extractCommandTokens(text)) {
-    if (token === "start" || token === "apkinfo") {
+    if (token === "start" || token === "apkinfo" || token === "upload") {
       return token;
     }
   }
@@ -1003,6 +1417,88 @@ function supportsChatAction(chatType) {
   return chatType !== "channel";
 }
 
+function normalizeUploadLocale(value) {
+  return normalizeLocale(value);
+}
+
+function getMaxDirectUploadBytes(env) {
+  const configuredMb = Number(env.MAX_DIRECT_UPLOAD_MB || env.MAX_UPLOAD_MB || 0);
+  if (Number.isFinite(configuredMb) && configuredMb > 0) {
+    return Math.floor(configuredMb * 1024 * 1024);
+  }
+
+  return DEFAULT_DIRECT_UPLOAD_BYTES;
+}
+
+function getLinkPreviewOptions(env) {
+  return {
+    maxCentralDirectoryBytes: parseOptionalMegabytes(env.MAX_LINK_PREVIEW_CD_MB),
+    maxEntryCompressedBytes: parseOptionalMegabytes(env.MAX_LINK_PREVIEW_ENTRY_MB),
+    maxResourceBytes: parseOptionalMegabytes(env.MAX_LINK_PREVIEW_RESOURCE_MB),
+  };
+}
+
+function parseOptionalMegabytes(value) {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return Math.floor(parsed * 1024 * 1024);
+}
+
+function isUploadFile(value) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof value.arrayBuffer === "function" &&
+      typeof value.name === "string",
+  );
+}
+
+function isUploadedApkFile(file) {
+  const fileName = file.name?.toLowerCase() || "";
+  const mimeType = file.type?.toLowerCase() || "";
+  return fileName.endsWith(".apk") || mimeType.includes("android.package-archive");
+}
+
+function buildWebUploadMessage(locale) {
+  return {
+    chat: {
+      type: "web_upload",
+    },
+    from: {
+      language_code: locale,
+    },
+  };
+}
+
+function buildUrlPreviewMessage(message) {
+  return {
+    ...message,
+    chat: {
+      ...message.chat,
+      type: "url_preview",
+    },
+  };
+}
+
+function buildUploadDocument(file) {
+  return {
+    file_name: file.name || "upload.apk",
+    file_size: file.size || 0,
+    mime_type: file.type || "application/vnd.android.package-archive",
+  };
+}
+
+function buildUrlPreviewDocument(preview) {
+  return {
+    file_name: preview.fileName || "remote.apk",
+    file_size: preview.fileSize || 0,
+    mime_type: preview.metadata?.contentType || "application/vnd.android.package-archive",
+  };
+}
+
 function buildApkReport(message, document, apkInfo, publicBaseUrl, locale) {
   const resolveSdkIconUrl = (iconName) => buildSdkIconUrl(publicBaseUrl, iconName);
   const sdkAnnotated = annotateSdkMarkers(apkInfo, resolveSdkIconUrl);
@@ -1034,16 +1530,20 @@ function buildReportViewerUrl(publicBaseUrl, path, locale) {
 }
 
 function buildReportReplyMarkup(chat, reportUrl, buttonText) {
+  return buildLinkReplyMarkup(chat, reportUrl, buttonText);
+}
+
+function buildLinkReplyMarkup(chat, url, buttonText) {
   const button = isPrivateChat(chat)
     ? {
         text: buttonText,
         web_app: {
-          url: reportUrl,
+          url,
         },
       }
     : {
         text: buttonText,
-        url: reportUrl,
+        url,
       };
 
   return {
@@ -1053,8 +1553,23 @@ function buildReportReplyMarkup(chat, reportUrl, buttonText) {
   };
 }
 
+function buildUploadUrl(publicBaseUrl, locale) {
+  const searchParams = new URLSearchParams({
+    lang: locale,
+  });
+  return `${publicBaseUrl}/upload?${searchParams.toString()}`;
+}
+
 function describeMessageSource(message, locale) {
   const { t } = createI18n(locale);
+  if (message.chat?.type === "web_upload") {
+    return t("bot.source_web_upload");
+  }
+
+  if (message.chat?.type === "url_preview") {
+    return t("bot.source_link_preview");
+  }
+
   if (message.chat?.type === "channel") {
     return t("bot.source_channel");
   }
@@ -1297,6 +1812,7 @@ function countMetaData(metaData) {
 }
 
 function buildMessageTelemetryFields(update, message, command, botMentioned, locale) {
+  const links = extractLinksFromMessage(message);
   return {
     update_type: getUpdateType(update),
     locale,
@@ -1311,6 +1827,8 @@ function buildMessageTelemetryFields(update, message, command, botMentioned, loc
     is_automatic_forward: Boolean(message.is_automatic_forward),
     has_document: Boolean(message.document),
     has_apk_document: Boolean(getApkDocument(message)),
+    has_url: links.length > 0,
+    has_apk_url: links.some(isLikelyApkUrl),
     source_label: describeMessageSource(message),
   };
 }

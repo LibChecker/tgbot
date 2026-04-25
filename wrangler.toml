@@ -2,6 +2,9 @@ name = "tgbot"
 main = "src/index.js"
 compatibility_date = "2026-04-12"
 
+[vars]
+PUBLIC_WEBHOOK_URL = "https://lc.absinthe.life"
+
 [observability]
 enabled = true
 head_sampling_rate = 1

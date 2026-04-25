@@ -12,6 +12,9 @@ const ANALYTICS_BLOB_KEYS = [
   "file_name",
   "report_path",
   "source_label",
+  "url_host",
+  "url_path",
+  "link_preview_mode",
   "worker_version_tag",
   "error_name",
   "error_message",
@@ -21,6 +24,9 @@ const ANALYTICS_DOUBLE_KEYS = [
   "duration_ms",
   "http_status",
   "file_size_bytes",
+  "content_length_bytes",
+  "downloaded_bytes",
+  "range_request_count",
   "permissions_count",
   "native_library_count",
   "component_count",
@@ -32,6 +38,8 @@ const ANALYTICS_DOUBLE_KEYS = [
   "bot_mentioned",
   "has_document",
   "has_apk_document",
+  "has_url",
+  "has_apk_url",
 ];
 
 export function createRequestTelemetryContext(request, url, env) {
@@ -175,6 +183,10 @@ function classifyRoute(pathname) {
 
   if (pathname === "/report") {
     return "report_viewer";
+  }
+
+  if (pathname === "/upload") {
+    return "direct_upload";
   }
 
   if (pathname.startsWith("/icon/")) {

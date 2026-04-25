@@ -14,7 +14,9 @@
    - 文件消息可以同时带说明文字，命令前后有额外文本也能正常解析
 3. Bot 返回一个简短摘要，并附带“打开完整报告”按钮。
 4. 完整报告通过 Worker 报告页打开；Worker 会再从 Telegraph 拉取内容并渲染成更适合阅读的详情页。
-5. 完整信息会展示在报告页中：
+5. 也可以直接发送 APK 下载链接；Bot 会尝试用 HTTP Range 只下载 ZIP 尾部、中央目录、`AndroidManifest.xml` 和少量 metadata 来生成预览报告，不会主动完整下载 APK。
+6. 超过 Telegram Bot API 20MB 下载限制的 APK，可以发送 `/upload` 打开 Worker 网页上传入口，直接上传到 Worker 解析。
+7. 完整信息会展示在报告页中：
    - 应用名
    - 包名
    - versionName / versionCode
@@ -26,7 +28,7 @@
    - 权限数量
    - 完整权限列表
    - application 级 `meta-data`（字符串资源引用会尽量解析成人类可读文本）
-6. Bot 会根据 Telegram 用户的 `language_code` 在中文和英文之间自动切换；Worker 报告页也会跟随同一语言。
+8. Bot 会根据 Telegram 用户的 `language_code` 在中文和英文之间自动切换；Worker 报告页也会跟随同一语言。
 
 ## 实现说明
 
@@ -34,6 +36,8 @@
 - APK 解析：纯 JavaScript，在 Worker 内直接解析 `AndroidManifest.xml` 与 `resources.arsc`。
 - 展示方式：Telegram 消息仅返回摘要，完整结果通过 Worker 报告页展示；Telegraph 作为内容存储层，Worker 负责渲染更完整的 UI。
 - 国际化：当前已支持中文和英文；Telegram 回复、命令描述、Telegraph 内容与 Worker 报告页会基于用户语言自动切换。
+- 大文件入口：`/upload` 网页直接接收 APK 上传并解析，用来绕过 Telegram Bot API `getFile` 的 20MB 文件下载限制；默认建议上限为 `90MB`，仍受 Cloudflare Worker 请求体和内存限制影响。
+- 链接预览：收到 APK 下载链接时会参考 LibChecker `ApkPreview` 的思路，优先使用 HTTP Range 拉取 ZIP 尾部、中央目录和 `AndroidManifest.xml`；原生库列表直接从中央目录提取，构建特性只解析可通过 ZIP 条目或小型 metadata 判断的部分。若远端不支持 Range 或不返回 `Content-Length`，Worker 会拒绝解析，避免意外完整下载大文件。
 - 信息维度：参考 LibChecker 常见 APK 分析视图，输出构建特性、原生库、组件、权限和 application 级 `meta-data`。
 - SDK 标记：原生库与组件会结合 [LibChecker-Rules-Bundle](https://github.com/LibChecker/LibChecker-Rules-Bundle) 规则库匹配 SDK 名称、图标，并生成分布图表；组件匹配逻辑对齐 `DetailViewModel`，优先按类名规则匹配，失败时再用 `intent-filter action` 兜底。
 - 可观测性：已启用 Cloudflare Workers Observability，并增加结构化 JSON 日志、关键业务埋点、Analytics Engine 数据集与 Worker 版本元数据，便于在后台查看请求量、解析成功率、报告打开量和失败原因。
@@ -45,6 +49,8 @@
 > 如果应用名来自资源表，Worker 会尽量解析出真实名称；如果资源表异常，会回退显示资源 ID。
 >
 > 受 Telegram 官方 Bot API 当前限制，这种部署方式下只能直接下载并解析不超过 `20MB` 的 APK。
+>
+> 如果 APK 超过 `20MB`，请使用 `/upload` 或直接打开 `https://你的域名/upload`。这条链路不经过 Telegram 文件下载接口，因此可以绕过 Bot API 的 `20MB` 限制。
 >
 > Telegram 群组里的消息能否送达到 bot，受 Privacy Mode 影响很大。开启 Privacy Mode 时，最稳的是使用 `/apkinfo@你的bot用户名`；如果你希望普通 `@bot`、普通转发消息或更自然的群聊交互都能工作，需要在 `@BotFather` 中关闭该 Bot 的 Privacy Mode。频道里则需要把 Bot 设为管理员。
 >
@@ -86,6 +92,22 @@ npx wrangler secret put ADMIN_TOKEN
 npx wrangler secret put TELEGRAPH_ACCESS_TOKEN
 ```
 
+可选：调整网页上传入口的建议解析上限，单位为 MB。默认是 `90`。
+
+```toml
+[vars]
+MAX_DIRECT_UPLOAD_MB = "90"
+```
+
+可选：调整链接预览的 Range 解析保护阈值，单位为 MB。默认分别是中央目录 `16`、单个压缩条目 `24`、`resources.arsc` `12`。
+
+```toml
+[vars]
+MAX_LINK_PREVIEW_CD_MB = "16"
+MAX_LINK_PREVIEW_ENTRY_MB = "24"
+MAX_LINK_PREVIEW_RESOURCE_MB = "12"
+```
+
 ### 3. 可选配置公开地址
 
 如果你希望 webhook 固定指向某个 URL，可以在 [wrangler.toml](wrangler.toml) 里加：
@@ -125,6 +147,8 @@ https://your-worker.your-subdomain.workers.dev
 - `telegram.update.received`
 - `apk.analysis.succeeded`
 - `apk.analysis.failed`
+- `apk.link_analysis.succeeded`
+- `apk.link_analysis.failed`
 - `apk.analysis.skipped_too_large`
 - `apk.target_missing`
 - `report.viewed`
@@ -144,6 +168,9 @@ https://your-worker.your-subdomain.workers.dev
 - `report_path`
 - `duration_ms`
 - `file_size_bytes`
+- `content_length_bytes`
+- `downloaded_bytes`
+- `range_request_count`
 - `permissions_count`
 - `native_library_count`
 - `component_count`

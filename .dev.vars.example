@@ -5,3 +5,7 @@ TELEGRAPH_ACCESS_TOKEN=your-telegraph-access-token
 TELEGRAPH_AUTHOR_NAME=Telegram APK Info Bot
 TELEGRAPH_AUTHOR_URL=https://t.me/your_bot_username
 PUBLIC_WEBHOOK_URL=https://your-worker.your-subdomain.workers.dev
+MAX_DIRECT_UPLOAD_MB=90
+MAX_LINK_PREVIEW_CD_MB=16
+MAX_LINK_PREVIEW_ENTRY_MB=24
+MAX_LINK_PREVIEW_RESOURCE_MB=12

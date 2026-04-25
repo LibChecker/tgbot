@@ -42,16 +42,31 @@ const COMPOSE_VERSION_ENTRY_CANDIDATES = [
 export async function readApkInfo(apkBuffer) {
   const apkBytes = toUint8Array(apkBuffer);
   const zipEntries = parseZipEntries(apkBytes);
+  return readApkInfoFromZipSource(
+    {
+      zipEntries,
+      extractEntry: (entry) => extractZipEntry(apkBytes, entry),
+    },
+    {
+      scanDex: true,
+    },
+  );
+}
+
+export async function readApkInfoFromZipSource(source, options = {}) {
+  const zipEntries = source.zipEntries;
   const nativeLibraries = collectNativeLibraries(zipEntries);
-  const buildFeatures = await detectBuildFeatures(apkBytes, zipEntries);
-  const resources = await readApkResources(apkBytes, zipEntries);
+  const buildFeatures = await detectBuildFeatures(source, options);
+  const resources = await readApkResources(source, {
+    maxEntryBytes: options.maxResourceBytes,
+  });
 
   const manifestEntry = zipEntries.get("AndroidManifest.xml");
   if (!manifestEntry) {
     throw new Error("APK 中缺少 AndroidManifest.xml");
   }
 
-  const manifestBytes = await extractZipEntry(apkBytes, manifestEntry);
+  const manifestBytes = await extractSourceEntry(source, manifestEntry);
   const manifest = parseAndroidManifest(manifestBytes);
 
   let appName = normalizeText(manifest.applicationLabel);
@@ -84,13 +99,17 @@ export async function readApkInfo(apkBuffer) {
   };
 }
 
-async function detectBuildFeatures(apkBytes, zipEntries) {
-  const appMetadata = await readAppMetadata(apkBytes, zipEntries);
-  const composeMetadata = await readComposeMetadata(apkBytes, zipEntries);
-  const featureMarkers = await scanDexFeatureMarkers(apkBytes, zipEntries, {
-    skipComposeDexScan: composeMetadata.detected,
-  });
-  const kotlinTooling = await readKotlinToolingMetadata(apkBytes, zipEntries);
+async function detectBuildFeatures(source, options = {}) {
+  const zipEntries = source.zipEntries;
+  const appMetadata = await readAppMetadata(source);
+  const composeMetadata = await readComposeMetadata(source);
+  const shouldScanDex = options.scanDex !== false;
+  const featureMarkers = shouldScanDex
+    ? await scanDexFeatureMarkers(source, {
+        skipComposeDexScan: composeMetadata.detected,
+      })
+    : buildZipOnlyFeatureMarkers(zipEntries, composeMetadata.detected);
+  const kotlinTooling = await readKotlinToolingMetadata(source);
 
   return {
     kotlinDetected: featureMarkers.kotlinDetected || kotlinTooling.detected,
@@ -104,7 +123,8 @@ async function detectBuildFeatures(apkBytes, zipEntries) {
   };
 }
 
-async function readAppMetadata(apkBytes, zipEntries) {
+async function readAppMetadata(source) {
+  const zipEntries = source.zipEntries;
   const metadataEntry =
     zipEntries.get("META-INF/com/android/build/gradle/app-metadata.properties") ||
     zipEntries.get("BUNDLE-METADATA/com.android.tools.build.gradle/app-metadata.properties");
@@ -116,7 +136,7 @@ async function readAppMetadata(apkBytes, zipEntries) {
     };
   }
 
-  const metadataBytes = await extractZipEntry(apkBytes, metadataEntry);
+  const metadataBytes = await extractSourceEntry(source, metadataEntry);
   const metadataText = decodeUtf8(metadataBytes);
   const properties = parseProperties(metadataText);
 
@@ -126,7 +146,8 @@ async function readAppMetadata(apkBytes, zipEntries) {
   };
 }
 
-async function scanDexFeatureMarkers(apkBytes, zipEntries, options = {}) {
+async function scanDexFeatureMarkers(source, options = {}) {
+  const zipEntries = source.zipEntries;
   let kotlinDetected = hasKotlinModule(zipEntries);
   let composeDetected = Boolean(options.skipComposeDexScan);
   let qihooDetected = false;
@@ -148,7 +169,7 @@ async function scanDexFeatureMarkers(apkBytes, zipEntries, options = {}) {
       break;
     }
 
-    const dexBytes = await extractZipEntry(apkBytes, entry);
+    const dexBytes = await extractSourceEntry(source, entry);
 
     if (!kotlinDetected && containsAnyAscii(dexBytes, kotlinNeedles)) {
       kotlinDetected = true;
@@ -185,7 +206,20 @@ async function scanDexFeatureMarkers(apkBytes, zipEntries, options = {}) {
   };
 }
 
-async function readKotlinToolingMetadata(apkBytes, zipEntries) {
+function buildZipOnlyFeatureMarkers(zipEntries, composeDetected) {
+  return {
+    kotlinDetected: hasKotlinModule(zipEntries),
+    composeDetected,
+    nativeValidation: {
+      qihooDetected: false,
+      secneoDetected: false,
+      flutterInjectorDetected: false,
+    },
+  };
+}
+
+async function readKotlinToolingMetadata(source) {
+  const zipEntries = source.zipEntries;
   const entry = zipEntries.get("kotlin-tooling-metadata.json");
   if (!entry) {
     return {
@@ -196,7 +230,7 @@ async function readKotlinToolingMetadata(apkBytes, zipEntries) {
   }
 
   try {
-    const bytes = await extractZipEntry(apkBytes, entry);
+    const bytes = await extractSourceEntry(source, entry);
     const metadata = JSON.parse(decodeUtf8(bytes));
     const projectTargets = Array.isArray(metadata?.projectTargets) ? metadata.projectTargets : [];
     const kotlinAndroidTarget = projectTargets.find(
@@ -224,7 +258,8 @@ async function readKotlinToolingMetadata(apkBytes, zipEntries) {
   }
 }
 
-async function readComposeMetadata(apkBytes, zipEntries) {
+async function readComposeMetadata(source) {
+  const zipEntries = source.zipEntries;
   const detected = hasComposeMetaInfEntries(zipEntries);
   let composeVersion = null;
 
@@ -234,7 +269,7 @@ async function readComposeMetadata(apkBytes, zipEntries) {
       continue;
     }
 
-    const bytes = await extractZipEntry(apkBytes, entry);
+    const bytes = await extractSourceEntry(source, entry);
     composeVersion = normalizeVersionText(decodeUtf8(bytes));
     if (composeVersion) {
       break;
@@ -247,18 +282,36 @@ async function readComposeMetadata(apkBytes, zipEntries) {
   };
 }
 
-async function readApkResources(apkBytes, zipEntries) {
+async function readApkResources(source, options = {}) {
+  const zipEntries = source.zipEntries;
   const resourcesEntry = zipEntries.get("resources.arsc");
   if (!resourcesEntry) {
     return null;
   }
 
+  const maxEntryBytes = options.maxEntryBytes ?? Number.POSITIVE_INFINITY;
+  if (entryExceedsSizeLimit(resourcesEntry, maxEntryBytes)) {
+    return null;
+  }
+
   try {
-    const resourcesBytes = await extractZipEntry(apkBytes, resourcesEntry);
+    const resourcesBytes = await extractSourceEntry(source, resourcesEntry);
     return parseResourcesTable(resourcesBytes);
   } catch {
     return null;
   }
+}
+
+async function extractSourceEntry(source, entry) {
+  return source.extractEntry(entry);
+}
+
+function entryExceedsSizeLimit(entry, maxBytes) {
+  if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
+    return false;
+  }
+
+  return (entry.uncompressedSize || entry.compressedSize || 0) > maxBytes;
 }
 
 function resolveApplicationMetaData(items, resources) {

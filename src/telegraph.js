@@ -1,21 +1,58 @@
 import { createI18n } from "./i18n.js";
 
 const TELEGRAPH_API_BASE = "https://api.telegra.ph";
+const COMPACT_LEVELS = [
+  {
+    nativeLibraries: 160,
+    permissions: 120,
+    componentsPerType: 160,
+    metaData: 80,
+    sdkSummary: 48,
+    sdkPreviewItems: 6,
+  },
+  {
+    nativeLibraries: 60,
+    permissions: 60,
+    componentsPerType: 60,
+    metaData: 30,
+    sdkSummary: 24,
+    sdkPreviewItems: 4,
+  },
+  {
+    nativeLibraries: 20,
+    permissions: 30,
+    componentsPerType: 20,
+    metaData: 12,
+    sdkSummary: 12,
+    sdkPreviewItems: 3,
+  },
+];
 
 let cachedAccessToken = null;
 
 export async function createApkTelegraphPage(env, report) {
   const accessToken = await getTelegraphAccessToken(env);
   const { t } = createI18n(report.locale);
-  const content = buildTelegraphContent(report, t);
-  return telegraphApi("createPage", {
-    access_token: accessToken,
-    title: buildPageTitle(report, t),
-    author_name: getAuthorName(env),
-    author_url: normalizeText(env.TELEGRAPH_AUTHOR_URL) || undefined,
-    content: JSON.stringify(content),
-    return_content: false,
-  }, report.locale);
+
+  try {
+    return await createTelegraphPage(env, accessToken, report, t);
+  } catch (error) {
+    if (!isContentTooBigError(error)) {
+      throw error;
+    }
+  }
+
+  for (const limits of COMPACT_LEVELS) {
+    try {
+      return await createTelegraphPage(env, accessToken, compactReport(report, limits), t);
+    } catch (error) {
+      if (!isContentTooBigError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  return createTelegraphPage(env, accessToken, buildMinimalReport(report), t);
 }
 
 export async function fetchTelegraphPage(path, locale = undefined) {
@@ -97,6 +134,22 @@ async function telegraphApi(method, payload, locale = undefined) {
   return data.result;
 }
 
+async function createTelegraphPage(env, accessToken, report, t) {
+  const content = buildTelegraphContent(report, t);
+  return telegraphApi("createPage", {
+    access_token: accessToken,
+    title: buildPageTitle(report, t),
+    author_name: getAuthorName(env),
+    author_url: normalizeText(env.TELEGRAPH_AUTHOR_URL) || undefined,
+    content: JSON.stringify(content),
+    return_content: false,
+  }, report.locale);
+}
+
+function isContentTooBigError(error) {
+  return error instanceof Error && error.message.includes("CONTENT_TOO_BIG");
+}
+
 function buildPageTitle(report, t) {
   return truncateText(
     t("telegraph.page_title", {
@@ -131,6 +184,7 @@ function normalizeTelegraphPath(value) {
 function buildTelegraphContent(report, t) {
   const featureChips = buildFeatureChips(report);
   const featureDetails = buildFeatureDetails(report.apkInfo.buildFeatures, t);
+  const stats = getReportStats(report);
   const sections = [
     h3(t("telegraph.apk_summary")),
     preBlock([
@@ -146,10 +200,10 @@ function buildTelegraphContent(report, t) {
         compileSdk: report.apkInfo.compileSdk,
       }),
       t("telegraph.line_stats", {
-        permissions: report.apkInfo.permissions.length,
-        nativeLibraries: report.apkInfo.nativeLibraries.length,
-        components: countComponents(report.apkInfo.components),
-        metaData: countMetaData(report.apkInfo.metaData),
+        permissions: stats.permissions,
+        nativeLibraries: stats.nativeLibraries,
+        components: stats.components,
+        metaData: stats.metaData,
       }),
     ]),
     h3(t("telegraph.file_info")),
@@ -162,6 +216,10 @@ function buildTelegraphContent(report, t) {
     hrNode(),
     h3(t("telegraph.native_libraries")),
   ];
+
+  if (report.isCompacted) {
+    sections.push(paragraph(t("telegraph.report_compacted_notice")));
+  }
 
   if (featureChips.length > 0 || featureDetails.length > 0) {
     sections.splice(
@@ -462,6 +520,71 @@ function countComponents(components) {
 
 function countMetaData(metaData) {
   return metaData.application.length;
+}
+
+function getReportStats(report) {
+  return report.originalStats || {
+    permissions: report.apkInfo.permissions.length,
+    nativeLibraries: report.apkInfo.nativeLibraries.length,
+    components: countComponents(report.apkInfo.components),
+    metaData: countMetaData(report.apkInfo.metaData),
+  };
+}
+
+function compactReport(report, limits) {
+  return {
+    ...report,
+    isCompacted: true,
+    originalStats: getReportStats(report),
+    apkInfo: {
+      ...report.apkInfo,
+      nativeLibraries: report.apkInfo.nativeLibraries.slice(0, limits.nativeLibraries),
+      permissions: report.apkInfo.permissions.slice(0, limits.permissions),
+      components: {
+        activities: report.apkInfo.components.activities.slice(0, limits.componentsPerType),
+        services: report.apkInfo.components.services.slice(0, limits.componentsPerType),
+        receivers: report.apkInfo.components.receivers.slice(0, limits.componentsPerType),
+        providers: report.apkInfo.components.providers.slice(0, limits.componentsPerType),
+      },
+      metaData: {
+        application: report.apkInfo.metaData.application.slice(0, limits.metaData),
+        components: [],
+      },
+      sdkSummary: compactSdkSummary(report.apkInfo.sdkSummary, limits),
+    },
+  };
+}
+
+function buildMinimalReport(report) {
+  return compactReport(report, {
+    nativeLibraries: 0,
+    permissions: 0,
+    componentsPerType: 0,
+    metaData: 0,
+    sdkSummary: 0,
+    sdkPreviewItems: 0,
+  });
+}
+
+function compactSdkSummary(sdkSummary, limits) {
+  if (!sdkSummary) {
+    return sdkSummary;
+  }
+
+  return {
+    native: compactSdkSummaryEntries(sdkSummary.native, limits),
+    components: compactSdkSummaryEntries(sdkSummary.components, limits),
+  };
+}
+
+function compactSdkSummaryEntries(entries, limits) {
+  return (entries || [])
+    .slice(0, limits.sdkSummary)
+    .map((entry) => ({
+      ...entry,
+      detail: entry.detail ? truncateText(entry.detail, 180) : entry.detail,
+      previewItems: (entry.previewItems || []).slice(0, limits.sdkPreviewItems),
+    }));
 }
 
 function paragraph(text) {
