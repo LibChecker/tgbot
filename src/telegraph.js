@@ -35,7 +35,7 @@ export async function createApkTelegraphPage(env, report) {
   const { t } = createI18n(report.locale);
 
   try {
-    return await createTelegraphPage(env, accessToken, report, t);
+    return await createTelegraphPageResilient(env, accessToken, report, t);
   } catch (error) {
     if (!isContentTooBigError(error)) {
       throw error;
@@ -44,7 +44,7 @@ export async function createApkTelegraphPage(env, report) {
 
   for (const limits of COMPACT_LEVELS) {
     try {
-      return await createTelegraphPage(env, accessToken, compactReport(report, limits), t);
+      return await createTelegraphPageResilient(env, accessToken, compactReport(report, limits), t);
     } catch (error) {
       if (!isContentTooBigError(error)) {
         throw error;
@@ -52,7 +52,14 @@ export async function createApkTelegraphPage(env, report) {
     }
   }
 
-  return createTelegraphPage(env, accessToken, buildMinimalReport(report), t);
+  try {
+    return await createTelegraphPageResilient(env, accessToken, buildMinimalReport(report), t);
+  } catch (error) {
+    if (report.apkInfo.icon?.dataUri && isContentTooBigError(error)) {
+      return createTelegraphPageResilient(env, accessToken, stripReportIcon(buildMinimalReport(report)), t);
+    }
+    throw error;
+  }
 }
 
 export async function fetchTelegraphPage(path, locale = undefined) {
@@ -146,17 +153,40 @@ async function createTelegraphPage(env, accessToken, report, t) {
   }, report.locale);
 }
 
+async function createTelegraphPageResilient(env, accessToken, report, t) {
+  try {
+    return await createTelegraphPage(env, accessToken, report, t);
+  } catch (error) {
+    if (report.apkInfo.icon?.dataUri && isPotentialIconContentError(error)) {
+      return createTelegraphPage(env, accessToken, stripReportIcon(report), t);
+    }
+    throw error;
+  }
+}
+
 function isContentTooBigError(error) {
   return error instanceof Error && error.message.includes("CONTENT_TOO_BIG");
 }
 
-function buildPageTitle(report, t) {
-  return truncateText(
-    t("telegraph.page_title", {
-      appName: report.apkInfo.appName,
-    }),
-    256,
+function isPotentialIconContentError(error) {
+  return (
+    error instanceof Error &&
+    /CONTENT_FORMAT_INVALID|IMG|IMAGE|SRC/i.test(error.message)
   );
+}
+
+function stripReportIcon(report) {
+  return {
+    ...report,
+    apkInfo: {
+      ...report.apkInfo,
+      icon: null,
+    },
+  };
+}
+
+function buildPageTitle(report, t) {
+  return truncateText(normalizeText(report.apkInfo.appName) || t("report.fallback_title"), 256);
 }
 
 function getAuthorName(env) {
@@ -186,10 +216,14 @@ function buildTelegraphContent(report, t) {
   const featureDetails = buildFeatureDetails(report.apkInfo.buildFeatures, t);
   const stats = getReportStats(report);
   const sections = [
+    ...(report.apkInfo.icon?.dataUri ? [appIconDataMarker(report)] : []),
     h3(t("telegraph.apk_summary")),
     preBlock([
       t("telegraph.line_app", { value: report.apkInfo.appName }),
       t("telegraph.line_package_name", { value: report.apkInfo.packageName }),
+      t("telegraph.line_icon", {
+        value: formatIconSummary(report, t),
+      }),
       t("telegraph.line_version", {
         versionName: report.apkInfo.versionName,
         versionCode: report.apkInfo.versionCode,
@@ -271,6 +305,13 @@ function pushNativeLibraries(sections, libraries, t) {
     sections.push(h4(`${abi} (${abiLibraries.length})`));
     sections.push(unorderedList(abiLibraries.map((library) => nativeLibraryItem(library))));
   }
+}
+
+function appIconDataMarker(report) {
+  return {
+    tag: "p",
+    children: [codeNode(`LC_APP_ICON_DATA:${report.apkInfo.icon.dataUri}`)],
+  };
 }
 
 function pushPermissions(sections, permissions, t) {
@@ -420,6 +461,16 @@ function buildFeatureChips(report) {
   }
 
   return chips;
+}
+
+function formatIconSummary(report, t) {
+  if (!report.apkInfo.icon?.dataUri) {
+    return t("telegraph.icon_missing");
+  }
+
+  return report.apkInfo.icon.path
+    ? t("telegraph.icon_detected_with_path", { path: report.apkInfo.icon.path })
+    : t("telegraph.icon_detected");
 }
 
 function buildFeatureDetails(buildFeatures, t) {

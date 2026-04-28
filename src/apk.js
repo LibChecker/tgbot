@@ -8,6 +8,7 @@ const ZIP_NO_ENTRY = 0xffffffff;
 const RES_STRING_POOL_TYPE = 0x0001;
 const RES_TABLE_TYPE = 0x0002;
 const RES_XML_TYPE = 0x0003;
+const RES_XML_RESOURCE_MAP_TYPE = 0x0180;
 const RES_XML_START_ELEMENT_TYPE = 0x0102;
 const RES_XML_END_ELEMENT_TYPE = 0x0103;
 const RES_TABLE_PACKAGE_TYPE = 0x0200;
@@ -16,10 +17,14 @@ const RES_TABLE_TYPE_TYPE = 0x0201;
 const STRING_POOL_UTF8_FLAG = 1 << 8;
 const TYPE_REFERENCE = 0x01;
 const TYPE_STRING = 0x03;
+const TYPE_FLOAT = 0x04;
+const TYPE_DIMENSION = 0x05;
 const TYPE_DYNAMIC_REFERENCE = 0x07;
 const TYPE_INT_DEC = 0x10;
 const TYPE_INT_HEX = 0x11;
 const TYPE_INT_BOOLEAN = 0x12;
+const TYPE_FIRST_COLOR_INT = 0x1c;
+const TYPE_LAST_COLOR_INT = 0x1f;
 
 const TYPE_FLAG_SPARSE = 0x01;
 const TYPE_FLAG_OFFSET16 = 0x02;
@@ -38,6 +43,7 @@ const COMPOSE_VERSION_ENTRY_CANDIDATES = [
   "META-INF/androidx.compose.foundation_foundation.version",
   "META-INF/androidx.compose.animation_animation.version",
 ];
+const MAX_APP_ICON_BYTES = 128 * 1024;
 
 export async function readApkInfo(apkBuffer) {
   const apkBytes = toUint8Array(apkBuffer);
@@ -78,6 +84,8 @@ export async function readApkInfoFromZipSource(source, options = {}) {
     appName = formatResourceReference(manifest.applicationLabelRef);
   }
 
+  const icon = await resolveApplicationIcon(source, manifest, resources);
+
   const metaData = {
     application: resolveApplicationMetaData(manifest.metaData.application, resources),
     components: [],
@@ -91,6 +99,7 @@ export async function readApkInfoFromZipSource(source, options = {}) {
     minSdk: normalizeText(manifest.minSdk) || "未知",
     targetSdk: normalizeText(manifest.targetSdk) || "未知",
     compileSdk: normalizeText(manifest.compileSdk) || "未知",
+    icon,
     permissions: manifest.permissions,
     nativeLibraries,
     components: manifest.components,
@@ -316,6 +325,788 @@ function entryExceedsSizeLimit(entry, maxBytes) {
 
 function resolveApplicationMetaData(items, resources) {
   return items.map((item) => resolveMetaDataItem(item, resources));
+}
+
+async function resolveApplicationIcon(source, manifest, resources) {
+  if (!resources) {
+    return null;
+  }
+
+  const resourceIds = [
+    manifest.applicationIconRef,
+    manifest.applicationRoundIconRef,
+  ].filter((resourceId) => resourceId != null);
+
+  for (const resourceId of resourceIds) {
+    const candidates = resources.resolveFiles(resourceId);
+    const icon = await readBestIconCandidate(source, resources, resourceId, candidates);
+    if (icon) {
+      return icon;
+    }
+  }
+
+  return readBestIconCandidate(
+    source,
+    resources,
+    null,
+    collectFallbackIconCandidates(source.zipEntries),
+  );
+}
+
+async function readBestIconCandidate(source, resources, resourceId, candidates, seen = new Set()) {
+  if (seen.has(resourceId)) {
+    return null;
+  }
+  seen.add(resourceId);
+
+  const adaptiveIcon = await readAdaptiveIconFromXmlCandidates(source, resources, candidates, seen);
+  if (adaptiveIcon) {
+    return adaptiveIcon;
+  }
+
+  const candidate = selectBestIconCandidate(source.zipEntries, candidates);
+  if (!candidate) {
+    return readBestIconFromXmlCandidates(source, resources, candidates, seen);
+  }
+
+  try {
+    const entry = source.zipEntries.get(candidate.path);
+    const bytes = await extractSourceEntry(source, entry);
+    if (bytes.byteLength > MAX_APP_ICON_BYTES) {
+      return null;
+    }
+
+    const mimeType = getImageMimeType(candidate.path);
+    return {
+      resourceId: resourceId == null ? null : formatResourceReference(resourceId),
+      path: candidate.path,
+      mimeType,
+      size: bytes.byteLength,
+      dataUri: `data:${mimeType};base64,${bytesToBase64(bytes)}`,
+    };
+  } catch {
+    return readBestIconFromXmlCandidates(source, resources, candidates, seen);
+  }
+}
+
+async function readBestIconFromXmlCandidates(source, resources, candidates, seen) {
+  const xmlCandidates = selectIconXmlCandidates(source.zipEntries, candidates);
+  for (const candidate of xmlCandidates) {
+    const entry = source.zipEntries.get(candidate.path);
+    if (!entry) {
+      continue;
+    }
+
+    try {
+      const xmlBytes = await extractSourceEntry(source, entry);
+      const adaptiveIcon = await renderAdaptiveIcon(xmlBytes, source, resources, candidate, seen);
+      if (adaptiveIcon) {
+        return adaptiveIcon;
+      }
+
+      const vectorIcon = renderVectorDrawableIcon(xmlBytes, resources, candidate);
+      if (vectorIcon) {
+        return vectorIcon;
+      }
+
+      const referencedResourceIds = parseIconXmlReferencedResourceIds(xmlBytes);
+      for (const resourceId of referencedResourceIds) {
+        const icon = await readBestIconCandidate(
+          source,
+          resources,
+          resourceId,
+          resources.resolveFiles(resourceId),
+          seen,
+        );
+        if (icon) {
+          return icon;
+        }
+      }
+    } catch {
+      // Some icons are vectors or unsupported XML shapes; keep looking for bitmap fallbacks.
+    }
+  }
+
+  return null;
+}
+
+async function readAdaptiveIconFromXmlCandidates(source, resources, candidates, seen) {
+  const xmlCandidates = selectIconXmlCandidates(source.zipEntries, candidates);
+  for (const candidate of xmlCandidates) {
+    const entry = source.zipEntries.get(candidate.path);
+    if (!entry) {
+      continue;
+    }
+
+    try {
+      const xmlBytes = await extractSourceEntry(source, entry);
+      const adaptiveIcon = await renderAdaptiveIcon(xmlBytes, source, resources, candidate, seen);
+      if (adaptiveIcon) {
+        return adaptiveIcon;
+      }
+    } catch {
+      // Unsupported XML should not block bitmap/vector fallbacks.
+    }
+  }
+
+  return null;
+}
+
+function selectBestIconCandidate(zipEntries, candidates) {
+  return (candidates || [])
+    .filter((candidate) => {
+      const entry = zipEntries.get(candidate.path);
+      return (
+        entry &&
+        isImageResourcePath(candidate.path) &&
+        (entry.uncompressedSize || entry.compressedSize || 0) <= MAX_APP_ICON_BYTES
+      );
+    })
+    .sort((left, right) => getIconCandidateScore(right) - getIconCandidateScore(left))[0] || null;
+}
+
+function collectFallbackIconCandidates(zipEntries) {
+  const candidates = [];
+  for (const [path] of zipEntries.entries()) {
+    if ((!isImageResourcePath(path) && !isXmlResourcePath(path)) || !isLikelyIconPath(path)) {
+      continue;
+    }
+
+    candidates.push({
+      path,
+      typeName: path.includes("/mipmap") ? "mipmap" : "drawable",
+      density: inferDensityFromPath(path),
+      isDefaultConfig: path.includes("/mipmap/") || path.includes("/drawable/"),
+      fallback: true,
+    });
+  }
+
+  return candidates;
+}
+
+function selectIconXmlCandidates(zipEntries, candidates) {
+  return (candidates || [])
+    .filter((candidate) => {
+      const entry = zipEntries.get(candidate.path);
+      return (
+        entry &&
+        candidate.path.toLowerCase().endsWith(".xml") &&
+        (entry.uncompressedSize || entry.compressedSize || 0) <= MAX_APP_ICON_BYTES
+      );
+    })
+    .sort((left, right) => getIconCandidateScore(right) - getIconCandidateScore(left));
+}
+
+function parseIconXmlReferencedResourceIds(xmlBytes) {
+  const bytes = toUint8Array(xmlBytes);
+  if (readUint16(bytes, 0) !== RES_XML_TYPE) {
+    return parseTextXmlReferencedResourceIds(decodeUtf8(bytes));
+  }
+
+  let stringPool = [];
+  let resourceMap = [];
+  const references = [];
+  const fileSize = readUint32(bytes, 4);
+  let offset = readUint16(bytes, 2);
+
+  while (offset < fileSize) {
+    const chunkType = readUint16(bytes, offset);
+    const chunkSize = readUint32(bytes, offset + 4);
+    if (chunkSize <= 0) {
+      break;
+    }
+
+    if (chunkType === RES_STRING_POOL_TYPE) {
+      stringPool = parseStringPool(bytes, offset);
+    } else if (chunkType === RES_XML_RESOURCE_MAP_TYPE) {
+      resourceMap = parseXmlResourceMap(bytes, offset);
+    } else if (chunkType === RES_XML_START_ELEMENT_TYPE) {
+      const element = parseXmlStartElement(bytes, offset, stringPool, resourceMap);
+      references.push(...collectIconElementReferenceItems(element));
+    }
+
+    offset += chunkSize;
+  }
+
+  return uniqueResourceIds(references.sort((left, right) => left.priority - right.priority).map((item) => item.resourceId));
+}
+
+function collectIconElementReferenceItems(element) {
+  const references = [];
+  const preferredNames = ["foreground", "monochrome", "background", "drawable", "icon"];
+  const elementPriority = preferredNames.indexOf(element.name);
+
+  for (const [name, attribute] of element.attributes.entries()) {
+    if (
+      attribute?.resourceId == null ||
+      (attribute.dataType !== TYPE_REFERENCE && attribute.dataType !== TYPE_DYNAMIC_REFERENCE)
+    ) {
+      continue;
+    }
+
+    const attributePriority = preferredNames.indexOf(name);
+    references.push({
+      resourceId: attribute.resourceId,
+      priority:
+        (elementPriority >= 0 ? elementPriority : preferredNames.length) * 10 +
+        (attributePriority >= 0 ? attributePriority : preferredNames.length),
+    });
+  }
+
+  return references;
+}
+
+function parseTextXmlReferencedResourceIds(text) {
+  const references = [];
+  const matches = text.matchAll(/@0x([0-9a-f]{8})/giu);
+  for (const match of matches) {
+    references.push(Number.parseInt(match[1], 16) >>> 0);
+  }
+  return uniqueResourceIds(references);
+}
+
+function uniqueResourceIds(values) {
+  return [...new Set(values.filter((value) => value != null))];
+}
+
+async function renderAdaptiveIcon(xmlBytes, source, resources, candidate, seen) {
+  const elements = parseDrawableXmlElements(xmlBytes);
+  if (!elements.some((element) => element.name === "adaptive-icon")) {
+    return null;
+  }
+
+  const backgroundResourceId = getAdaptiveIconLayerResourceId(elements, "background");
+  const foregroundResourceId = getAdaptiveIconLayerResourceId(elements, "foreground");
+  const backgroundLayer = await readAdaptiveIconLayer(
+    source,
+    resources,
+    backgroundResourceId,
+    new Set(seen),
+  );
+  const foregroundLayer = await readAdaptiveIconLayer(
+    source,
+    resources,
+    foregroundResourceId,
+    new Set(seen),
+  );
+
+  if (!backgroundLayer && !foregroundLayer) {
+    return null;
+  }
+
+  const svg = renderAdaptiveIconSvg(backgroundLayer, foregroundLayer);
+  const bytes = new TextEncoder().encode(svg);
+  if (bytes.byteLength > MAX_APP_ICON_BYTES) {
+    return null;
+  }
+
+  return {
+    resourceId: null,
+    path: `${candidate.path}#adaptive`,
+    mimeType: "image/svg+xml",
+    size: bytes.byteLength,
+    dataUri: `data:image/svg+xml;base64,${bytesToBase64(bytes)}`,
+  };
+}
+
+function getAdaptiveIconLayerResourceId(elements, layerName) {
+  const element = elements.find((item) => item.name === layerName);
+  return getReferenceAttributeResourceId(element, "drawable");
+}
+
+function getReferenceAttributeResourceId(element, preferredName) {
+  if (!element) {
+    return null;
+  }
+
+  const preferredAttribute = element.attributes.get(preferredName);
+  if (isResourceReferenceAttribute(preferredAttribute)) {
+    return preferredAttribute.resourceId;
+  }
+
+  for (const attribute of element.attributes.values()) {
+    if (isResourceReferenceAttribute(attribute)) {
+      return attribute.resourceId;
+    }
+  }
+
+  return null;
+}
+
+function isResourceReferenceAttribute(attribute) {
+  return (
+    attribute?.resourceId != null &&
+    (attribute.dataType === TYPE_REFERENCE || attribute.dataType === TYPE_DYNAMIC_REFERENCE)
+  );
+}
+
+async function readAdaptiveIconLayer(source, resources, resourceId, seen) {
+  if (resourceId == null || seen.has(resourceId)) {
+    return null;
+  }
+
+  seen.add(resourceId);
+
+  const color = resources.resolveColor(resourceId);
+  if (color) {
+    return {
+      kind: "color",
+      color,
+    };
+  }
+
+  const candidates = resources.resolveFiles(resourceId);
+  const xmlLayer = await readAdaptiveIconLayerFromXmlCandidates(source, resources, candidates, seen);
+  if (xmlLayer) {
+    return xmlLayer;
+  }
+
+  const imageCandidate = selectBestIconCandidate(source.zipEntries, candidates);
+  if (!imageCandidate) {
+    return null;
+  }
+
+  try {
+    const entry = source.zipEntries.get(imageCandidate.path);
+    const bytes = await extractSourceEntry(source, entry);
+    if (bytes.byteLength > MAX_APP_ICON_BYTES) {
+      return null;
+    }
+
+    const mimeType = getImageMimeType(imageCandidate.path);
+    return {
+      kind: "image",
+      path: imageCandidate.path,
+      mimeType,
+      dataUri: `data:${mimeType};base64,${bytesToBase64(bytes)}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function readAdaptiveIconLayerFromXmlCandidates(source, resources, candidates, seen) {
+  const xmlCandidates = selectIconXmlCandidates(source.zipEntries, candidates);
+  for (const candidate of xmlCandidates) {
+    const entry = source.zipEntries.get(candidate.path);
+    if (!entry) {
+      continue;
+    }
+
+    try {
+      const xmlBytes = await extractSourceEntry(source, entry);
+      const vectorLayer = buildVectorDrawableSvgLayer(xmlBytes, resources);
+      if (vectorLayer) {
+        return {
+          ...vectorLayer,
+          path: candidate.path,
+        };
+      }
+
+      const referencedResourceIds = parseIconXmlReferencedResourceIds(xmlBytes);
+      for (const referencedResourceId of referencedResourceIds) {
+        const referencedLayer = await readAdaptiveIconLayer(
+          source,
+          resources,
+          referencedResourceId,
+          seen,
+        );
+        if (referencedLayer) {
+          return referencedLayer;
+        }
+      }
+    } catch {
+      // Keep looking for other density/config variants.
+    }
+  }
+
+  return null;
+}
+
+function renderAdaptiveIconSvg(backgroundLayer, foregroundLayer) {
+  const size = 108;
+  const center = size / 2;
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">`,
+    '<defs><clipPath id="lc-icon-circle"><circle cx="54" cy="54" r="54"/></clipPath></defs>',
+    '<g clip-path="url(#lc-icon-circle)">',
+    `<circle cx="${center}" cy="${center}" r="${center}" fill="#f8fafc"/>`,
+    renderAdaptiveIconLayer(backgroundLayer, "background", size),
+    renderAdaptiveIconLayer(foregroundLayer, "foreground", size),
+    "</g>",
+    "</svg>",
+  ].join("");
+}
+
+function renderAdaptiveIconLayer(layer, role, size) {
+  if (!layer) {
+    return "";
+  }
+
+  if (layer.kind === "color") {
+    const center = size / 2;
+    return `<circle cx="${center}" cy="${center}" r="${center}" fill="${escapeXmlAttribute(layer.color)}"/>`;
+  }
+
+  if (layer.kind === "image") {
+    const fit = role === "background" ? "xMidYMid slice" : "xMidYMid meet";
+    return [
+      `<image href="${escapeXmlAttribute(layer.dataUri)}"`,
+      ' x="0" y="0"',
+      ` width="${size}" height="${size}"`,
+      ` preserveAspectRatio="${fit}"/>`,
+    ].join("");
+  }
+
+  if (layer.kind === "vector") {
+    const scaleX = size / layer.viewportWidth;
+    const scaleY = size / layer.viewportHeight;
+    const transform =
+      scaleX === 1 && scaleY === 1
+        ? ""
+        : ` transform="scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})"`;
+    return `<g${transform}>${layer.content}</g>`;
+  }
+
+  return "";
+}
+
+function renderVectorDrawableIcon(xmlBytes, resources, candidate) {
+  const layer = buildVectorDrawableSvgLayer(xmlBytes, resources);
+  if (!layer) {
+    return null;
+  }
+
+  const svg = renderStandaloneVectorSvg(layer);
+  const bytes = new TextEncoder().encode(svg);
+
+  return {
+    resourceId: null,
+    path: candidate.path,
+    mimeType: "image/svg+xml",
+    size: bytes.byteLength,
+    dataUri: `data:image/svg+xml;base64,${bytesToBase64(bytes)}`,
+  };
+}
+
+function buildVectorDrawableSvgLayer(xmlBytes, resources) {
+  const elements = parseDrawableXmlElements(xmlBytes);
+  const vectorElement = elements.find((element) => element.name === "vector");
+  if (!vectorElement) {
+    return null;
+  }
+
+  const viewportWidth = getNumericXmlAttribute(vectorElement, "viewportWidth");
+  const viewportHeight = getNumericXmlAttribute(vectorElement, "viewportHeight");
+  if (!viewportWidth || !viewportHeight) {
+    return null;
+  }
+
+  const paths = elements
+    .filter((element) => element.name === "path")
+    .map((element) => buildSvgPathFromVectorElement(element, resources))
+    .filter(Boolean);
+
+  if (paths.length === 0) {
+    return null;
+  }
+
+  return {
+    kind: "vector",
+    viewportWidth,
+    viewportHeight,
+    content: paths.join(""),
+  };
+}
+
+function renderStandaloneVectorSvg(layer) {
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${escapeXmlAttribute(layer.viewportWidth)} ${escapeXmlAttribute(layer.viewportHeight)}">`,
+    layer.content,
+    "</svg>",
+  ].join("");
+}
+
+function parseDrawableXmlElements(xmlBytes) {
+  const bytes = toUint8Array(xmlBytes);
+  if (readUint16(bytes, 0) !== RES_XML_TYPE) {
+    return parseTextDrawableXmlElements(decodeUtf8(bytes));
+  }
+
+  let stringPool = [];
+  let resourceMap = [];
+  const elements = [];
+  const fileSize = readUint32(bytes, 4);
+  let offset = readUint16(bytes, 2);
+
+  while (offset < fileSize) {
+    const chunkType = readUint16(bytes, offset);
+    const chunkSize = readUint32(bytes, offset + 4);
+    if (chunkSize <= 0) {
+      break;
+    }
+
+    if (chunkType === RES_STRING_POOL_TYPE) {
+      stringPool = parseStringPool(bytes, offset);
+    } else if (chunkType === RES_XML_RESOURCE_MAP_TYPE) {
+      resourceMap = parseXmlResourceMap(bytes, offset);
+    } else if (chunkType === RES_XML_START_ELEMENT_TYPE) {
+      elements.push(parseXmlStartElement(bytes, offset, stringPool, resourceMap));
+    }
+
+    offset += chunkSize;
+  }
+
+  return elements;
+}
+
+function parseTextDrawableXmlElements(text) {
+  const elements = [];
+  const tagMatches = text.matchAll(/<([A-Za-z0-9_.:-]+)\s+([^>]*?)(?:\/>|>)/gu);
+  for (const match of tagMatches) {
+    const name = match[1].split(":").at(-1);
+    const attributes = new Map();
+    const attributeMatches = match[2].matchAll(/([A-Za-z0-9_.:-]+)="([^"]*)"/gu);
+    for (const attributeMatch of attributeMatches) {
+      attributes.set(attributeMatch[1].split(":").at(-1), {
+        dataType: TYPE_STRING,
+        data: 0,
+        resourceId: parseResourceReferenceText(attributeMatch[2]),
+        displayValue: attributeMatch[2],
+      });
+    }
+    elements.push({ name, attributes });
+  }
+  return elements;
+}
+
+function buildSvgPathFromVectorElement(element, resources) {
+  const pathData = normalizeText(getXmlAttributeValue(element, "pathData"));
+  if (!pathData) {
+    return null;
+  }
+
+  const fillColor = resolveVectorColor(element.attributes.get("fillColor"), resources) || "#000000";
+  const fillAlpha = clampAlpha(getNumericXmlAttribute(element, "fillAlpha") ?? 1);
+  const strokeColor = resolveVectorColor(element.attributes.get("strokeColor"), resources);
+  const strokeWidth = getNumericXmlAttribute(element, "strokeWidth");
+  const attrs = [
+    `d="${escapeXmlAttribute(pathData)}"`,
+    `fill="${escapeXmlAttribute(fillColor)}"`,
+  ];
+
+  if (fillAlpha < 1) {
+    attrs.push(`fill-opacity="${fillAlpha}"`);
+  }
+
+  if (strokeColor && strokeWidth) {
+    attrs.push(`stroke="${escapeXmlAttribute(strokeColor)}"`);
+    attrs.push(`stroke-width="${escapeXmlAttribute(strokeWidth)}"`);
+  }
+
+  return `<path ${attrs.join(" ")}/>`;
+}
+
+function getXmlAttributeValue(element, name) {
+  return element.attributes.get(name)?.displayValue || null;
+}
+
+function getNumericXmlAttribute(element, name) {
+  const attribute = element.attributes.get(name);
+  if (!attribute) {
+    return null;
+  }
+
+  if (attribute.dataType === TYPE_FLOAT) {
+    return readFloat32FromUint32(attribute.data);
+  }
+
+  if (attribute.dataType === TYPE_DIMENSION) {
+    return complexToFloat(attribute.data);
+  }
+
+  const normalized = normalizeText(attribute.displayValue)?.replace(/[a-z%]+$/iu, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveVectorColor(attribute, resources) {
+  if (!attribute) {
+    return null;
+  }
+
+  if (attribute.dataType >= TYPE_FIRST_COLOR_INT && attribute.dataType <= TYPE_LAST_COLOR_INT) {
+    return formatCssColor(attribute.data);
+  }
+
+  if (
+    attribute.resourceId != null &&
+    (attribute.dataType === TYPE_REFERENCE || attribute.dataType === TYPE_DYNAMIC_REFERENCE)
+  ) {
+    return resources.resolveColor(attribute.resourceId) || null;
+  }
+
+  return normalizeColorText(attribute.displayValue);
+}
+
+function normalizeColorText(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^#[0-9a-f]{3,8}$/iu.test(normalized)) {
+    return normalized;
+  }
+
+  const hexMatch = normalized.match(/^0x([0-9a-f]{6,8})$/iu);
+  if (hexMatch) {
+    return formatCssColor(Number.parseInt(hexMatch[1], 16) >>> 0);
+  }
+
+  return null;
+}
+
+function parseResourceReferenceText(value) {
+  const match = String(value || "").match(/^@0x([0-9a-f]{8})$/iu);
+  return match ? Number.parseInt(match[1], 16) >>> 0 : null;
+}
+
+function clampAlpha(value) {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+  return Math.max(0, Math.min(1, value));
+}
+
+function readFloat32FromUint32(value) {
+  const buffer = new ArrayBuffer(4);
+  const view = new DataView(buffer);
+  view.setUint32(0, value, true);
+  return view.getFloat32(0, true);
+}
+
+function complexToFloat(value) {
+  const mantissa = (value & 0x00ffffff) << 8 >> 8;
+  const radix = (value >> 4) & 0x03;
+  const multipliers = [1 / (1 << 23), 1 / (1 << 15), 1 / (1 << 7), 1];
+  return mantissa * multipliers[radix];
+}
+
+function escapeXmlAttribute(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function formatSvgNumber(value) {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+
+  return Number(value.toFixed(6)).toString();
+}
+
+function getIconCandidateScore(candidate) {
+  const path = candidate.path.toLowerCase();
+  const formatScore = path.endsWith(".png") ? 3000 : path.endsWith(".webp") ? 2500 : 2000;
+  const density = candidate.density || 0;
+  const densityScore = density === 0xfffe ? 1 : Math.min(density, 1000);
+  return formatScore + densityScore + getIconNameScore(path);
+}
+
+function isImageResourcePath(path) {
+  return /\.(png|webp|jpe?g)$/iu.test(path);
+}
+
+function isXmlResourcePath(path) {
+  return /\.xml$/iu.test(path);
+}
+
+function isLikelyIconPath(path) {
+  const normalized = path.toLowerCase();
+  if (!normalized.startsWith("res/mipmap") && !normalized.startsWith("res/drawable")) {
+    return false;
+  }
+
+  if (/(notification|notify|status|splash|banner|foreground|background|monochrome)/u.test(normalized)) {
+    return false;
+  }
+
+  return /(ic_launcher|launcher|app_icon|icon|logo)/u.test(normalized);
+}
+
+function getIconNameScore(path) {
+  let score = 0;
+  if (path.includes("ic_launcher")) {
+    score += 12000;
+  } else if (path.includes("launcher")) {
+    score += 10000;
+  } else if (path.includes("app_icon")) {
+    score += 9000;
+  } else if (path.includes("icon")) {
+    score += 7000;
+  } else if (path.includes("logo")) {
+    score += 5000;
+  }
+
+  if (path.includes("/mipmap")) {
+    score += 1000;
+  }
+
+  return score;
+}
+
+function inferDensityFromPath(path) {
+  const normalized = path.toLowerCase();
+  if (normalized.includes("-xxxhdpi")) {
+    return 640;
+  }
+  if (normalized.includes("-xxhdpi")) {
+    return 480;
+  }
+  if (normalized.includes("-xhdpi")) {
+    return 320;
+  }
+  if (normalized.includes("-hdpi")) {
+    return 240;
+  }
+  if (normalized.includes("-mdpi")) {
+    return 160;
+  }
+  if (normalized.includes("-ldpi")) {
+    return 120;
+  }
+  if (normalized.includes("-nodpi")) {
+    return 0xfffe;
+  }
+  return 0;
+}
+
+function getImageMimeType(path) {
+  const normalized = path.toLowerCase();
+  if (normalized.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  return "image/png";
+}
+
+function bytesToBase64(bytes) {
+  if (typeof btoa !== "function") {
+    return Buffer.from(bytes).toString("base64");
+  }
+
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function resolveMetaDataItem(item, resources) {
@@ -665,6 +1456,7 @@ function parseAndroidManifest(manifestBuffer) {
   }
 
   let stringPool = [];
+  let resourceMap = [];
   const permissions = [];
   const seenPermissions = new Set();
   const stack = [];
@@ -678,6 +1470,8 @@ function parseAndroidManifest(manifestBuffer) {
     compileSdk: null,
     applicationLabel: null,
     applicationLabelRef: null,
+    applicationIconRef: null,
+    applicationRoundIconRef: null,
     components: {
       activities: [],
       services: [],
@@ -702,8 +1496,10 @@ function parseAndroidManifest(manifestBuffer) {
 
     if (chunkType === RES_STRING_POOL_TYPE) {
       stringPool = parseStringPool(bytes, offset);
+    } else if (chunkType === RES_XML_RESOURCE_MAP_TYPE) {
+      resourceMap = parseXmlResourceMap(bytes, offset);
     } else if (chunkType === RES_XML_START_ELEMENT_TYPE) {
-      const element = parseXmlStartElement(bytes, offset, stringPool);
+      const element = parseXmlStartElement(bytes, offset, stringPool, resourceMap);
       handleManifestStartElement(manifest, element, stack, permissions, seenPermissions);
       stack.push(buildManifestStackNode(manifest, element, stack.at(-1)));
     } else if (chunkType === RES_XML_END_ELEMENT_TYPE) {
@@ -758,6 +1554,23 @@ function handleManifestStartElement(manifest, element, stack, permissions, seenP
         manifest.applicationLabel = normalizeText(labelAttribute.displayValue);
       }
     }
+
+    const iconAttribute = getAttribute("icon");
+    if (
+      iconAttribute &&
+      (iconAttribute.dataType === TYPE_REFERENCE || iconAttribute.dataType === TYPE_DYNAMIC_REFERENCE)
+    ) {
+      manifest.applicationIconRef = iconAttribute.resourceId;
+    }
+
+    const roundIconAttribute = getAttribute("roundIcon");
+    if (
+      roundIconAttribute &&
+      (roundIconAttribute.dataType === TYPE_REFERENCE || roundIconAttribute.dataType === TYPE_DYNAMIC_REFERENCE)
+    ) {
+      manifest.applicationRoundIconRef = roundIconAttribute.resourceId;
+    }
+
     return;
   }
 
@@ -1007,7 +1820,7 @@ function normalizeBoolean(attribute) {
   return null;
 }
 
-function parseXmlStartElement(bytes, offset, stringPool) {
+function parseXmlStartElement(bytes, offset, stringPool, resourceMap = []) {
   const nameIndex = readUint32(bytes, offset + 20);
   const attributeStart = readUint16(bytes, offset + 24);
   const attributeSize = readUint16(bytes, offset + 26);
@@ -1016,7 +1829,9 @@ function parseXmlStartElement(bytes, offset, stringPool) {
   const attributes = new Map();
   let attributeOffset = offset + 16 + attributeStart;
   for (let index = 0; index < attributeCount; index += 1) {
-    const name = getString(stringPool, readUint32(bytes, attributeOffset + 4));
+    const attributeNameIndex = readUint32(bytes, attributeOffset + 4);
+    const resourceId = resourceMap[attributeNameIndex] || null;
+    const name = getString(stringPool, attributeNameIndex) || getAndroidAttributeName(resourceId);
     const rawValueIndex = readUint32(bytes, attributeOffset + 8);
     const dataType = bytes[attributeOffset + 15];
     const data = readUint32(bytes, attributeOffset + 16);
@@ -1028,6 +1843,7 @@ function parseXmlStartElement(bytes, offset, stringPool) {
       resourceId:
         dataType === TYPE_REFERENCE || dataType === TYPE_DYNAMIC_REFERENCE ? data >>> 0 : null,
       displayValue: coerceTypedValue(rawValue, dataType, data, stringPool),
+      attributeResourceId: resourceId,
     };
 
     if (name) {
@@ -1052,6 +1868,14 @@ function coerceTypedValue(rawValue, dataType, data, stringPool) {
     return getString(stringPool, data);
   }
 
+  if (dataType === TYPE_FLOAT) {
+    return String(readFloat32FromUint32(data));
+  }
+
+  if (dataType === TYPE_DIMENSION) {
+    return String(complexToFloat(data));
+  }
+
   if (dataType === TYPE_REFERENCE || dataType === TYPE_DYNAMIC_REFERENCE) {
     return formatResourceReference(data);
   }
@@ -1066,6 +1890,10 @@ function coerceTypedValue(rawValue, dataType, data, stringPool) {
 
   if (dataType === TYPE_INT_BOOLEAN) {
     return data !== 0 ? "true" : "false";
+  }
+
+  if (dataType >= TYPE_FIRST_COLOR_INT && dataType <= TYPE_LAST_COLOR_INT) {
+    return formatCssColor(data);
   }
 
   return `0x${(data >>> 0).toString(16)}`;
@@ -1103,6 +1931,12 @@ function parseResourcesTable(resourcesBuffer) {
   return {
     resolveString(resourceId) {
       return resolveResourceString(resourceId >>> 0, packages, bytes, new Set());
+    },
+    resolveFiles(resourceId) {
+      return resolveResourceFiles(resourceId >>> 0, packages, bytes, new Set());
+    },
+    resolveColor(resourceId) {
+      return resolveResourceColor(resourceId >>> 0, packages, bytes, new Set());
     },
   };
 }
@@ -1169,8 +2003,13 @@ function parseTypeChunk(bytes, offset) {
     entryCount,
     entriesStart,
     indexOffset: offset + headerSize,
+    density: readResourceConfigDensity(configBytes),
     isDefaultConfig: isDefaultResourceConfig(configBytes),
   };
+}
+
+function readResourceConfigDensity(configBytes) {
+  return configBytes.length >= 16 ? readUint16(configBytes, 14) : 0;
 }
 
 function resolveResourceString(resourceId, packages, bytes, seen) {
@@ -1224,6 +2063,110 @@ function resolveResourceString(resourceId, packages, bytes, seen) {
 
     if (value.dataType === TYPE_INT_HEX) {
       return `0x${(value.data >>> 0).toString(16)}`;
+    }
+  }
+
+  return null;
+}
+
+function resolveResourceFiles(resourceId, packages, bytes, seen) {
+  if (seen.has(resourceId)) {
+    return [];
+  }
+
+  seen.add(resourceId);
+
+  const packageId = resourceId >>> 24;
+  const typeId = (resourceId >>> 16) & 0xff;
+  const entryId = resourceId & 0xffff;
+
+  const packageInfo = packages.get(packageId);
+  if (!packageInfo) {
+    return [];
+  }
+
+  const typeChunks = packageInfo.types.get(typeId);
+  if (!typeChunks) {
+    return [];
+  }
+
+  const typeName = typeChunks[0]?.typeName || packageInfo.typeStrings[typeId - 1];
+  if (typeName && typeName !== "drawable" && typeName !== "mipmap") {
+    return [];
+  }
+
+  const files = [];
+  for (const typeChunk of typeChunks) {
+    const relativeEntryOffset = findEntryOffset(bytes, typeChunk, entryId);
+    if (relativeEntryOffset == null) {
+      continue;
+    }
+
+    const value = readResourceValue(bytes, typeChunk, relativeEntryOffset);
+    if (!value) {
+      continue;
+    }
+
+    if (value.dataType === TYPE_STRING) {
+      const path = normalizeText(packageInfo.globalStrings[value.data]);
+      if (path) {
+        files.push({
+          path,
+          typeName,
+          density: typeChunk.density || 0,
+          isDefaultConfig: typeChunk.isDefaultConfig,
+        });
+      }
+    } else if (value.dataType === TYPE_REFERENCE || value.dataType === TYPE_DYNAMIC_REFERENCE) {
+      files.push(...resolveResourceFiles(value.data >>> 0, packages, bytes, seen));
+    }
+  }
+
+  return files;
+}
+
+function resolveResourceColor(resourceId, packages, bytes, seen) {
+  if (seen.has(resourceId)) {
+    return null;
+  }
+
+  seen.add(resourceId);
+
+  const packageId = resourceId >>> 24;
+  const typeId = (resourceId >>> 16) & 0xff;
+  const entryId = resourceId & 0xffff;
+
+  const packageInfo = packages.get(packageId);
+  if (!packageInfo) {
+    return null;
+  }
+
+  const typeChunks = packageInfo.types.get(typeId);
+  if (!typeChunks) {
+    return null;
+  }
+
+  for (const typeChunk of typeChunks) {
+    const relativeEntryOffset = findEntryOffset(bytes, typeChunk, entryId);
+    if (relativeEntryOffset == null) {
+      continue;
+    }
+
+    const value = readResourceValue(bytes, typeChunk, relativeEntryOffset);
+    if (!value) {
+      continue;
+    }
+
+    if (value.dataType >= TYPE_FIRST_COLOR_INT && value.dataType <= TYPE_LAST_COLOR_INT) {
+      return formatCssColor(value.data);
+    }
+
+    if (value.dataType === TYPE_STRING) {
+      return normalizeColorText(packageInfo.globalStrings[value.data]);
+    }
+
+    if (value.dataType === TYPE_REFERENCE || value.dataType === TYPE_DYNAMIC_REFERENCE) {
+      return resolveResourceColor(value.data >>> 0, packages, bytes, seen);
     }
   }
 
@@ -1288,6 +2231,74 @@ function readResourceValue(bytes, typeChunk, relativeEntryOffset) {
     dataType: bytes[valueOffset + 3],
     data: readUint32(bytes, valueOffset + 4),
   };
+}
+
+function parseXmlResourceMap(bytes, offset) {
+  const headerSize = readUint16(bytes, offset + 2);
+  const chunkSize = readUint32(bytes, offset + 4);
+  const count = Math.max(0, Math.floor((chunkSize - headerSize) / 4));
+  const resourceMap = new Array(count);
+
+  for (let index = 0; index < count; index += 1) {
+    resourceMap[index] = readUint32(bytes, offset + headerSize + index * 4);
+  }
+
+  return resourceMap;
+}
+
+function getAndroidAttributeName(resourceId) {
+  switch (resourceId) {
+    case 0x01010001:
+      return "label";
+    case 0x01010002:
+      return "icon";
+    case 0x01010003:
+      return "name";
+    case 0x01010006:
+      return "permission";
+    case 0x01010010:
+      return "exported";
+    case 0x01010011:
+      return "process";
+    case 0x0101000f:
+      return "targetActivity";
+    case 0x01010018:
+      return "enabled";
+    case 0x0101002b:
+      return "authorities";
+    case 0x010102e9:
+      return "resource";
+    case 0x01010199:
+      return "drawable";
+    case 0x01010024:
+      return "value";
+    case 0x0101052c:
+      return "roundIcon";
+    case 0x01010586:
+      return "foreground";
+    case 0x01010587:
+      return "background";
+    case 0x010106e9:
+      return "monochrome";
+    case 0x01010402:
+      return "viewportWidth";
+    case 0x01010403:
+      return "viewportHeight";
+    case 0x01010404:
+      return "fillColor";
+    case 0x01010405:
+      return "pathData";
+    case 0x01010406:
+      return "strokeColor";
+    case 0x01010407:
+      return "strokeWidth";
+    case 0x0101040c:
+      return "fillAlpha";
+    case 0x0101040d:
+      return "strokeAlpha";
+    default:
+      return null;
+  }
 }
 
 function parseStringPool(bytes, offset) {
@@ -1398,6 +2409,24 @@ function combineVersionCode(versionCodeLow, versionCodeHigh) {
 
 function formatResourceReference(resourceId) {
   return `@0x${(resourceId >>> 0).toString(16)}`;
+}
+
+function formatCssColor(value) {
+  const normalized = value >>> 0;
+  const alpha = (normalized >>> 24) & 0xff;
+  const red = (normalized >>> 16) & 0xff;
+  const green = (normalized >>> 8) & 0xff;
+  const blue = normalized & 0xff;
+
+  if (alpha === 0xff) {
+    return `#${toHex2(red)}${toHex2(green)}${toHex2(blue)}`;
+  }
+
+  return `rgba(${red}, ${green}, ${blue}, ${(alpha / 255).toFixed(3)})`;
+}
+
+function toHex2(value) {
+  return value.toString(16).padStart(2, "0");
 }
 
 function isDefaultResourceConfig(configBytes) {

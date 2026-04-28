@@ -12,6 +12,7 @@ const ANALYTICS_BLOB_KEYS = [
   "file_name",
   "report_path",
   "source_label",
+  "app_icon_path",
   "url_host",
   "url_path",
   "link_preview_mode",
@@ -40,6 +41,7 @@ const ANALYTICS_DOUBLE_KEYS = [
   "has_apk_document",
   "has_url",
   "has_apk_url",
+  "has_app_icon",
 ];
 
 export function createRequestTelemetryContext(request, url, env) {

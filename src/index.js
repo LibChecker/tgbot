@@ -476,6 +476,8 @@ async function handleUploadRequest(request, env, url, telemetry) {
       meta_data_count: countMetaData(report.apkInfo.metaData),
       sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+      has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
+      app_icon_path: report.apkInfo.icon?.path || null,
       report_path: telegraphPage.path || null,
     });
 
@@ -977,6 +979,8 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       meta_data_count: countMetaData(report.apkInfo.metaData),
       sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+      has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
+      app_icon_path: report.apkInfo.icon?.path || null,
       report_path: telegraphPage.path || null,
       source_label: report.sourceLabel,
     });
@@ -1062,6 +1066,8 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       meta_data_count: countMetaData(report.apkInfo.metaData),
       sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+      has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
+      app_icon_path: report.apkInfo.icon?.path || null,
       report_path: telegraphPage.path || null,
       source_label: report.sourceLabel,
     });

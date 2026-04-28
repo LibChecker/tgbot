@@ -25,16 +25,19 @@ export async function handleReportRequest(url) {
 
 function renderReportPage(page, locale) {
   const { t, languageTag } = createI18n(locale);
-  const title = escapeHtml(page.title || t("report.fallback_title"));
-  const content = renderContent(page.content || []);
+  const titleText = page.title || t("report.fallback_title");
+  const rawContent = page.content || [];
+  const appIconDataUri = extractAppIconDataUri(rawContent);
+  const content = renderContent(stripAppIconDataMarkers(rawContent));
   const metaText = buildMetaText(page, t);
+  const reportHero = renderReportHero(titleText, metaText, appIconDataUri);
 
   return `<!doctype html>
 <html lang="${escapeHtml(languageTag)}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>${title}</title>
+    <title>${escapeHtml(titleText)}</title>
     <style>
       :root {
         color-scheme: light;
@@ -98,6 +101,30 @@ function renderReportPage(page, locale) {
         color: var(--muted);
         font-size: 0.95rem;
         overflow-wrap: anywhere;
+      }
+
+      .report-hero {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: clamp(14px, 2.4vw, 24px);
+      }
+
+      .report-hero--plain {
+        display: block;
+      }
+
+      .report-hero__text {
+        min-width: 0;
+      }
+
+      .app-icon {
+        width: clamp(72px, 10vw, 104px);
+        height: clamp(72px, 10vw, 104px);
+        margin: 0;
+        border-radius: 50%;
+        object-fit: contain;
+        filter: drop-shadow(0 18px 28px rgba(15, 23, 42, 0.16));
       }
 
       .content,
@@ -228,6 +255,32 @@ function renderReportPage(page, locale) {
         margin-right: 6px;
       }
 
+      figure {
+        display: inline-grid;
+        place-items: center;
+        gap: 8px;
+        margin: 0 0 18px;
+        padding: 14px;
+        background: linear-gradient(180deg, #ffffff, #f8fafc);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+      }
+
+      figure img {
+        width: clamp(64px, 12vw, 88px);
+        height: clamp(64px, 12vw, 88px);
+        margin: 0;
+        border-radius: 22%;
+        object-fit: contain;
+      }
+
+      figcaption {
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.4;
+      }
+
       p code {
         margin-right: 10px;
       }
@@ -346,6 +399,8 @@ function renderReportPage(page, locale) {
         background: rgba(248, 250, 252, 0.9);
         border: 1px solid rgba(229, 231, 235, 0.9);
         border-radius: 16px;
+        font-size: 0.92rem;
+        line-height: 1.62;
       }
 
       .item-line + .item-line {
@@ -353,17 +408,23 @@ function renderReportPage(page, locale) {
       }
 
       .item-title {
+        font-size: 0.95rem;
         font-weight: 700;
         color: #0f172a;
       }
 
       .item-subtitle {
+        font-size: 0.9rem;
         color: #475569;
       }
 
       .item-meta {
         color: var(--muted);
-        font-size: 0.95rem;
+        font-size: 0.86rem;
+      }
+
+      .list-item code {
+        font-size: 0.9em;
       }
 
       .item-line,
@@ -501,6 +562,20 @@ function renderReportPage(page, locale) {
           padding: 18px 12px;
         }
 
+        .report-hero {
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .app-icon {
+          width: 68px;
+          height: 68px;
+        }
+
+        h1 {
+          font-size: clamp(1.75rem, 8vw, 2.25rem);
+        }
+
         h3 {
           font-size: 1.5rem;
         }
@@ -553,8 +628,7 @@ function renderReportPage(page, locale) {
   <body>
     <main class="page">
       <article class="card">
-        <h1>${title}</h1>
-        <div class="meta">${escapeHtml(metaText)}</div>
+        ${reportHero}
         <section class="content">${content}</section>
       </article>
     </main>
@@ -620,6 +694,58 @@ function buildMetaText(page, t) {
     parts.push(t("report.views", { count: page.views }));
   }
   return parts.length > 0 ? parts.join(" · ") : t("report.meta_fallback");
+}
+
+const APP_ICON_DATA_PREFIX = "LC_APP_ICON_DATA:";
+
+function extractAppIconDataUri(nodes) {
+  for (const node of nodes || []) {
+    const dataUri = getAppIconMarkerDataUri(node);
+    if (dataUri) {
+      return dataUri;
+    }
+  }
+
+  return null;
+}
+
+function stripAppIconDataMarkers(nodes) {
+  return (nodes || []).filter((node) => !getAppIconMarkerDataUri(node));
+}
+
+function getAppIconMarkerDataUri(node) {
+  if (!node || typeof node !== "object" || !["aside", "p", "pre"].includes(node.tag)) {
+    return null;
+  }
+
+  const text = extractText(node.children || []).trim();
+  if (!text.startsWith(APP_ICON_DATA_PREFIX)) {
+    return null;
+  }
+
+  const dataUri = text.slice(APP_ICON_DATA_PREFIX.length).trim();
+  return isSafeAppIconDataUri(dataUri) ? dataUri : null;
+}
+
+function isSafeAppIconDataUri(value) {
+  return /^data:image\/(?:png|webp|jpeg|svg\+xml);base64,[A-Za-z0-9+/=]+$/u.test(value);
+}
+
+function renderReportHero(title, metaText, dataUri) {
+  const icon = dataUri
+    ? `<img class="app-icon" src="${escapeHtml(dataUri)}" alt="" loading="lazy">`
+    : "";
+  const className = dataUri ? "report-hero" : "report-hero report-hero--plain";
+
+  return [
+    `<header class="${className}">`,
+    icon,
+    '<div class="report-hero__text">',
+    `<h1>${escapeHtml(title)}</h1>`,
+    `<div class="meta">${escapeHtml(metaText)}</div>`,
+    "</div>",
+    "</header>",
+  ].join("");
 }
 
 function renderContent(nodes) {
