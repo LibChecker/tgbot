@@ -34,6 +34,7 @@
 
 - 运行方式：Telegram webhook + Cloudflare Workers。
 - APK 解析：纯 JavaScript，在 Worker 内直接解析 `AndroidManifest.xml` 与 `resources.arsc`。
+- Pages WebUI：`pages-apk-webui/` 提供独立 Cloudflare Pages 静态项目，复用同一套解析器与 LibChecker 规则，在浏览器本地通过 Web Worker 分析 APK，不把文件上传到服务器。
 - 展示方式：Telegram 消息仅返回摘要，完整结果通过 Worker 报告页展示；Telegraph 作为内容存储层，Worker 负责渲染更完整的 UI。
 - 国际化：当前已支持中文和英文；Telegram 回复、命令描述、Telegraph 内容与 Worker 报告页会基于用户语言自动切换。
 - 大文件入口：`/upload` 网页直接接收 APK 上传并解析，用来绕过 Telegram Bot API `getFile` 的 20MB 文件下载限制；默认建议上限为 `90MB`，仍受 Cloudflare Worker 请求体和内存限制影响。
@@ -125,10 +126,23 @@ PUBLIC_WEBHOOK_URL = "https://your-worker.your-subdomain.workers.dev"
 npm run dev
 ```
 
+Pages 本地 WebUI：
+
+```bash
+npm run pages:build
+npm run pages:dev
+```
+
 ### 5. 部署到 Cloudflare Workers
 
 ```bash
 npm run deploy
+```
+
+部署 Pages WebUI：
+
+```bash
+npm run pages:deploy
 ```
 
 部署成功后，假设你的 Worker 地址是：

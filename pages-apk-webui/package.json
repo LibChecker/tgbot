@@ -1,0 +1,12 @@
+{
+  "name": "tgbot-apk-webui-pages",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check scripts/build.mjs && node --check src/app.js && node --check src/analyzer-worker.js",
+    "dev": "npm run build && npx wrangler pages dev dist",
+    "deploy": "npm run build && npx wrangler pages deploy dist --project-name=tgbot-apk-webui"
+  }
+}
