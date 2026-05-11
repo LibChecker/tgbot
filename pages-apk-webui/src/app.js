@@ -196,6 +196,10 @@ const HISTORY_MAX_APP_ICON_DATA_URI_LENGTH = 180_000;
 const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 let sdkIconSvgMap = null;
 let sdkIconSvgMapPromise = null;
+const ORB_PALETTES = {
+  light: ["#7c3aed", "#c084fc", "#22d3ee", "#f0abfc"],
+  dark: ["#3b1d70", "#5b21b6", "#075985", "#7e22ce"],
+};
 const DOT_TITLE_GLYPHS = {
   B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
   C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
@@ -229,6 +233,7 @@ const elements = {
   languageSelect: document.querySelector("#language-select"),
   exportButton: document.querySelector("#export-button"),
   clearButton: document.querySelector("#clear-button"),
+  backgroundCanvas: document.querySelector("#color-orb-background"),
   brandTitle: document.querySelector(".brand-title"),
   form: document.querySelector("#analyze-form"),
   fileInput: document.querySelector("#file-input"),
@@ -258,6 +263,7 @@ renderBrandTitle();
 renderHistoryList();
 updateHistoryCollapse();
 bindEvents();
+initColorOrbBackground();
 initBrandWave();
 
 function bindEvents() {
@@ -566,6 +572,323 @@ function lerp(from, to, amount) {
   return from + (to - from) * amount;
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function initColorOrbBackground() {
+  const canvas = elements.backgroundCanvas;
+  const context = canvas?.getContext?.("2d", { alpha: true });
+  if (!canvas || !context) {
+    return;
+  }
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const orb = {
+    x: 0.72,
+    y: 0.22,
+    velocityX: -0.028,
+    velocityY: 0.022,
+    seed: Math.random() * 1000,
+    radiusScale: 1,
+  };
+
+  let width = 0;
+  let height = 0;
+  let pixelRatio = 1;
+  let frameId = 0;
+  let lastTime = 0;
+
+  const resize = () => {
+    const nextWidth = Math.max(1, window.innerWidth);
+    const nextHeight = Math.max(1, window.innerHeight);
+    const nextPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+
+    if (nextWidth === width && nextHeight === height && nextPixelRatio === pixelRatio) {
+      return;
+    }
+
+    width = nextWidth;
+    height = nextHeight;
+    pixelRatio = nextPixelRatio;
+    canvas.width = Math.round(width * pixelRatio);
+    canvas.height = Math.round(height * pixelRatio);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  };
+
+  const moveOrb = (delta, now) => {
+    const seconds = delta / 1000;
+    const time = now * 0.001;
+    const seed = orb.seed;
+    const flowX =
+      Math.sin(time * 0.73 + seed) * 0.006 +
+      Math.sin(time * 0.37 + seed * 1.91) * 0.004;
+    const flowY =
+      Math.cos(time * 0.61 + seed * 0.83) * 0.006 +
+      Math.sin(time * 0.43 + seed * 2.47) * 0.004;
+
+    orb.velocityX += flowX * seconds;
+    orb.velocityY += flowY * seconds;
+    normalizeOrbVelocity(orb);
+
+    orb.x += orb.velocityX * seconds;
+    orb.y += orb.velocityY * seconds;
+
+    bounceOrb(orb);
+    orb.radiusScale =
+      1 +
+      Math.sin(time * 0.23 + seed * 1.17) * 0.08 +
+      Math.cos(time * 0.11 + seed * 2.61) * 0.05;
+  };
+
+  const step = (now) => {
+    resize();
+
+    const delta = lastTime ? Math.min(now - lastTime, 50) : 16.7;
+    lastTime = now;
+
+    if (reducedMotion.matches) {
+      orb.x = 0.68;
+      orb.y = 0.24;
+      orb.radiusScale = 1;
+      drawColorOrb(context, orb, width, height, now);
+      return;
+    }
+
+    moveOrb(delta, now);
+
+    drawColorOrb(context, orb, width, height, now);
+    frameId = window.requestAnimationFrame(step);
+  };
+
+  const stop = () => {
+    if (!frameId) {
+      return;
+    }
+
+    window.cancelAnimationFrame(frameId);
+    frameId = 0;
+  };
+
+  const start = () => {
+    if (frameId) {
+      return;
+    }
+
+    lastTime = 0;
+    frameId = window.requestAnimationFrame(step);
+  };
+
+  window.addEventListener("resize", () => {
+    resize();
+    drawColorOrb(context, orb, width, height, performance.now());
+  });
+
+  window.addEventListener("apk-theme-change", () => {
+    drawColorOrb(context, orb, width, height, performance.now());
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stop();
+      return;
+    }
+
+    start();
+  });
+
+  reducedMotion.addEventListener("change", () => {
+    stop();
+    start();
+  });
+
+  systemThemeMedia.addEventListener("change", () => {
+    drawColorOrb(context, orb, width, height, performance.now());
+  });
+
+  resize();
+  start();
+}
+
+function normalizeOrbVelocity(orb) {
+  const speed = Math.hypot(orb.velocityX, orb.velocityY) || 0.001;
+  const minSpeed = 0.018;
+  const maxSpeed = 0.052;
+  const targetSpeed = clamp(speed, minSpeed, maxSpeed);
+
+  orb.velocityX = (orb.velocityX / speed) * targetSpeed;
+  orb.velocityY = (orb.velocityY / speed) * targetSpeed;
+}
+
+function bounceOrb(orb) {
+  const min = 0.03;
+  const max = 0.97;
+
+  if (orb.x < min) {
+    orb.x = min;
+    orb.velocityX = Math.abs(orb.velocityX);
+  } else if (orb.x > max) {
+    orb.x = max;
+    orb.velocityX = -Math.abs(orb.velocityX);
+  }
+
+  if (orb.y < min) {
+    orb.y = min;
+    orb.velocityY = Math.abs(orb.velocityY);
+  } else if (orb.y > max) {
+    orb.y = max;
+    orb.velocityY = -Math.abs(orb.velocityY);
+  }
+}
+
+function drawColorOrb(context, orb, width, height, now) {
+  const colorScheme = document.documentElement.dataset.colorScheme === "dark" ? "dark" : "light";
+  const palette = ORB_PALETTES[colorScheme].map(hexToRgb);
+  const isDark = colorScheme === "dark";
+  const centerX = orb.x * width;
+  const centerY = orb.y * height;
+  const radius = Math.max(190, Math.min(Math.max(width, height) * 0.36, 540)) * orb.radiusScale;
+  const drift = Math.sin(now * 0.00032 + orb.seed) * radius * 0.08;
+  const highlightX = centerX - radius * 0.24 + drift;
+  const highlightY = centerY - radius * 0.3 + Math.cos(now * 0.00027 + orb.seed) * radius * 0.07;
+
+  context.clearRect(0, 0, width, height);
+  context.globalCompositeOperation = "source-over";
+  context.save();
+
+  const shadow = context.createRadialGradient(centerX, centerY + radius * 0.18, 0, centerX, centerY + radius * 0.18, radius * 1.26);
+  shadow.addColorStop(0, rgba(palette[0], isDark ? 0.16 : 0.12));
+  shadow.addColorStop(0.42, rgba(mixLab(palette[0], palette[1], 0.38), isDark ? 0.11 : 0.09));
+  shadow.addColorStop(0.72, rgba(palette[1], isDark ? 0.055 : 0.045));
+  shadow.addColorStop(1, rgba(palette[0], 0));
+  context.fillStyle = shadow;
+  context.beginPath();
+  context.arc(centerX, centerY + radius * 0.18, radius * 1.26, 0, Math.PI * 2);
+  context.fill();
+
+  const body = context.createRadialGradient(highlightX, highlightY, radius * 0.05, centerX, centerY, radius);
+  body.addColorStop(0, rgba(mixLab(palette[3], { r: 255, g: 255, b: 255 }, isDark ? 0.12 : 0.48), isDark ? 0.24 : 0.58));
+  body.addColorStop(0.16, rgba(mixLab(palette[1], palette[3], 0.48), isDark ? 0.22 : 0.44));
+  body.addColorStop(0.34, rgba(mixLab(palette[1], palette[3], 0.25), isDark ? 0.19 : 0.34));
+  body.addColorStop(0.52, rgba(mixLab(palette[0], palette[1], 0.5), isDark ? 0.16 : 0.28));
+  body.addColorStop(0.72, rgba(mixLab(palette[0], palette[2], 0.28), isDark ? 0.1 : 0.18));
+  body.addColorStop(0.9, rgba(palette[0], isDark ? 0.035 : 0.075));
+  body.addColorStop(1, rgba(palette[0], 0));
+  context.fillStyle = body;
+  context.beginPath();
+  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  context.fill();
+
+  const accent = context.createRadialGradient(centerX + radius * 0.28, centerY + radius * 0.16, 0, centerX + radius * 0.28, centerY + radius * 0.16, radius * 0.78);
+  accent.addColorStop(0, rgba(palette[2], isDark ? 0.09 : 0.18));
+  accent.addColorStop(0.32, rgba(mixLab(palette[2], palette[1], 0.26), isDark ? 0.065 : 0.12));
+  accent.addColorStop(0.72, rgba(palette[2], isDark ? 0.02 : 0.04));
+  accent.addColorStop(1, rgba(palette[2], 0));
+  context.fillStyle = accent;
+  context.beginPath();
+  context.arc(centerX + radius * 0.26, centerY + radius * 0.14, radius * 0.78, 0, Math.PI * 2);
+  context.fill();
+
+  drawOrbGrain(context, centerX, centerY, radius, orb.seed, now, colorScheme);
+  context.restore();
+}
+
+function drawOrbGrain(context, centerX, centerY, radius, seed, now, colorScheme) {
+  const alpha = colorScheme === "dark" ? 0.014 : 0.026;
+  context.save();
+  context.beginPath();
+  context.arc(centerX, centerY, radius * 0.96, 0, Math.PI * 2);
+  context.clip();
+
+  for (let index = 0; index < 72; index += 1) {
+    const base = seededNoise(seed + index * 19.19);
+    const angle = base * Math.PI * 2 + now * 0.000045 * (index % 5);
+    const distance = Math.sqrt(seededNoise(seed + index * 37.7)) * radius * 0.92;
+    const x = centerX + Math.cos(angle) * distance;
+    const y = centerY + Math.sin(angle) * distance;
+    const dotRadius = 0.7 + seededNoise(seed + index * 11.4) * 1.8;
+    context.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    context.beginPath();
+    context.arc(x, y, dotRadius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  context.restore();
+}
+
+function seededNoise(value) {
+  const x = Math.sin(value * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function hexToRgb(value) {
+  const normalized = String(value || "").replace("#", "");
+  const numberValue = Number.parseInt(normalized.length === 3
+    ? normalized.split("").map((part) => `${part}${part}`).join("")
+    : normalized, 16);
+
+  return {
+    r: (numberValue >> 16) & 255,
+    g: (numberValue >> 8) & 255,
+    b: numberValue & 255,
+  };
+}
+
+function rgba(color, alpha) {
+  return `rgba(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)}, ${alpha})`;
+}
+
+function mixLab(left, right, amount) {
+  const leftLab = rgbToLab(left);
+  const rightLab = rgbToLab(right);
+  return labToRgb({
+    l: lerp(leftLab.l, rightLab.l, amount),
+    a: lerp(leftLab.a, rightLab.a, amount),
+    b: lerp(leftLab.b, rightLab.b, amount),
+  });
+}
+
+function rgbToLab(color) {
+  const rgb = [color.r, color.g, color.b].map((channel) => {
+    const value = channel / 255;
+    return value > 0.04045 ? ((value + 0.055) / 1.055) ** 2.4 : value / 12.92;
+  });
+  const x = (rgb[0] * 0.4124 + rgb[1] * 0.3576 + rgb[2] * 0.1805) / 0.95047;
+  const y = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+  const z = (rgb[0] * 0.0193 + rgb[1] * 0.1192 + rgb[2] * 0.9505) / 1.08883;
+  const lab = [x, y, z].map((value) => value > 0.008856 ? value ** (1 / 3) : (7.787 * value) + (16 / 116));
+
+  return {
+    l: (116 * lab[1]) - 16,
+    a: 500 * (lab[0] - lab[1]),
+    b: 200 * (lab[1] - lab[2]),
+  };
+}
+
+function labToRgb(color) {
+  const y = (color.l + 16) / 116;
+  const x = color.a / 500 + y;
+  const z = y - color.b / 200;
+  const xyz = [x, y, z].map((value) => {
+    const valueCubed = value ** 3;
+    return valueCubed > 0.008856 ? valueCubed : (value - 16 / 116) / 7.787;
+  });
+  const linear = [
+    xyz[0] * 0.95047 * 3.2406 + xyz[1] * -1.5372 + xyz[2] * 1.08883 * -0.4986,
+    xyz[0] * 0.95047 * -0.9689 + xyz[1] * 1.8758 + xyz[2] * 1.08883 * 0.0415,
+    xyz[0] * 0.95047 * 0.0557 + xyz[1] * -0.204 + xyz[2] * 1.08883 * 1.057,
+  ];
+
+  const rgb = linear.map((value) => {
+    const normalized = value > 0.0031308 ? 1.055 * (value ** (1 / 2.4)) - 0.055 : 12.92 * value;
+    return Math.min(255, Math.max(0, normalized * 255));
+  });
+
+  return { r: rgb[0], g: rgb[1], b: rgb[2] };
+}
+
 function readThemeChoice() {
   try {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -582,6 +905,7 @@ function applyThemeChoice(choice, options = {}) {
 
   document.documentElement.dataset.themeChoice = themeChoice;
   document.documentElement.dataset.colorScheme = resolveColorScheme(themeChoice);
+  window.dispatchEvent(new Event("apk-theme-change"));
 
   elements.themeButtons.forEach((button) => {
     const isActive = button.dataset.themeChoice === themeChoice;

@@ -97,6 +97,16 @@ body {
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+.color-orb-background {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  opacity: 0.92;
+}
+
 button,
 input,
 select {
@@ -131,6 +141,8 @@ svg {
 }
 
 .app-shell {
+  position: relative;
+  z-index: 1;
   width: min(1180px, calc(100% - clamp(20px, 5vw, 64px)));
   margin: 0 auto;
   padding: clamp(16px, 3vw, 28px) 0 clamp(34px, 5vw, 58px);
