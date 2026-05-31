@@ -1,9 +1,12 @@
 name = "tgbot"
 main = "src/index.js"
 compatibility_date = "2026-04-12"
+routes = [
+  { pattern = "lcbot.absinthe.life", custom_domain = true }
+]
 
 [vars]
-PUBLIC_WEBHOOK_URL = "https://lc.absinthe.life"
+PUBLIC_WEBHOOK_URL = "https://lcbot.absinthe.life"
 
 [observability]
 enabled = true
