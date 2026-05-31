@@ -997,6 +997,11 @@ svg {
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 
+.component-group-grid {
+  gap: 18px;
+  grid-template-columns: 1fr;
+}
+
 .group-block {
   padding: 14px;
 }
@@ -1007,16 +1012,151 @@ svg {
   letter-spacing: 0;
 }
 
+.component-group-block {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.component-group-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--heading-text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.component-group-summary::marker,
+.component-group-summary::-webkit-details-marker {
+  display: none;
+  content: "";
+}
+
+.component-group-summary::before {
+  content: "";
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.component-group-block[open] > .component-group-summary::before {
+  transform: rotate(45deg);
+}
+
+.component-group-block:not([open]) > .component-group-summary {
+  margin-bottom: 0;
+}
+
+.component-group-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 1rem;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.component-group-count {
+  flex: 0 0 auto;
+  min-width: 32px;
+  padding: 0.16rem 0.52rem;
+  border-radius: 999px;
+  background: var(--count-bg);
+  color: var(--count-text);
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-align: center;
+}
+
 .list-stack,
 .sdk-stack {
   display: grid;
   gap: 10px;
 }
 
+.component-list-stack {
+  gap: 12px;
+}
+
 .list-row {
   display: grid;
   gap: 9px;
   padding: 15px 16px;
+}
+
+.component-row {
+  gap: 12px;
+  padding: 16px;
+}
+
+.component-row-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+.component-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.component-row-title {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.component-row-path {
+  min-width: 0;
+}
+
+.component-row-path .code-chip {
+  max-width: 100%;
+}
+
+.component-row-sdk {
+  flex: 0 1 min(42%, 280px);
+  min-width: 0;
+}
+
+.component-row-sdk .chip {
+  max-width: 100%;
+  min-height: 32px;
+  gap: 6px;
+  overflow: hidden;
+  padding: 0.24rem 0.58rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-row-sdk .sdk-icon {
+  flex-basis: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.component-detail-stack {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.component-detail {
+  line-height: 1.55;
 }
 
 .row-title,
@@ -1250,6 +1390,14 @@ svg {
   .app-icon-placeholder {
     width: 68px;
     height: 68px;
+  }
+
+  .component-row-header {
+    display: grid;
+  }
+
+  .component-row-sdk {
+    max-width: 100%;
   }
 }
 

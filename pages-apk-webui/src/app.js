@@ -1436,21 +1436,20 @@ function renderComponentsTab(report) {
     const items = components[sectionName] || [];
     const rows = items.map(renderComponentRow).join("");
     return [
-      `<section class="group-block">`,
-      `<h4>${escapeHtml(t(sectionName))} <span class="muted">(${items.length})</span></h4>`,
-      rows ? `<div class="list-stack">${rows}</div>` : emptyList(t("noComponents")),
-      `</section>`,
+      `<details class="group-block component-group-block" open>`,
+      `<summary class="component-group-summary">`,
+      `<span class="component-group-title">${escapeHtml(t(sectionName))}</span>`,
+      `<span class="component-group-count">${escapeHtml(String(items.length))}</span>`,
+      `</summary>`,
+      rows ? `<div class="list-stack component-list-stack">${rows}</div>` : emptyList(t("noComponents")),
+      `</details>`,
     ].join("");
   }).join("");
 
-  return `<div class="group-grid">${blocks}</div>`;
+  return `<div class="group-grid component-group-grid">${blocks}</div>`;
 }
 
 function renderComponentRow(component) {
-  const flags = [
-    component.exported == null ? t("unknown") : component.exported ? t("exported") : t("notExported"),
-    component.enabled == null ? "" : component.enabled ? t("enabled") : t("disabled"),
-  ].filter(Boolean);
   const details = [
     component.permission ? `${t("permission")}: ${component.permission}` : "",
     component.process ? `${t("process")}: ${component.process}` : "",
@@ -1460,12 +1459,15 @@ function renderComponentRow(component) {
   ].filter(Boolean);
 
   return [
-    `<article class="list-row">`,
-    `<div class="row-title"><span>${escapeHtml(component.shortName || component.name || t("unknown"))}</span></div>`,
-    `<div class="row-meta">${codeChip(component.name || t("unknown"))}</div>`,
-    flags.length ? `<div class="row-meta">${escapeHtml(flags.join(" · "))}</div>` : "",
-    details.map((item) => `<div class="row-meta">${escapeHtml(item)}</div>`).join(""),
-    component.sdk ? `<div class="row-meta">${escapeHtml(t("sdk"))}: ${renderSdkChip(component.sdk)}</div>` : "",
+    `<article class="list-row component-row">`,
+    `<div class="component-row-header">`,
+    `<div class="component-row-main">`,
+    `<div class="row-title component-row-title"><span>${escapeHtml(component.shortName || component.name || t("unknown"))}</span></div>`,
+    `<div class="component-row-path">${codeChip(component.name || t("unknown"))}</div>`,
+    `</div>`,
+    component.sdk ? `<div class="component-row-sdk">${renderSdkChip(component.sdk)}</div>` : "",
+    `</div>`,
+    details.length ? `<div class="component-detail-stack">${details.map((item) => `<div class="row-meta component-detail">${escapeHtml(item)}</div>`).join("")}</div>` : "",
     `</article>`,
   ].join("");
 }
