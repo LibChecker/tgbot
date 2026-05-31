@@ -44,6 +44,11 @@ const COMPOSE_VERSION_ENTRY_CANDIDATES = [
   "META-INF/androidx.compose.animation_animation.version",
 ];
 const MAX_APP_ICON_BYTES = 128 * 1024;
+const ADAPTIVE_ICON_SIZE = 108;
+const ADAPTIVE_ICON_EXTRA_INSET_PERCENTAGE = 1 / 4;
+const ADAPTIVE_ICON_VIEW_PORT_SCALE = 1 / (1 + 2 * ADAPTIVE_ICON_EXTRA_INSET_PERCENTAGE);
+const ADAPTIVE_ICON_EDGE_INSET = 0.5;
+const ADAPTIVE_ICON_EDGE_FEATHER = 1;
 
 export async function readApkInfo(apkBuffer) {
   const apkBytes = toUint8Array(apkBuffer);
@@ -404,7 +409,7 @@ async function readBestIconFromXmlCandidates(source, resources, candidates, seen
         return adaptiveIcon;
       }
 
-      const vectorIcon = renderVectorDrawableIcon(xmlBytes, resources, candidate);
+      const vectorIcon = await renderVectorDrawableIcon(xmlBytes, source, resources, candidate);
       if (vectorIcon) {
         return vectorIcon;
       }
@@ -695,7 +700,7 @@ async function readAdaptiveIconLayerFromXmlCandidates(source, resources, candida
 
     try {
       const xmlBytes = await extractSourceEntry(source, entry);
-      const vectorLayer = buildVectorDrawableSvgLayer(xmlBytes, resources);
+      const vectorLayer = await buildVectorDrawableSvgLayer(xmlBytes, source, resources, candidate);
       if (vectorLayer) {
         return {
           ...vectorLayer,
@@ -724,17 +729,36 @@ async function readAdaptiveIconLayerFromXmlCandidates(source, resources, candida
 }
 
 function renderAdaptiveIconSvg(backgroundLayer, foregroundLayer) {
-  const size = 108;
+  const size = ADAPTIVE_ICON_SIZE;
   const center = size / 2;
+  const edgeRadius = center - ADAPTIVE_ICON_EDGE_INSET;
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">`,
-    '<defs><clipPath id="lc-icon-circle"><circle cx="54" cy="54" r="54"/></clipPath></defs>',
-    '<g clip-path="url(#lc-icon-circle)">',
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="geometricPrecision">`,
+    renderAdaptiveIconMaskDefs(center, edgeRadius),
+    '<g mask="url(#lc-icon-mask)">',
     `<circle cx="${center}" cy="${center}" r="${center}" fill="#f8fafc"/>`,
     renderAdaptiveIconLayer(backgroundLayer, "background", size),
     renderAdaptiveIconLayer(foregroundLayer, "foreground", size),
     "</g>",
     "</svg>",
+  ].join("");
+}
+
+function renderAdaptiveIconMaskDefs(center, edgeRadius) {
+  const innerRadius = Math.max(0, edgeRadius - ADAPTIVE_ICON_EDGE_FEATHER);
+  const gradientRadius = center;
+  const innerOffset = innerRadius / gradientRadius;
+  const outerOffset = edgeRadius / gradientRadius;
+  return [
+    "<defs>",
+    `<radialGradient id="lc-icon-edge" gradientUnits="userSpaceOnUse" cx="${center}" cy="${center}" r="${gradientRadius}">`,
+    `<stop offset="${formatSvgNumber(innerOffset)}" stop-color="#ffffff"/>`,
+    `<stop offset="${formatSvgNumber(outerOffset)}" stop-color="#000000"/>`,
+    "</radialGradient>",
+    `<mask id="lc-icon-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${center * 2}" height="${center * 2}">`,
+    `<rect x="0" y="0" width="${center * 2}" height="${center * 2}" fill="url(#lc-icon-edge)"/>`,
+    "</mask>",
+    "</defs>",
   ].join("");
 }
 
@@ -749,30 +773,41 @@ function renderAdaptiveIconLayer(layer, role, size) {
   }
 
   if (layer.kind === "image") {
+    const layerBounds = getAdaptiveIconLayerBounds(size);
     const fit = role === "background" ? "xMidYMid slice" : "xMidYMid meet";
     return [
       `<image href="${escapeXmlAttribute(layer.dataUri)}"`,
-      ' x="0" y="0"',
-      ` width="${size}" height="${size}"`,
+      ` x="${formatSvgNumber(layerBounds.offset)}" y="${formatSvgNumber(layerBounds.offset)}"`,
+      ` width="${formatSvgNumber(layerBounds.size)}" height="${formatSvgNumber(layerBounds.size)}"`,
       ` preserveAspectRatio="${fit}"/>`,
     ].join("");
   }
 
   if (layer.kind === "vector") {
-    const scaleX = size / layer.viewportWidth;
-    const scaleY = size / layer.viewportHeight;
-    const transform =
-      scaleX === 1 && scaleY === 1
-        ? ""
-        : ` transform="scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})"`;
+    const layerBounds = getAdaptiveIconLayerBounds(size);
+    const scaleX = layerBounds.size / layer.viewportWidth;
+    const scaleY = layerBounds.size / layer.viewportHeight;
+    const transformParts = [
+      formatSvgTranslate(layerBounds.offset, layerBounds.offset),
+      `scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})`,
+    ];
+    const transform = ` transform="${transformParts.join(" ")}"`;
     return `<g${transform}>${layer.content}</g>`;
   }
 
   return "";
 }
 
-function renderVectorDrawableIcon(xmlBytes, resources, candidate) {
-  const layer = buildVectorDrawableSvgLayer(xmlBytes, resources);
+function getAdaptiveIconLayerBounds(size) {
+  const layerSize = size / ADAPTIVE_ICON_VIEW_PORT_SCALE;
+  return {
+    size: layerSize,
+    offset: (size - layerSize) / 2,
+  };
+}
+
+async function renderVectorDrawableIcon(xmlBytes, source, resources, candidate) {
+  const layer = await buildVectorDrawableSvgLayer(xmlBytes, source, resources, candidate);
   if (!layer) {
     return null;
   }
@@ -789,7 +824,7 @@ function renderVectorDrawableIcon(xmlBytes, resources, candidate) {
   };
 }
 
-function buildVectorDrawableSvgLayer(xmlBytes, resources) {
+async function buildVectorDrawableSvgLayer(xmlBytes, source, resources, candidate = null) {
   const elements = parseDrawableXmlElements(xmlBytes);
   const vectorElement = elements.find((element) => element.name === "vector");
   if (!vectorElement) {
@@ -802,10 +837,15 @@ function buildVectorDrawableSvgLayer(xmlBytes, resources) {
     return null;
   }
 
-  const paths = elements
-    .filter((element) => element.name === "path")
-    .map((element) => buildSvgPathFromVectorElement(element, resources))
-    .filter(Boolean);
+  const defs = [];
+  const idPrefix = buildSvgIdPrefix(candidate?.path || "vector");
+  const paths = [];
+  for (const element of elements.filter((item) => item.name === "path")) {
+    const path = await buildSvgPathFromVectorElement(element, source, resources, defs, idPrefix);
+    if (path) {
+      paths.push(path);
+    }
+  }
 
   if (paths.length === 0) {
     return null;
@@ -815,7 +855,7 @@ function buildVectorDrawableSvgLayer(xmlBytes, resources) {
     kind: "vector",
     viewportWidth,
     viewportHeight,
-    content: paths.join(""),
+    content: `${defs.length > 0 ? `<defs>${defs.join("")}</defs>` : ""}${paths.join("")}`,
   };
 }
 
@@ -836,6 +876,7 @@ function parseDrawableXmlElements(xmlBytes) {
   let stringPool = [];
   let resourceMap = [];
   const elements = [];
+  const groupStack = [];
   const fileSize = readUint32(bytes, 4);
   let offset = readUint16(bytes, 2);
 
@@ -851,7 +892,16 @@ function parseDrawableXmlElements(xmlBytes) {
     } else if (chunkType === RES_XML_RESOURCE_MAP_TYPE) {
       resourceMap = parseXmlResourceMap(bytes, offset);
     } else if (chunkType === RES_XML_START_ELEMENT_TYPE) {
-      elements.push(parseXmlStartElement(bytes, offset, stringPool, resourceMap));
+      const element = parseXmlStartElement(bytes, offset, stringPool, resourceMap);
+      elements.push(withVectorGroupContext(element, groupStack));
+      if (element.name === "group") {
+        groupStack.push(element);
+      }
+    } else if (
+      chunkType === RES_XML_END_ELEMENT_TYPE &&
+      parseXmlEndElementName(bytes, offset, stringPool) === "group"
+    ) {
+      groupStack.pop();
     }
 
     offset += chunkSize;
@@ -862,31 +912,66 @@ function parseDrawableXmlElements(xmlBytes) {
 
 function parseTextDrawableXmlElements(text) {
   const elements = [];
-  const tagMatches = text.matchAll(/<([A-Za-z0-9_.:-]+)\s+([^>]*?)(?:\/>|>)/gu);
+  const groupStack = [];
+  const tagMatches = text.matchAll(/<\s*(\/)?\s*([A-Za-z0-9_.:-]+)([^<>]*?)(\/?)\s*>/gsu);
   for (const match of tagMatches) {
-    const name = match[1].split(":").at(-1);
-    const attributes = new Map();
-    const attributeMatches = match[2].matchAll(/([A-Za-z0-9_.:-]+)="([^"]*)"/gu);
-    for (const attributeMatch of attributeMatches) {
-      attributes.set(attributeMatch[1].split(":").at(-1), {
-        dataType: TYPE_STRING,
-        data: 0,
-        resourceId: parseResourceReferenceText(attributeMatch[2]),
-        displayValue: attributeMatch[2],
-      });
+    const name = match[2].split(":").at(-1);
+    if (match[1]) {
+      if (name === "group") {
+        groupStack.pop();
+      }
+      continue;
     }
-    elements.push({ name, attributes });
+
+    const element = {
+      name,
+      attributes: parseTextXmlAttributes(match[3]),
+    };
+    elements.push(withVectorGroupContext(element, groupStack));
+
+    if (name === "group" && !match[4]) {
+      groupStack.push(element);
+    }
   }
   return elements;
 }
 
-function buildSvgPathFromVectorElement(element, resources) {
+function parseTextXmlAttributes(attributeText) {
+  const attributes = new Map();
+  const attributeMatches = String(attributeText || "").matchAll(
+    /([A-Za-z0-9_.:-]+)\s*=\s*(["'])(.*?)\2/gsu,
+  );
+  for (const attributeMatch of attributeMatches) {
+    attributes.set(attributeMatch[1].split(":").at(-1), {
+      dataType: TYPE_STRING,
+      data: 0,
+      resourceId: parseResourceReferenceText(attributeMatch[3]),
+      displayValue: attributeMatch[3],
+    });
+  }
+  return attributes;
+}
+
+function withVectorGroupContext(element, groupStack) {
+  if (element.name !== "path" || groupStack.length === 0) {
+    return element;
+  }
+
+  return {
+    ...element,
+    groups: [...groupStack],
+  };
+}
+
+async function buildSvgPathFromVectorElement(element, source, resources, defs, idPrefix) {
   const pathData = normalizeText(getXmlAttributeValue(element, "pathData"));
   if (!pathData) {
     return null;
   }
 
-  const fillColor = resolveVectorColor(element.attributes.get("fillColor"), resources) || "#000000";
+  const fillColor =
+    (await resolveVectorPaint(element.attributes.get("fillColor"), source, resources, defs, idPrefix)) ||
+    "#000000";
   const fillAlpha = clampAlpha(getNumericXmlAttribute(element, "fillAlpha") ?? 1);
   const strokeColor = resolveVectorColor(element.attributes.get("strokeColor"), resources);
   const strokeWidth = getNumericXmlAttribute(element, "strokeWidth");
@@ -904,7 +989,221 @@ function buildSvgPathFromVectorElement(element, resources) {
     attrs.push(`stroke-width="${escapeXmlAttribute(strokeWidth)}"`);
   }
 
-  return `<path ${attrs.join(" ")}/>`;
+  const path = `<path ${attrs.join(" ")}/>`;
+  const transform = buildVectorElementTransform(element);
+  return transform ? `<g transform="${escapeXmlAttribute(transform)}">${path}</g>` : path;
+}
+
+async function resolveVectorPaint(attribute, source, resources, defs, idPrefix) {
+  const color = resolveVectorColor(attribute, resources);
+  if (color || !source || !isResourceReferenceAttribute(attribute)) {
+    return color;
+  }
+
+  return resolveVectorGradientPaint(attribute.resourceId, source, resources, defs, idPrefix);
+}
+
+async function resolveVectorGradientPaint(resourceId, source, resources, defs, idPrefix) {
+  const candidates = resources.resolveFiles(resourceId);
+  const xmlCandidates = selectDrawableXmlCandidates(source.zipEntries, candidates);
+  for (const candidate of xmlCandidates) {
+    const entry = source.zipEntries.get(candidate.path);
+    if (!entry) {
+      continue;
+    }
+
+    try {
+      const xmlBytes = await extractSourceEntry(source, entry);
+      const gradient = buildSvgGradientPaint(parseDrawableXmlElements(xmlBytes), defs, idPrefix);
+      if (gradient) {
+        return gradient;
+      }
+    } catch {
+      // Keep looking for other density/config variants.
+    }
+  }
+
+  return null;
+}
+
+function selectDrawableXmlCandidates(zipEntries, candidates) {
+  return (candidates || [])
+    .filter((candidate) => {
+      const entry = zipEntries.get(candidate.path);
+      return (
+        entry &&
+        candidate.path.toLowerCase().endsWith(".xml") &&
+        (entry.uncompressedSize || entry.compressedSize || 0) <= MAX_APP_ICON_BYTES
+      );
+    })
+    .sort((left, right) => Number(right.isDefaultConfig) - Number(left.isDefaultConfig));
+}
+
+function buildSvgGradientPaint(elements, defs, idPrefix) {
+  const gradientElement = elements.find((element) => element.name === "gradient");
+  if (!gradientElement) {
+    return null;
+  }
+
+  const stops = getSvgGradientStops(elements, gradientElement);
+  if (stops.length < 2) {
+    return null;
+  }
+
+  const id = `${idPrefix}-gradient-${defs.length}`;
+  const type = getXmlAttributeValue(gradientElement, "type");
+  const gradient =
+    type === "1"
+      ? buildSvgRadialGradient(id, gradientElement, stops)
+      : buildSvgLinearGradient(id, gradientElement, stops);
+  defs.push(gradient);
+  return `url(#${id})`;
+}
+
+function getSvgGradientStops(elements, gradientElement) {
+  const itemStops = elements
+    .filter((element) => element.name === "item")
+    .map((element) => ({
+      color: resolveInlineColorAttribute(element.attributes.get("color")),
+      offset: getNumericXmlAttribute(element, "offset"),
+    }))
+    .filter((stop) => stop.color && stop.offset != null);
+
+  if (itemStops.length > 0) {
+    return itemStops;
+  }
+
+  const stops = [];
+  const startColor = resolveInlineColorAttribute(gradientElement.attributes.get("startColor"));
+  const centerColor = resolveInlineColorAttribute(gradientElement.attributes.get("centerColor"));
+  const endColor = resolveInlineColorAttribute(gradientElement.attributes.get("endColor"));
+  if (startColor) {
+    stops.push({ color: startColor, offset: 0 });
+  }
+  if (centerColor) {
+    stops.push({ color: centerColor, offset: 0.5 });
+  }
+  if (endColor) {
+    stops.push({ color: endColor, offset: 1 });
+  }
+
+  return stops;
+}
+
+function buildSvgLinearGradient(id, gradientElement, stops) {
+  const x1 = getNumericXmlAttribute(gradientElement, "startX") ?? 0;
+  const y1 = getNumericXmlAttribute(gradientElement, "startY") ?? 0;
+  const x2 = getNumericXmlAttribute(gradientElement, "endX") ?? 0;
+  const y2 = getNumericXmlAttribute(gradientElement, "endY") ?? 0;
+  return [
+    `<linearGradient id="${escapeXmlAttribute(id)}" gradientUnits="userSpaceOnUse"`,
+    ` x1="${formatSvgNumber(x1)}" y1="${formatSvgNumber(y1)}"`,
+    ` x2="${formatSvgNumber(x2)}" y2="${formatSvgNumber(y2)}">`,
+    renderSvgGradientStops(stops),
+    "</linearGradient>",
+  ].join("");
+}
+
+function buildSvgRadialGradient(id, gradientElement, stops) {
+  const cx = getNumericXmlAttribute(gradientElement, "centerX") ?? 0;
+  const cy = getNumericXmlAttribute(gradientElement, "centerY") ?? 0;
+  const radius = getNumericXmlAttribute(gradientElement, "gradientRadius") ?? 0;
+  return [
+    `<radialGradient id="${escapeXmlAttribute(id)}" gradientUnits="userSpaceOnUse"`,
+    ` cx="${formatSvgNumber(cx)}" cy="${formatSvgNumber(cy)}" r="${formatSvgNumber(radius)}">`,
+    renderSvgGradientStops(stops),
+    "</radialGradient>",
+  ].join("");
+}
+
+function renderSvgGradientStops(stops) {
+  return stops
+    .map((stop) => `<stop offset="${formatSvgNumber(stop.offset)}"${formatSvgStopColor(stop.color)}/>`)
+    .join("");
+}
+
+function formatSvgStopColor(color) {
+  const rgba = String(color || "").match(/^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)$/iu);
+  if (rgba) {
+    return [
+      ` stop-color="#${toHex2(Number(rgba[1]))}${toHex2(Number(rgba[2]))}${toHex2(Number(rgba[3]))}"`,
+      ` stop-opacity="${escapeXmlAttribute(rgba[4])}"`,
+    ].join("");
+  }
+
+  return ` stop-color="${escapeXmlAttribute(color)}"`;
+}
+
+function resolveInlineColorAttribute(attribute) {
+  if (!attribute) {
+    return null;
+  }
+
+  if (attribute.dataType >= TYPE_FIRST_COLOR_INT && attribute.dataType <= TYPE_LAST_COLOR_INT) {
+    return formatCssColor(attribute.data);
+  }
+
+  return normalizeColorText(attribute.displayValue);
+}
+
+function buildVectorElementTransform(element) {
+  const transforms = (element.groups || []).map(buildVectorGroupTransform).filter(Boolean);
+  return transforms.join(" ");
+}
+
+function buildVectorGroupTransform(group) {
+  const translateX = getNumericXmlAttribute(group, "translateX") ?? 0;
+  const translateY = getNumericXmlAttribute(group, "translateY") ?? 0;
+  const pivotX = getNumericXmlAttribute(group, "pivotX") ?? 0;
+  const pivotY = getNumericXmlAttribute(group, "pivotY") ?? 0;
+  const scaleX = getNumericXmlAttribute(group, "scaleX") ?? 1;
+  const scaleY = getNumericXmlAttribute(group, "scaleY") ?? 1;
+  const rotation = getNumericXmlAttribute(group, "rotation") ?? 0;
+
+  const hasTranslate = !isCloseTo(translateX, 0) || !isCloseTo(translateY, 0);
+  const hasScale = !isCloseTo(scaleX, 1) || !isCloseTo(scaleY, 1);
+  const hasRotation = !isCloseTo(rotation, 0);
+  if (!hasTranslate && !hasScale && !hasRotation) {
+    return "";
+  }
+
+  const usesPivot = hasScale || hasRotation;
+  const initialTranslateX = translateX + (usesPivot ? pivotX : 0);
+  const initialTranslateY = translateY + (usesPivot ? pivotY : 0);
+  const transforms = [];
+
+  if (!isCloseTo(initialTranslateX, 0) || !isCloseTo(initialTranslateY, 0)) {
+    transforms.push(formatSvgTranslate(initialTranslateX, initialTranslateY));
+  }
+
+  if (hasRotation) {
+    transforms.push(`rotate(${formatSvgNumber(rotation)})`);
+  }
+
+  if (hasScale) {
+    transforms.push(`scale(${formatSvgNumber(scaleX)} ${formatSvgNumber(scaleY)})`);
+  }
+
+  if (usesPivot && (!isCloseTo(pivotX, 0) || !isCloseTo(pivotY, 0))) {
+    transforms.push(formatSvgTranslate(-pivotX, -pivotY));
+  }
+
+  return transforms.join(" ");
+}
+
+function formatSvgTranslate(x, y) {
+  return `translate(${formatSvgNumber(x)} ${formatSvgNumber(y)})`;
+}
+
+function buildSvgIdPrefix(value) {
+  const normalized = String(value || "vector")
+    .replaceAll(/[^a-z0-9_-]+/giu, "-")
+    .replaceAll(/^-+|-+$/gu, "");
+  return `lc-${normalized || "vector"}`;
+}
+
+function isCloseTo(value, expected) {
+  return Math.abs(value - expected) < 0.000001;
 }
 
 function getXmlAttributeValue(element, name) {
@@ -955,8 +1254,13 @@ function normalizeColorText(value) {
     return null;
   }
 
-  if (/^#[0-9a-f]{3,8}$/iu.test(normalized)) {
+  if (/^#[0-9a-f]{3}$/iu.test(normalized) || /^#[0-9a-f]{6}$/iu.test(normalized)) {
     return normalized;
+  }
+
+  const argbMatch = normalized.match(/^#([0-9a-f]{4}|[0-9a-f]{8})$/iu);
+  if (argbMatch) {
+    return formatAndroidHexColor(argbMatch[1]);
   }
 
   const hexMatch = normalized.match(/^0x([0-9a-f]{6,8})$/iu);
@@ -965,6 +1269,18 @@ function normalizeColorText(value) {
   }
 
   return null;
+}
+
+function formatAndroidHexColor(hex) {
+  if (hex.length === 4) {
+    const alpha = Number.parseInt(hex[0] + hex[0], 16);
+    const red = Number.parseInt(hex[1] + hex[1], 16);
+    const green = Number.parseInt(hex[2] + hex[2], 16);
+    const blue = Number.parseInt(hex[3] + hex[3], 16);
+    return formatCssColor(((alpha << 24) | (red << 16) | (green << 8) | blue) >>> 0);
+  }
+
+  return formatCssColor(Number.parseInt(hex, 16) >>> 0);
 }
 
 function parseResourceReferenceText(value) {
@@ -1859,6 +2175,10 @@ function parseXmlStartElement(bytes, offset, stringPool, resourceMap = []) {
   };
 }
 
+function parseXmlEndElementName(bytes, offset, stringPool) {
+  return getString(stringPool, readUint32(bytes, offset + 20));
+}
+
 function coerceTypedValue(rawValue, dataType, data, stringPool) {
   if (rawValue != null) {
     return rawValue;
@@ -2272,6 +2592,36 @@ function getAndroidAttributeName(resourceId) {
       return "drawable";
     case 0x01010024:
       return "value";
+    case 0x01010155:
+      return "height";
+    case 0x01010159:
+      return "width";
+    case 0x010101b5:
+      return "pivotX";
+    case 0x010101b6:
+      return "pivotY";
+    case 0x0101019d:
+      return "startColor";
+    case 0x0101019e:
+      return "endColor";
+    case 0x010101a1:
+      return "type";
+    case 0x010101a2:
+      return "centerX";
+    case 0x010101a3:
+      return "centerY";
+    case 0x010101a4:
+      return "gradientRadius";
+    case 0x010101a5:
+      return "color";
+    case 0x0101020b:
+      return "centerColor";
+    case 0x01010324:
+      return "scaleX";
+    case 0x01010325:
+      return "scaleY";
+    case 0x01010326:
+      return "rotation";
     case 0x0101052c:
       return "roundIcon";
     case 0x01010586:
@@ -2292,10 +2642,24 @@ function getAndroidAttributeName(resourceId) {
       return "strokeColor";
     case 0x01010407:
       return "strokeWidth";
-    case 0x0101040c:
-      return "fillAlpha";
-    case 0x0101040d:
+    case 0x01010510:
+      return "startX";
+    case 0x01010511:
+      return "startY";
+    case 0x01010512:
+      return "endX";
+    case 0x01010513:
+      return "endY";
+    case 0x01010514:
+      return "offset";
+    case 0x0101045a:
+      return "translateX";
+    case 0x0101045b:
+      return "translateY";
+    case 0x010104cb:
       return "strokeAlpha";
+    case 0x010104cc:
+      return "fillAlpha";
     default:
       return null;
   }
