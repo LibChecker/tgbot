@@ -1,4 +1,5 @@
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,7 +12,6 @@ const generatedDir = resolve(moduleDir, "generated");
 const assetsDir = resolve(distDir, "assets");
 
 const staticFiles = [
-  ["index.html", "index.html"],
   ["app.css", "app.css"],
   ["app.js", "app.js"],
   ["analyzer-worker.js", "analyzer-worker.js"],
@@ -34,6 +34,17 @@ await mkdir(assetsDir, { recursive: true });
 for (const [from, to] of staticFiles) {
   await copyFile(resolve(srcDir, from), resolve(distDir, to));
 }
+
+const buildVersion = createHash("sha256")
+  .update(await readFile(resolve(srcDir, "app.css")))
+  .update(await readFile(resolve(srcDir, "app.js")))
+  .digest("hex")
+  .slice(0, 12);
+const indexHtml = await readFile(resolve(srcDir, "index.html"), "utf8");
+await writeFile(
+  resolve(distDir, "index.html"),
+  indexHtml.replaceAll("__BUILD_VERSION__", `v=${buildVersion}`),
+);
 
 for (const [from, to] of sharedModules) {
   await copyFile(resolve(repoDir, from), resolve(distDir, to));
