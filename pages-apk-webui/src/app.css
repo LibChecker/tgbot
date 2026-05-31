@@ -349,16 +349,32 @@ svg {
   transform: translateY(-62%) rotate(45deg);
 }
 
+.select-control__icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
 .select-control select {
   appearance: none;
   -webkit-appearance: none;
-  min-width: 112px;
+  min-width: 132px;
   height: 38px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  padding: 0 34px 0 12px;
+  padding: 0 34px 0 36px;
 }
 
 .icon-button {
