@@ -12,6 +12,7 @@
   --title-dot: #111111;
   --muted: #756982;
   --control-text: #4a3a5d;
+  --sdk-mono-icon: #4a3a5d;
   --line: #e7ddf7;
   --line-strong: #d8c8ef;
   --accent: #7c3aed;
@@ -52,6 +53,7 @@
   --title-dot: #ddd6fe;
   --muted: #b9adc8;
   --control-text: #ded5ea;
+  --sdk-mono-icon: #ddd6fe;
   --line: rgba(221, 214, 254, 0.18);
   --line-strong: rgba(221, 214, 254, 0.32);
   --accent: #a78bfa;
@@ -1046,6 +1048,18 @@ svg {
   width: 22px;
   height: 22px;
   object-fit: contain;
+}
+
+.sdk-icon--mono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sdk-mono-icon);
+}
+
+.sdk-icon--mono .sdk-icon__svg {
+  width: 100%;
+  height: 100%;
 }
 
 .sdk-row {
