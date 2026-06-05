@@ -74,4 +74,4 @@ jobs:
           rm .cloudflare-secrets.json
 
       - name: Register Telegram webhook
-        run: npm run webhook:set
+        run: node scripts/manage-webhook.mjs set --direct-telegram

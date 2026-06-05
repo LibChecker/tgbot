@@ -323,7 +323,7 @@ npm run webhook:set -- --worker-url=https://your-worker.your-subdomain.workers.d
 - PR 到 `main` / `master` 时自动执行 `npm ci` 和 `npm run check`
 - push 到 `main` / `master` 时自动部署到 Cloudflare Workers
 - 部署后自动同步 Worker secrets
-- 部署后自动调用 Worker 管理接口注册 Telegram webhook；如果未配置 `WORKER_URL`，会使用 [wrangler.toml](wrangler.toml) 里的 `PUBLIC_WEBHOOK_URL`
+- 部署后自动调用 Telegram Bot API 注册 webhook；如果未配置 `WORKER_URL`，会使用 [wrangler.toml](wrangler.toml) 里的 `PUBLIC_WEBHOOK_URL`
 
 你需要在 GitHub 仓库里配置这些 **Actions secrets**：
 

@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 const [, , action = "info", ...restArgs] = process.argv;
 
 const options = parseArgs(restArgs);
+const directTelegram = getBooleanFlag(
+  options["direct-telegram"],
+  process.env.DIRECT_TELEGRAM_WEBHOOK,
+);
+const botToken = options["bot-token"] || process.env.BOT_TOKEN;
 const workerUrl = normalizeBaseUrl(
   options["worker-url"] ||
     process.env.WORKER_URL ||
@@ -11,29 +16,68 @@ const workerUrl = normalizeBaseUrl(
 );
 const adminToken = options["admin-token"] || process.env.ADMIN_TOKEN;
 
-if (!workerUrl) {
+if (!directTelegram && !workerUrl) {
   fail(
     "Missing Worker URL. Set WORKER_URL or pass --worker-url=https://your-worker.your-subdomain.workers.dev",
   );
 }
 
-if (!adminToken) {
+if (!directTelegram && !adminToken) {
   fail("Missing ADMIN_TOKEN. Set ADMIN_TOKEN or pass --admin-token=<token>.");
 }
 
 const actionHandlers = {
   async info() {
+    if (directTelegram) {
+      requireBotToken();
+      return callTelegramApi(botToken, "getWebhookInfo", {});
+    }
+
     return callAdminApi(workerUrl, adminToken, "/admin/webhook", {
       method: "GET",
     });
   },
 
   async set() {
-    const webhookUrl = normalizeWebhookUrl(options["webhook-url"] || process.env.WEBHOOK_URL);
+    const webhookUrl = normalizeWebhookUrl(
+      options["webhook-url"] ||
+        process.env.WEBHOOK_URL ||
+        (directTelegram
+          ? process.env.PUBLIC_WEBHOOK_URL || readPublicWebhookUrlFromWrangler()
+          : undefined),
+    );
     const dropPendingUpdates = getBooleanFlag(
       options["drop-pending-updates"],
       process.env.DROP_PENDING_UPDATES,
     );
+
+    if (directTelegram) {
+      requireBotToken();
+      if (!webhookUrl) {
+        fail(
+          "Missing webhook URL. Set WEBHOOK_URL, PUBLIC_WEBHOOK_URL, or configure PUBLIC_WEBHOOK_URL in wrangler.toml.",
+        );
+      }
+
+      const result = await callTelegramApi(botToken, "setWebhook", {
+        url: webhookUrl,
+        secret_token: process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || undefined,
+        allowed_updates: [
+          "message",
+          "edited_message",
+          "channel_post",
+          "edited_channel_post",
+        ],
+        drop_pending_updates: dropPendingUpdates,
+      });
+
+      return {
+        ok: true,
+        action: "setWebhook",
+        webhook_url: webhookUrl,
+        description: result,
+      };
+    }
 
     return callAdminApi(workerUrl, adminToken, "/admin/webhook/set", {
       method: "POST",
@@ -49,6 +93,19 @@ const actionHandlers = {
       options["drop-pending-updates"],
       process.env.DROP_PENDING_UPDATES,
     );
+
+    if (directTelegram) {
+      requireBotToken();
+      const result = await callTelegramApi(botToken, "deleteWebhook", {
+        drop_pending_updates: dropPendingUpdates,
+      });
+
+      return {
+        ok: true,
+        action: "deleteWebhook",
+        description: result,
+      };
+    }
 
     return callAdminApi(workerUrl, adminToken, "/admin/webhook/delete", {
       method: "POST",
@@ -94,6 +151,34 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : "Unknown error";
   fail(message);
+}
+
+function requireBotToken() {
+  if (!botToken) {
+    fail("Missing BOT_TOKEN. Set BOT_TOKEN or pass --bot-token=<token>.");
+  }
+}
+
+async function callTelegramApi(token, method, payload) {
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+    },
+    body: JSON.stringify(pruneUndefined(payload)),
+  });
+
+  const responseText = await response.text();
+  const data = tryParseJson(responseText);
+
+  if (!response.ok || !data?.ok) {
+    const errorMessage =
+      data?.description ||
+      (responseText.trim() ? responseText.trim() : `Telegram ${method} failed`);
+    throw new Error(`${method} failed: ${errorMessage}`);
+  }
+
+  return data.result;
 }
 
 async function callAdminApi(baseUrl, adminTokenValue, path, request) {
