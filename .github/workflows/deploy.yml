@@ -74,9 +74,4 @@ jobs:
           rm .cloudflare-secrets.json
 
       - name: Register Telegram webhook
-        if: ${{ vars.WORKER_URL != '' }}
         run: npm run webhook:set
-
-      - name: Skip webhook registration
-        if: ${{ vars.WORKER_URL == '' }}
-        run: echo "WORKER_URL repository variable is not set, so webhook registration was skipped."

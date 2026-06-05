@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs";
+
 const [, , action = "info", ...restArgs] = process.argv;
 
 const options = parseArgs(restArgs);
 const workerUrl = normalizeBaseUrl(
-  options["worker-url"] || process.env.WORKER_URL || process.env.PUBLIC_WEBHOOK_URL,
+  options["worker-url"] ||
+    process.env.WORKER_URL ||
+    process.env.PUBLIC_WEBHOOK_URL ||
+    readPublicWebhookUrlFromWrangler(),
 );
 const adminToken = options["admin-token"] || process.env.ADMIN_TOKEN;
 
@@ -174,6 +179,16 @@ function normalizeWebhookUrl(value) {
   }
 
   return trimmed.endsWith("/webhook") ? trimmed : `${trimmed.replace(/\/+$/u, "")}/webhook`;
+}
+
+function readPublicWebhookUrlFromWrangler() {
+  try {
+    const content = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+    const match = content.match(/^\s*PUBLIC_WEBHOOK_URL\s*=\s*["']([^"']+)["']/mu);
+    return match?.[1] || null;
+  } catch {
+    return null;
+  }
 }
 
 function pruneUndefined(object) {

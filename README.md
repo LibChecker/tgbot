@@ -261,9 +261,10 @@ curl -X POST "https://your-worker.your-subdomain.workers.dev/admin/webhook/delet
 先在 PowerShell 里设置本地环境变量：
 
 ```powershell
-$env:WORKER_URL="https://your-worker.your-subdomain.workers.dev"
 $env:ADMIN_TOKEN="<你的 ADMIN_TOKEN>"
 ```
+
+`WORKER_URL` 可以显式设置；如果不设置，脚本会自动读取 [wrangler.toml](wrangler.toml) 里的 `PUBLIC_WEBHOOK_URL`。
 
 然后直接部署并注册 webhook：
 
@@ -322,7 +323,7 @@ npm run webhook:set -- --worker-url=https://your-worker.your-subdomain.workers.d
 - PR 到 `main` / `master` 时自动执行 `npm ci` 和 `npm run check`
 - push 到 `main` / `master` 时自动部署到 Cloudflare Workers
 - 部署后自动同步 Worker secrets
-- 如果配置了 `WORKER_URL`，还会自动调用 Worker 管理接口注册 Telegram webhook
+- 部署后自动调用 Worker 管理接口注册 Telegram webhook；如果未配置 `WORKER_URL`，会使用 [wrangler.toml](wrangler.toml) 里的 `PUBLIC_WEBHOOK_URL`
 
 你需要在 GitHub 仓库里配置这些 **Actions secrets**：
 
@@ -335,7 +336,7 @@ npm run webhook:set -- --worker-url=https://your-worker.your-subdomain.workers.d
 
 其中 `TELEGRAM_WEBHOOK_SECRET` 严格来说可以不配，但为了让 webhook 校验始终开启，建议也放进 GitHub secrets。
 
-另外建议配置一个 **Actions variable**：
+另外也可以配置一个 **Actions variable** 来覆盖 [wrangler.toml](wrangler.toml) 里的公开地址：
 
 - `WORKER_URL`
 
@@ -345,7 +346,7 @@ npm run webhook:set -- --worker-url=https://your-worker.your-subdomain.workers.d
 https://your-worker.your-subdomain.workers.dev
 ```
 
-如果没有配置 `WORKER_URL`，工作流仍会部署 Worker，只是不会自动注册 webhook。
+如果没有配置 `WORKER_URL`，工作流会使用 [wrangler.toml](wrangler.toml) 中的 `PUBLIC_WEBHOOK_URL` 注册 webhook。
 
 ## 本地开发变量模板
 
