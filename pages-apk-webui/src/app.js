@@ -28,6 +28,12 @@ const state = {
   startedAt: 0,
   timer: null,
 };
+const themeDrag = {
+  active: false,
+  pointerId: null,
+  pendingChoice: "",
+  suppressClick: false,
+};
 
 const elements = {
   themeButtons: [...document.querySelectorAll(".theme-chip[data-theme-choice]")],
@@ -75,10 +81,21 @@ initSdkRulePreview();
 
 function bindEvents() {
   elements.themeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      if (themeDrag.suppressClick) {
+        event.preventDefault();
+        themeDrag.suppressClick = false;
+        return;
+      }
+
       applyThemeChoice(button.dataset.themeChoice);
     });
   });
+  elements.themeChipGroup.addEventListener("pointerdown", beginThemeDrag);
+  elements.themeChipGroup.addEventListener("pointermove", updateThemeDrag);
+  elements.themeChipGroup.addEventListener("pointerup", endThemeDrag);
+  elements.themeChipGroup.addEventListener("pointercancel", cancelThemeDrag);
+  elements.themeChipGroup.addEventListener("lostpointercapture", cancelThemeDrag);
 
   systemThemeMedia.addEventListener("change", () => {
     if (state.themeChoice === "system") {
@@ -213,6 +230,100 @@ function bindEvents() {
     state.activeNativeAbi = button.dataset.nativeAbi || "";
     renderTabPanel();
   });
+}
+
+function beginThemeDrag(event) {
+  if (event.button !== 0) {
+    return;
+  }
+
+  themeDrag.active = true;
+  themeDrag.pointerId = event.pointerId;
+  themeDrag.suppressClick = true;
+  elements.themeChipGroup.classList.add("is-dragging");
+  try {
+    elements.themeChipGroup.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Pointer capture is an enhancement; nearest-choice dragging still works without it.
+  }
+  previewThemeChoiceFromPointer(event);
+}
+
+function updateThemeDrag(event) {
+  if (!themeDrag.active || event.pointerId !== themeDrag.pointerId) {
+    return;
+  }
+
+  previewThemeChoiceFromPointer(event);
+}
+
+function endThemeDrag(event) {
+  if (!themeDrag.active || event.pointerId !== themeDrag.pointerId) {
+    return;
+  }
+
+  previewThemeChoiceFromPointer(event);
+  if (themeDrag.pendingChoice) {
+    applyThemeChoice(themeDrag.pendingChoice);
+  }
+  finishThemeDrag(event.pointerId);
+}
+
+function cancelThemeDrag(event) {
+  if (!themeDrag.active || event.pointerId !== themeDrag.pointerId) {
+    return;
+  }
+
+  finishThemeDrag(event.pointerId);
+}
+
+function finishThemeDrag(pointerId) {
+  elements.themeChipGroup.classList.remove("is-dragging");
+  themeDrag.active = false;
+  themeDrag.pointerId = null;
+  themeDrag.pendingChoice = "";
+  clearThemePendingButtons();
+  updateThemeIndicator();
+  try {
+    if (elements.themeChipGroup.hasPointerCapture?.(pointerId)) {
+      elements.themeChipGroup.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // The pointer may already have been released by the browser.
+  }
+  window.setTimeout(() => {
+    themeDrag.suppressClick = false;
+  }, 0);
+}
+
+function previewThemeChoiceFromPointer(event) {
+  const themeChoice = getThemeChoiceAtClientX(event.clientX);
+  if (!themeChoice || themeChoice === themeDrag.pendingChoice) {
+    return;
+  }
+
+  themeDrag.pendingChoice = themeChoice;
+  elements.themeButtons.forEach((button) => {
+    button.classList.toggle("is-pending", button.dataset.themeChoice === themeChoice);
+  });
+  updateThemeIndicator(themeChoice);
+}
+
+function getThemeChoiceAtClientX(clientX) {
+  let nearestChoice = "";
+  let nearestDistance = Infinity;
+
+  for (const button of elements.themeButtons) {
+    const rect = button.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const distance = Math.abs(clientX - centerX);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestChoice = button.dataset.themeChoice;
+    }
+  }
+
+  return nearestChoice;
 }
 
 function updateDropZonePointer(event) {
@@ -804,6 +915,7 @@ function applyThemeChoice(choice, options = {}) {
   elements.themeButtons.forEach((button) => {
     const isActive = button.dataset.themeChoice === themeChoice;
     button.classList.toggle("is-active", isActive);
+    button.classList.remove("is-pending");
     button.setAttribute("aria-checked", isActive ? "true" : "false");
   });
   updateThemeIndicator();
@@ -819,8 +931,8 @@ function applyThemeChoice(choice, options = {}) {
   }
 }
 
-function updateThemeIndicator() {
-  const activeButton = elements.themeButtons.find((button) => button.dataset.themeChoice === state.themeChoice);
+function updateThemeIndicator(themeChoice = state.themeChoice) {
+  const activeButton = elements.themeButtons.find((button) => button.dataset.themeChoice === themeChoice);
   if (!activeButton || !elements.themeChipGroup) {
     return;
   }
@@ -832,6 +944,12 @@ function updateThemeIndicator() {
     elements.themeChipGroup.style.setProperty("--theme-indicator-y", `${(buttonRect.top - groupRect.top).toFixed(1)}px`);
     elements.themeChipGroup.style.setProperty("--theme-indicator-width", `${buttonRect.width.toFixed(1)}px`);
     elements.themeChipGroup.style.setProperty("--theme-indicator-height", `${buttonRect.height.toFixed(1)}px`);
+  });
+}
+
+function clearThemePendingButtons() {
+  elements.themeButtons.forEach((button) => {
+    button.classList.remove("is-pending");
   });
 }
 
