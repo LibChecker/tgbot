@@ -30,7 +30,8 @@ const state = {
 };
 
 const elements = {
-  themeButtons: [...document.querySelectorAll("[data-theme-choice]")],
+  themeButtons: [...document.querySelectorAll(".theme-chip[data-theme-choice]")],
+  themeChipGroup: document.querySelector("#theme-chip-group"),
   languageSelect: document.querySelector("#language-select"),
   clearButton: document.querySelector("#clear-button"),
   backgroundCanvas: document.querySelector("#color-orb-background"),
@@ -85,9 +86,12 @@ function bindEvents() {
     }
   });
 
+  window.addEventListener("resize", updateThemeIndicator);
+
   elements.languageSelect.addEventListener("change", () => {
     state.locale = normalizeLocale(elements.languageSelect.value);
     applyLocale();
+    updateThemeIndicator();
     updateHistoryCollapse();
     renderSelectedFile();
     renderHistoryList();
@@ -801,6 +805,7 @@ function applyThemeChoice(choice, options = {}) {
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-checked", isActive ? "true" : "false");
   });
+  updateThemeIndicator();
 
   if (!shouldPersist) {
     return;
@@ -811,6 +816,22 @@ function applyThemeChoice(choice, options = {}) {
   } catch {
     // Theme persistence is optional; the UI still reflects the current choice.
   }
+}
+
+function updateThemeIndicator() {
+  const activeButton = elements.themeButtons.find((button) => button.dataset.themeChoice === state.themeChoice);
+  if (!activeButton || !elements.themeChipGroup) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    const groupRect = elements.themeChipGroup.getBoundingClientRect();
+    const buttonRect = activeButton.getBoundingClientRect();
+    elements.themeChipGroup.style.setProperty("--theme-indicator-x", `${(buttonRect.left - groupRect.left).toFixed(1)}px`);
+    elements.themeChipGroup.style.setProperty("--theme-indicator-y", `${(buttonRect.top - groupRect.top).toFixed(1)}px`);
+    elements.themeChipGroup.style.setProperty("--theme-indicator-width", `${buttonRect.width.toFixed(1)}px`);
+    elements.themeChipGroup.style.setProperty("--theme-indicator-height", `${buttonRect.height.toFixed(1)}px`);
+  });
 }
 
 function resolveColorScheme(choice) {

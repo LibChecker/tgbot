@@ -455,6 +455,7 @@ svg {
 }
 
 .theme-chip-group {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -463,9 +464,33 @@ svg {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.theme-chip-group::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  width: var(--theme-indicator-width, 46px);
+  height: var(--theme-indicator-height, 30px);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    0 6px 18px color-mix(in srgb, var(--accent) 22%, transparent);
+  transform: translate3d(var(--theme-indicator-x, 3px), var(--theme-indicator-y, 3px), 0);
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .theme-chip {
+  position: relative;
+  z-index: 1;
   min-width: 46px;
   min-height: 30px;
   border: 0;
@@ -475,15 +500,27 @@ svg {
   padding: 0 9px;
   font-size: 0.86rem;
   font-weight: 800;
+  transition: color 180ms ease;
 }
 
 .theme-chip:hover {
-  background: var(--surface-soft);
+  color: var(--heading-text);
+}
+
+.theme-chip:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 
 .theme-chip.is-active {
-  background: var(--accent-soft);
+  background: transparent;
   color: var(--accent-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-chip-group::before {
+    transition: none;
+  }
 }
 
 .select-control {
