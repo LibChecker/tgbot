@@ -1,12 +1,30 @@
 import { sanitizeImageSrc } from "./format.js";
 import { escapeAttr, escapeHtml } from "./html.js";
 
+const ruleDetailsById = new Map();
+const ruleDetailIdsByPayload = new Map();
+let ruleDetailIdSeed = 0;
+
 export function renderSdkChip(sdk, unknownLabel = "Unknown") {
-  return `<span class="chip">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}${escapeHtml(sdk.label || unknownLabel)}</span>`;
+  return `<span class="chip">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}${renderSdkRuleLabel(sdk, unknownLabel)}</span>`;
 }
 
 export function renderSdkInline(sdk, unknownLabel = "Unknown") {
-  return `<span class="sdk-inline">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}<span>${escapeHtml(sdk.label || unknownLabel)}</span></span>`;
+  return `<span class="sdk-inline">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}${renderSdkRuleLabel(sdk, unknownLabel)}</span>`;
+}
+
+export function renderSdkRuleLabel(sdk, unknownLabel = "Unknown") {
+  const label = sdk?.label || unknownLabel;
+  const detailId = registerRuleDetail(sdk?.ruleDetail);
+  const detailAttrs = detailId
+    ? ` data-rule-detail-id="${escapeAttr(detailId)}" tabindex="0" aria-haspopup="dialog"`
+    : "";
+  const detailClass = detailId ? " has-rule-detail" : "";
+  return `<span class="sdk-rule-label${detailClass}"${detailAttrs}>${escapeHtml(label)}</span>`;
+}
+
+export function getRegisteredSdkRuleDetail(detailId) {
+  return ruleDetailsById.get(String(detailId || "")) || null;
 }
 
 export function renderSdkIcon(src, label, singleColorIcon = false) {
@@ -23,6 +41,34 @@ export function renderSdkIcon(src, label, singleColorIcon = false) {
   }
 
   return `<span class="sdk-icon"><img class="sdk-icon__image" src="${escapeAttr(safeSrc)}" alt="${escapeAttr(label || "")}"></span>`;
+}
+
+function registerRuleDetail(ruleDetail) {
+  if (!ruleDetail || typeof ruleDetail !== "object") {
+    return "";
+  }
+
+  let payload = "";
+  try {
+    payload = JSON.stringify(ruleDetail);
+  } catch {
+    return "";
+  }
+
+  if (!payload || payload === "{}") {
+    return "";
+  }
+
+  const existingId = ruleDetailIdsByPayload.get(payload);
+  if (existingId) {
+    return existingId;
+  }
+
+  ruleDetailIdSeed += 1;
+  const detailId = `rule-detail-${ruleDetailIdSeed}`;
+  ruleDetailIdsByPayload.set(payload, detailId);
+  ruleDetailsById.set(detailId, ruleDetail);
+  return detailId;
 }
 
 function renderThemedSdkIconSvg(src) {

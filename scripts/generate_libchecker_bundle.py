@@ -8,7 +8,10 @@ import sys
 import tempfile
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
+from io import BytesIO
 from pathlib import Path
+from urllib.parse import quote
 
 
 OUTPUT_DIR = Path("src/shared/generated")
@@ -16,8 +19,18 @@ RULES_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules.js"
 ICONS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-sdk-icons.js"
 
 DEFAULT_RULES_REF = "main"
+DEFAULT_RULE_DETAILS_REF = "v4"
 
 RELEVANT_RULE_TYPES = {0, 1, 2, 3, 4, 9}
+
+RULE_DETAIL_DIR_TYPES = {
+    "native-libs": 0,
+    "services-libs": 1,
+    "activities-libs": 2,
+    "receivers-libs": 3,
+    "providers-libs": 4,
+    "actions-libs": 9,
+}
 
 ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
 AAAPT_NS = "{http://schemas.android.com/aapt}"
@@ -67,6 +80,7 @@ def main() -> int:
         icon_map_text = fetch_text(icon_res_map_url)
         icon_index_map, single_color_indexes = parse_icon_res_map(icon_map_text)
         rules = load_rules(temp_rule_db_path, icon_index_map, single_color_indexes)
+        detail_count = attach_rule_details(rules, DEFAULT_RULE_DETAILS_REF)
         icon_names = sorted(
             {
                 rule["iconName"]
@@ -100,6 +114,7 @@ def main() -> int:
     write_icons_module(icon_svgs, ICONS_OUTPUT_PATH)
 
     print(f"Wrote {len(rules)} rules to {RULES_OUTPUT_PATH}")
+    print(f"Attached {detail_count} rule details from LibChecker-Rules ref: {DEFAULT_RULE_DETAILS_REF}")
     print(f"Wrote {len(icon_svgs)} icons to {ICONS_OUTPUT_PATH}")
     return 0
 
@@ -150,8 +165,12 @@ def cleanup_temp_rule_db(db_path: Path | None) -> None:
 
 
 def fetch_text(url: str) -> str:
-    with urllib.request.urlopen(url) as response:  # noqa: S310 - trusted upstream input
-        return response.read().decode("utf-8")
+    return fetch_bytes(url).decode("utf-8")
+
+
+def fetch_bytes(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 - trusted upstream input
+        return response.read()
 
 
 def parse_icon_res_map(text: str) -> tuple[dict[int, str], set[int]]:
@@ -201,6 +220,164 @@ def load_rules(
             )
 
     return rows
+
+
+def attach_rule_details(rules: list[dict[str, object]], details_ref: str) -> int:
+    wanted_keys = {build_rule_detail_key(rule) for rule in rules}
+    wanted_keys.discard(None)
+    details_by_key = load_rule_detail_map(details_ref, wanted_keys)
+    if not details_by_key:
+        return 0
+
+    attached_count = 0
+    for rule in rules:
+        key = build_rule_detail_key(rule)
+        if not key:
+            continue
+
+        detail = details_by_key.get(key)
+        if not detail:
+            continue
+
+        rule["ruleDetail"] = detail
+        attached_count += 1
+
+    return attached_count
+
+
+def load_rule_detail_map(
+    details_ref: str,
+    wanted_keys: set[tuple[int, str] | None],
+) -> dict[tuple[int, str], dict[str, object]]:
+    archive_url = (
+        "https://codeload.github.com/LibChecker/LibChecker-Rules/zip/refs/heads/"
+        f"{quote(details_ref, safe='')}"
+    )
+    details: dict[tuple[int, str], dict[str, object]] = {}
+    archive_bytes = fetch_bytes(archive_url)
+    with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
+        for item in archive.infolist():
+            if item.is_dir() or not item.filename.endswith(".json"):
+                continue
+
+            _, _, relative_path = item.filename.partition("/")
+            if not relative_path:
+                continue
+
+            key = build_rule_detail_entry_key(relative_path)
+            if key not in wanted_keys:
+                continue
+
+            try:
+                payload = json.loads(archive.read(item).decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+
+            detail = normalize_rule_detail(payload)
+            if detail:
+                detail["path"] = relative_path
+                details[key] = detail
+
+    return details
+
+
+def build_rule_detail_key(rule: dict[str, object]) -> tuple[int, str] | None:
+    rule_type = rule.get("type")
+    if not isinstance(rule_type, int):
+        return None
+
+    if rule.get("isRegexRule"):
+        regex_name = rule.get("regexName")
+        if isinstance(regex_name, str) and regex_name:
+            return rule_type, f"regex/{regex_name}"
+
+    name = rule.get("name")
+    if isinstance(name, str) and name:
+        return rule_type, name
+
+    return None
+
+
+def build_rule_detail_entry_key(path: str) -> tuple[int, str] | None:
+    if "/" not in path or not path.endswith(".json"):
+        return None
+
+    directory, relative_path = path.split("/", 1)
+    rule_type = RULE_DETAIL_DIR_TYPES.get(directory)
+    if rule_type is None:
+        return None
+
+    detail_name = relative_path[:-5]
+    if not detail_name.startswith("regex/"):
+        detail_name = detail_name.replace("/", ".")
+
+    return rule_type, detail_name
+
+
+def normalize_rule_detail(payload: object) -> dict[str, object] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    locales: dict[str, dict[str, object]] = {}
+    for item in payload.get("data", []):
+        if not isinstance(item, dict):
+            continue
+
+        locale = normalize_detail_locale(item.get("locale"))
+        data = normalize_detail_data(item.get("data"))
+        if locale and data:
+            locales[locale] = data
+
+    if not locales:
+        return None
+
+    detail: dict[str, object] = {"locales": locales}
+    uuid = payload.get("uuid")
+    if isinstance(uuid, str) and uuid:
+        detail["uuid"] = uuid
+
+    return detail
+
+
+def normalize_detail_locale(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.lower()
+    if normalized.startswith("zh"):
+        return "zh-CN"
+    if normalized.startswith("en"):
+        return "en"
+    return value
+
+
+def normalize_detail_data(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+
+    detail: dict[str, object] = {}
+    string_fields = {
+        "label": "label",
+        "dev_team": "team",
+        "description": "description",
+        "source_link": "source",
+    }
+    for source_key, target_key in string_fields.items():
+        field_value = value.get(source_key)
+        if isinstance(field_value, str) and field_value:
+            detail[target_key] = field_value
+
+    contributors = value.get("rule_contributors")
+    if isinstance(contributors, list):
+        clean_contributors = [
+            contributor
+            for contributor in contributors
+            if isinstance(contributor, str) and contributor
+        ]
+        if clean_contributors:
+            detail["contributors"] = clean_contributors
+
+    return detail or None
 
 
 def convert_vector_xml_to_svg(xml_text: str, icon_name: str) -> str | None:

@@ -44,15 +44,16 @@ await mkdir(generatedDir, { recursive: true });
 await mkdir(assetsDir, { recursive: true });
 await mkdir(appModuleDir, { recursive: true });
 
-for (const [from, to] of staticFiles) {
-  await copyFile(resolve(srcDir, from), resolve(distDir, to));
-}
-
 const buildVersion = createHash("sha256")
-  .update(await readFile(resolve(srcDir, "app.css")))
-  .update(await readFile(resolve(srcDir, "app.js")))
+  .update(await readVersionedSource(staticFiles, srcDir))
+  .update(await readVersionedSource(sharedModules, repoDir))
   .digest("hex")
   .slice(0, 12);
+
+for (const [from, to] of staticFiles) {
+  await copyStaticFile(resolve(srcDir, from), resolve(distDir, to), buildVersion);
+}
+
 const indexHtml = await readFile(resolve(srcDir, "index.html"), "utf8");
 await writeFile(
   resolve(distDir, "index.html"),
@@ -60,7 +61,7 @@ await writeFile(
 );
 
 for (const [from, to] of sharedModules) {
-  await copyFile(resolve(repoDir, from), resolve(distDir, to));
+  await copyStaticFile(resolve(repoDir, from), resolve(distDir, to), buildVersion);
 }
 
 await writeFile(
@@ -89,3 +90,46 @@ await writeFile(
 await writeFile(resolve(distDir, "_redirects"), "/* /index.html 200\n");
 
 console.log(`Built Cloudflare Pages site at ${distDir}`);
+
+async function readVersionedSource(files, rootDir) {
+  const chunks = [];
+  for (const [from] of files) {
+    if (!from.endsWith(".css") && !from.endsWith(".js")) {
+      continue;
+    }
+    chunks.push(await readFile(resolve(rootDir, from)));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+async function copyStaticFile(from, to, buildVersion) {
+  if (!from.endsWith(".js")) {
+    await copyFile(from, to);
+    return;
+  }
+
+  const source = await readFile(from, "utf8");
+  await writeFile(to, versionJsImports(source, buildVersion));
+}
+
+function versionJsImports(source, buildVersion) {
+  const version = `v=${buildVersion}`;
+  return source
+    .replace(
+      /(from\s+["']|import\(\s*["'])(\.{1,2}\/[^"']+\.js)(["'])/gu,
+      (_, prefix, specifier, suffix) => `${prefix}${appendVersion(specifier, version)}${suffix}`,
+    )
+    .replace(
+      /new URL\(\s*["'](\.\/[^"']+\.js)(["']\s*,\s*import\.meta\.url\s*\))/gu,
+      (_, specifier, suffix) => `new URL("${appendVersion(specifier, version)}${suffix}`,
+    );
+}
+
+function appendVersion(specifier, version) {
+  if (specifier.includes("?")) {
+    return `${specifier}&${version}`;
+  }
+
+  return `${specifier}?${version}`;
+}

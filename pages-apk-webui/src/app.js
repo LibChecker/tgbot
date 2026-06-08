@@ -5,7 +5,7 @@ import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeIm
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
 import { hydrateReportSdkIcons } from "./app/sdk-icon-cache.js";
-import { renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase } from "./app/sdk-icon-renderer.js";
+import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import { detectTerminalSystem } from "./app/system.js";
 import { initAppTitleColorMask, initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
@@ -70,6 +70,7 @@ updateHistoryCollapse();
 bindEvents();
 initColorOrbBackground();
 initSdkIconPreview();
+initSdkRulePreview();
 
 function bindEvents() {
   elements.themeButtons.forEach((button) => {
@@ -377,6 +378,214 @@ function initSdkIconPreview() {
   }, true);
 
   window.addEventListener("resize", hidePreview);
+}
+
+function initSdkRulePreview() {
+  let preview = null;
+  let activeLabel = null;
+
+  const ensurePreview = () => {
+    if (preview) {
+      return preview;
+    }
+
+    preview = document.createElement("div");
+    preview.className = "sdk-rule-preview";
+    preview.setAttribute("role", "tooltip");
+    preview.setAttribute("aria-hidden", "true");
+    preview.hidden = true;
+    document.body.append(preview);
+    return preview;
+  };
+
+  const positionPreview = (label) => {
+    const popup = ensurePreview();
+    const labelRect = label.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    const gap = 10;
+    const margin = 8;
+    const popupWidth = popupRect.width || 360;
+    const popupHeight = popupRect.height || 180;
+
+    let left = labelRect.left + labelRect.width / 2 - popupWidth / 2;
+    left = clamp(left, margin, window.innerWidth - popupWidth - margin);
+
+    let top = labelRect.bottom + gap;
+    if (top + popupHeight > window.innerHeight - margin) {
+      top = labelRect.top - popupHeight - gap;
+    }
+    top = clamp(top, margin, window.innerHeight - popupHeight - margin);
+
+    popup.style.setProperty("--rule-preview-x", `${left}px`);
+    popup.style.setProperty("--rule-preview-y", `${top}px`);
+  };
+
+  const hidePreview = () => {
+    if (!preview) {
+      return;
+    }
+
+    preview.classList.remove("is-visible");
+    preview.setAttribute("aria-hidden", "true");
+    activeLabel = null;
+    window.setTimeout(() => {
+      if (!activeLabel && preview) {
+        preview.hidden = true;
+      }
+    }, 140);
+  };
+
+  const showPreview = (label) => {
+    const detail = getRegisteredSdkRuleDetail(label.dataset.ruleDetailId);
+    const content = buildRulePreviewContent(label, detail);
+    if (!content) {
+      hidePreview();
+      return;
+    }
+
+    const popup = ensurePreview();
+    if (activeLabel === label) {
+      positionPreview(label);
+      return;
+    }
+
+    popup.hidden = false;
+    popup.classList.remove("is-visible");
+    popup.setAttribute("aria-hidden", "false");
+    popup.replaceChildren(content);
+    activeLabel = label;
+    positionPreview(label);
+    window.requestAnimationFrame(() => {
+      if (activeLabel === label) {
+        popup.classList.add("is-visible");
+      }
+    });
+  };
+
+  const handleHoverEvent = (event) => {
+    const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
+    if (!label) {
+      if (activeLabel && !document.activeElement?.closest?.(".sdk-rule-label.has-rule-detail")) {
+        hidePreview();
+      }
+      return;
+    }
+
+    showPreview(label);
+  };
+
+  const handleLeaveEvent = (event) => {
+    const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
+    if (!label || label !== activeLabel) {
+      return;
+    }
+
+    if (event.relatedTarget && label.contains(event.relatedTarget)) {
+      return;
+    }
+
+    hidePreview();
+  };
+
+  document.addEventListener("pointerover", handleHoverEvent);
+  document.addEventListener("pointermove", handleHoverEvent);
+  document.addEventListener("mouseover", handleHoverEvent);
+  document.addEventListener("mousemove", handleHoverEvent);
+  document.addEventListener("pointerout", handleLeaveEvent);
+  document.addEventListener("mouseout", handleLeaveEvent);
+  document.addEventListener("focusin", (event) => {
+    const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
+    if (label) {
+      showPreview(label);
+    }
+  });
+  document.addEventListener("focusout", (event) => {
+    const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
+    if (label && label === activeLabel) {
+      hidePreview();
+    }
+  });
+
+  window.addEventListener("scroll", () => {
+    if (activeLabel) {
+      positionPreview(activeLabel);
+    }
+  }, true);
+
+  window.addEventListener("resize", hidePreview);
+}
+
+function buildRulePreviewContent(label, detail) {
+  const localized = selectRuleDetailLocale(detail);
+  if (!localized) {
+    return null;
+  }
+
+  const title = localized.label || label.textContent?.trim() || t("unknown");
+  const root = document.createElement("div");
+  root.className = "sdk-rule-preview-card";
+
+  const titleNode = document.createElement("div");
+  titleNode.className = "sdk-rule-preview-title";
+  titleNode.textContent = title;
+  root.append(titleNode);
+
+  if (localized.description) {
+    const descriptionNode = document.createElement("div");
+    descriptionNode.className = "sdk-rule-preview-description";
+    descriptionNode.textContent = localized.description;
+    root.append(descriptionNode);
+  }
+
+  const metaRows = [];
+  if (localized.team) {
+    metaRows.push([t("ruleDevTeam"), localized.team]);
+  }
+  if (localized.contributors?.length) {
+    metaRows.push([t("ruleContributors"), localized.contributors.join(", ")]);
+  }
+  if (localized.source) {
+    metaRows.push([t("ruleSource"), localized.source]);
+  }
+  if (detail?.uuid) {
+    metaRows.push([t("ruleUuid"), detail.uuid]);
+  }
+
+  if (metaRows.length) {
+    const metaNode = document.createElement("div");
+    metaNode.className = "sdk-rule-preview-meta";
+    for (const [name, value] of metaRows) {
+      const row = document.createElement("div");
+      row.className = "sdk-rule-preview-meta-row";
+
+      const nameNode = document.createElement("span");
+      nameNode.textContent = name;
+
+      const valueNode = document.createElement("span");
+      valueNode.textContent = value;
+
+      row.append(nameNode, valueNode);
+      metaNode.append(row);
+    }
+    root.append(metaNode);
+  }
+
+  return root;
+}
+
+function selectRuleDetailLocale(detail) {
+  const locales = detail?.locales;
+  if (!locales || typeof locales !== "object") {
+    return null;
+  }
+
+  return (
+    locales[state.locale] ||
+    locales["zh-CN"] ||
+    locales.en ||
+    Object.values(locales).find((item) => item && typeof item === "object") ||
+    null
+  );
 }
 
 
@@ -1159,7 +1368,7 @@ function renderSdkRows(entries) {
     return [
       `<article class="sdk-row">`,
       `<div class="sdk-row-header">`,
-      `<div class="sdk-title">${renderSdkIcon(entry.iconUrl, entry.label, entry.singleColorIcon)}<span>${escapeHtml(entry.label || t("unknown"))}</span></div>`,
+      `<div class="sdk-title">${renderSdkIcon(entry.iconUrl, entry.label, entry.singleColorIcon)}${renderSdkRuleLabel(entry, t("unknown"))}</div>`,
       `<span class="sdk-count">${escapeHtml(String(entry.count || 0))}</span>`,
       `</div>`,
       `<div class="bar-track"><div class="bar" style="width: ${width}%"></div></div>`,

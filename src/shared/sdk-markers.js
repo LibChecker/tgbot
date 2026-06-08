@@ -143,6 +143,7 @@ function materializeRule(rule, resolveIconUrl, matchSource) {
     singleColorIcon: Boolean(rule.singleColorIcon),
     matchSource,
     regexName: rule.regexName || null,
+    ruleDetail: rule.ruleDetail || null,
     type: rule.type,
   };
 }
@@ -189,6 +190,7 @@ function summarizeNativeSdkMarkers(libraries, resolveIconUrl) {
         iconName: library.sdk.iconName,
         iconUrl: resolveIconUrl(library.sdk.iconName),
         singleColorIcon: Boolean(library.sdk.singleColorIcon),
+        ruleDetail: library.sdk.ruleDetail || null,
         count: 0,
         fileCount: 0,
         items: [],
@@ -215,6 +217,7 @@ function summarizeNativeSdkMarkers(libraries, resolveIconUrl) {
       iconName: entry.iconName,
       iconUrl: entry.iconUrl,
       singleColorIcon: entry.singleColorIcon,
+      ruleDetail: entry.ruleDetail || null,
       count: entry.count,
       detail: buildNativeSummaryDetail(entry),
       previewItems: [...entry.itemNames].slice(0, 4),
@@ -241,6 +244,7 @@ function summarizeComponentSdkMarkers(components, resolveIconUrl) {
           iconName: component.sdk.iconName,
           iconUrl: resolveIconUrl(component.sdk.iconName),
           singleColorIcon: Boolean(component.sdk.singleColorIcon),
+          ruleDetail: component.sdk.ruleDetail || null,
           count: 0,
           items: [],
           componentKinds: new Map(),
@@ -264,6 +268,7 @@ function summarizeComponentSdkMarkers(components, resolveIconUrl) {
       iconName: entry.iconName,
       iconUrl: entry.iconUrl,
       singleColorIcon: entry.singleColorIcon,
+      ruleDetail: entry.ruleDetail || null,
       count: entry.count,
       detail: buildComponentSummaryDetail(entry),
       previewItems: entry.items
@@ -315,6 +320,7 @@ function compileRuleIndex(rules) {
       singleColorIcon: Boolean(rule.singleColorIcon),
       isRegexRule: Boolean(rule.isRegexRule),
       regexName: rule.regexName || null,
+      ruleDetail: rule.ruleDetail || null,
     };
 
     if (normalizedRule.isRegexRule) {
