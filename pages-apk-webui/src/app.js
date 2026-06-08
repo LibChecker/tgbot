@@ -11,6 +11,9 @@ import { initAppTitleColorMask, initBrandTitleColorMask, renderBrandTitle } from
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
 const THEME_STORAGE_KEY = "apk-webui-theme";
 const THEME_CHOICES = new Set(["light", "dark", "system"]);
+const CONTRIBUTOR_GITHUB_ALIASES = new Map([
+  ["absinthe", "zhaobozhen"],
+]);
 const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 
 
@@ -841,12 +844,13 @@ function createContributorLinks(contributors = []) {
 }
 
 function createGithubProfileLink(contributor) {
-  const username = String(contributor || "").trim();
+  const displayName = String(contributor || "").trim();
+  const username = CONTRIBUTOR_GITHUB_ALIASES.get(displayName.toLowerCase()) || displayName;
   if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/iu.test(username)) {
     return null;
   }
 
-  return createExternalLink(`https://github.com/${username}`, username);
+  return createExternalLink(`https://github.com/${username}`, displayName);
 }
 
 function createSourceLink(source) {
