@@ -1,37 +1,72 @@
-# tgbot APK WebUI (Cloudflare Pages)
+# APK WebUI
 
-一个独立的 Cloudflare Pages 静态项目，复用主项目的 APK 解析器和 LibChecker 规则，在浏览器本地分析 APK，不把文件上传到服务器。
+This directory contains the standalone Cloudflare Pages app for local APK analysis in the browser. It shares the APK analyzer and LibChecker rule bundles from the repository-level `src/shared/` module, but it does not depend on the Telegram bot runtime.
 
-## 本地构建
+## Project Structure
 
-```bash
-npm run build
+```text
+pages-apk-webui/
+  src/
+    app/                UI helper modules for rendering, history, i18n, and effects
+    assets/             Static visual assets
+    analyzer-worker.js  Browser worker that runs APK analysis
+    app.css             Page styles
+    app.js              Main UI controller
+    index.html          Static entry HTML
+  scripts/
+    build.mjs           Pages build script
+  dist/                 Generated build output
 ```
 
-构建产物输出到 `dist/`。构建脚本会同步这些主项目文件：
+The build script copies shared analyzer files into `dist/modules/`:
 
-- `src/apk.js`
-- `src/sdk-markers.js`
-- `src/generated/libchecker-rules.js`
-- `src/generated/libchecker-sdk-icons.js`
+- `src/shared/apk.js`
+- `src/shared/apk-signatures.js`
+- `src/shared/sdk-markers.js`
+- `src/shared/generated/libchecker-rules.js`
+- `src/shared/generated/libchecker-sdk-icons.js`
 
-## 本地预览
+## Local Development
 
-```bash
-npm run dev
-```
-
-## 部署
+Install dependencies from the repository root first:
 
 ```bash
-npm run deploy
+npm install
 ```
 
-Cloudflare Pages 控制台使用 Git 集成时，可配置：
+Run the Pages app locally:
+
+```bash
+npm run pages:dev
+```
+
+Build the static Pages output:
+
+```bash
+npm run pages:build
+```
+
+Run WebUI syntax checks:
+
+```bash
+npm run pages:check
+```
+
+## Deployment
+
+Deploy the Pages app:
+
+```bash
+npm run pages:deploy
+```
+
+When using Cloudflare Pages Git integration, configure:
 
 - Build command: `npm run build`
 - Build output directory: `dist`
 
-## 解析引擎
+## Analyzer Runtime
 
-当前实现使用主项目已有的纯 JavaScript APK 解析器，并放在浏览器 Web Worker 中运行，避免阻塞 UI。这个结构后续可以把 `analyzer-worker.js` 内的解析调用替换成 WASM 模块，但不需要改变页面交互和展示层。
+APK files are parsed locally in a browser Web Worker. The worker receives a `File`, reads it as an `ArrayBuffer`, then uses the shared analyzer modules copied into `dist/modules/`.
+
+The browser-side analyzer currently supports manifest parsing, resources, application icons, native libraries, permissions, components, signatures, metadata, and LibChecker SDK rule annotations.
