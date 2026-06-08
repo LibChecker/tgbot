@@ -25,15 +25,15 @@ async function analyze(message) {
   const file = message.file;
 
   if (!file || typeof file.arrayBuffer !== "function") {
-    throw new Error("请选择一个 APK 文件。");
+    throw new Error("请选择一个 APK 文件");
   }
 
   if (!isLikelyApk(file)) {
-    throw new Error("请上传 .apk 文件。");
+    throw new Error("请上传 .apk 文件");
   }
 
   if (typeof DecompressionStream !== "function") {
-    throw new Error("当前浏览器不支持 DecompressionStream，无法在本地解压 APK。");
+    throw new Error("当前浏览器不支持 DecompressionStream，无法在本地解压 APK");
   }
 
   self.postMessage({
@@ -101,6 +101,7 @@ function buildAnalysisProfile(apkInfo, terminalSystem) {
       "manifest",
       "resources",
       "native-libraries",
+      "apk-signatures",
       "dex-feature-markers",
       "libchecker-sdk-rules",
     ],

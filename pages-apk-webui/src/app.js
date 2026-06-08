@@ -11,7 +11,7 @@ const I18N = {
     clear: "清空",
     filePrompt: "选择或拖入 APK",
     fileIdle: "未选择文件",
-    localNote: "文件只在当前浏览器中解析。",
+    localNote: "文件只在当前浏览器中解析",
     analyze: "开始分析",
     analyzing: "分析中",
     progressReady: "等待文件",
@@ -19,8 +19,8 @@ const I18N = {
     progressParsing: "解析 Manifest、资源与 DEX 标记",
     progressDone: "分析完成",
     historyTitle: "历史记录",
-    historyNote: "保存在当前浏览器中，点击记录可重新打开结果。",
-    historyEmpty: "还没有历史记录。",
+    historyNote: "保存在当前浏览器中，点击记录可重新打开结果",
+    historyEmpty: "还没有历史记录",
     historyOpen: "打开历史记录",
     historyDelete: "删除",
     historyExpand: "展开历史",
@@ -29,17 +29,18 @@ const I18N = {
     historyItemMeta: "{version} · Target SDK {targetSdk}",
     historyFileMeta: "{file} · {size} · {date}",
     emptyTitle: "等待 APK",
-    emptyBody: "分析完成后会在这里展示摘要、SDK 标记、组件、权限和 meta-data。",
+    emptyBody: "分析完成后会在这里展示摘要、SDK 标记、组件、权限、签名和元数据",
     tabSummary: "摘要",
     tabSdk: "SDK",
     tabNative: "原生库",
     tabComponents: "组件",
     tabPermissions: "权限",
-    tabMeta: "Meta-Data",
+    tabSignatures: "签名",
+    tabMeta: "元数据",
     tabRaw: "JSON",
-    noFile: "请选择一个 APK 文件。",
-    invalidFile: "请上传 .apk 文件。",
-    workerFailed: "分析进程启动失败。",
+    noFile: "请选择一个 APK 文件",
+    invalidFile: "请上传 .apk 文件",
+    workerFailed: "分析进程启动失败",
     appName: "应用名",
     packageName: "包名",
     versionName: "versionName",
@@ -55,14 +56,16 @@ const I18N = {
     permissions: "权限",
     nativeLibraries: "原生库",
     components: "组件",
-    metaData: "Meta-Data",
+    signatures: "签名",
+    metaData: "元数据",
     buildFeatures: "构建特性",
-    noBuildFeatures: "未识别到构建特性。",
-    noNativeLibraries: "未发现原生库。",
-    noSdkMarkers: "未匹配到 SDK 标记。",
-    noComponents: "未声明组件。",
-    noPermissions: "未声明权限。",
-    noMetaData: "未声明 application 级 meta-data。",
+    noBuildFeatures: "未识别到构建特性",
+    noNativeLibraries: "未发现原生库",
+    noSdkMarkers: "未匹配到 SDK 标记",
+    noComponents: "未声明组件",
+    noPermissions: "未声明权限",
+    noSignatures: "未发现签名证书",
+    noMetaData: "未声明 application 级元数据",
     summary: "摘要",
     sdkNative: "原生库 SDK 标记",
     sdkComponents: "组件 SDK 标记",
@@ -86,7 +89,31 @@ const I18N = {
     size: "大小",
     value: "值",
     resource: "资源",
-    rawNotice: "JSON 视图默认省略较大的 data URI；导出文件也使用同样结构。",
+    detectedRule: "标记规则",
+    signatureSchemes: "签名方案",
+    signatureCertificate: "签名证书 {index}",
+    signatureVersion: "版本",
+    signatureSerialNumber: "序列号",
+    signatureIssuer: "发行人",
+    signatureSubject: "主题",
+    signatureValidFrom: "有效期始",
+    signatureValidTo: "有效期至",
+    signaturePublicKeyFormat: "公钥格式",
+    signaturePublicKeyAlgorithm: "公钥算法",
+    signaturePublicKeyExponent: "公钥指数",
+    signaturePublicKeyModulusSize: "模数大小",
+    signaturePublicKeyModulus: "模数",
+    signaturePublicKeyY: "公钥值Y",
+    signaturePublicKeyType: "公钥类型",
+    signatureAlgorithmName: "签名算法",
+    signatureAlgorithmOid: "签名算法 OID",
+    signatureMd5: "MD5",
+    signatureSha1: "SHA1",
+    signatureSha256: "SHA256",
+    signatureCharString: "CharString",
+    signatureSourceEntry: "来源条目",
+    signatureDerLength: "证书大小",
+    rawNotice: "JSON 视图默认省略较大的 data URI",
     selectedFile: "{name} · {size}",
     completedIn: "{seconds}s",
     localFile: "本地文件",
@@ -121,12 +148,13 @@ const I18N = {
     historyItemMeta: "{version} · Target SDK {targetSdk}",
     historyFileMeta: "{file} · {size} · {date}",
     emptyTitle: "Waiting for APK",
-    emptyBody: "The report will show summary, SDK markers, components, permissions, and meta-data.",
+    emptyBody: "The report will show summary, SDK markers, components, permissions, signatures, and meta-data.",
     tabSummary: "Summary",
     tabSdk: "SDK",
     tabNative: "Native",
     tabComponents: "Components",
     tabPermissions: "Permissions",
+    tabSignatures: "Signatures",
     tabMeta: "Meta-Data",
     tabRaw: "JSON",
     noFile: "Choose an APK file.",
@@ -147,6 +175,7 @@ const I18N = {
     permissions: "Permissions",
     nativeLibraries: "Native Libraries",
     components: "Components",
+    signatures: "Signatures",
     metaData: "Meta-Data",
     buildFeatures: "Build Features",
     noBuildFeatures: "No build features detected.",
@@ -154,6 +183,7 @@ const I18N = {
     noSdkMarkers: "No SDK markers matched.",
     noComponents: "No components declared.",
     noPermissions: "No permissions declared.",
+    noSignatures: "No signature certificates found.",
     noMetaData: "No application-level meta-data declared.",
     summary: "Summary",
     sdkNative: "Native Library SDK Markers",
@@ -178,7 +208,31 @@ const I18N = {
     size: "Size",
     value: "Value",
     resource: "Resource",
-    rawNotice: "The JSON view omits large data URIs by default. Export uses the same structure.",
+    detectedRule: "Matched Rule",
+    signatureSchemes: "Signing Schemes",
+    signatureCertificate: "Signature Certificate {index}",
+    signatureVersion: "Version",
+    signatureSerialNumber: "Serial Number",
+    signatureIssuer: "Issuer",
+    signatureSubject: "Subject",
+    signatureValidFrom: "Valid From",
+    signatureValidTo: "Valid To",
+    signaturePublicKeyFormat: "Public Key Format",
+    signaturePublicKeyAlgorithm: "Public Key Algorithm",
+    signaturePublicKeyExponent: "Public Key Exponent",
+    signaturePublicKeyModulusSize: "Modulus Size",
+    signaturePublicKeyModulus: "Modulus",
+    signaturePublicKeyY: "Public Key Y",
+    signaturePublicKeyType: "Public Key Type",
+    signatureAlgorithmName: "Signature Algorithm",
+    signatureAlgorithmOid: "Signature Algorithm OID",
+    signatureMd5: "MD5",
+    signatureSha1: "SHA1",
+    signatureSha256: "SHA256",
+    signatureCharString: "CharString",
+    signatureSourceEntry: "Source Entry",
+    signatureDerLength: "Certificate Size",
+    rawNotice: "The JSON view omits large data URIs by default.",
     selectedFile: "{name} · {size}",
     completedIn: "{seconds}s",
     localFile: "Local file",
@@ -186,7 +240,7 @@ const I18N = {
 };
 
 const COMPONENT_SECTIONS = ["activities", "services", "receivers", "providers"];
-const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "metadata", "raw"]);
+const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
 const THEME_STORAGE_KEY = "apk-webui-theme";
 const THEME_CHOICES = new Set(["light", "dark", "system"]);
 const HISTORY_STORAGE_KEY = "apk-webui-history";
@@ -198,10 +252,6 @@ let sdkIconSvgMap = null;
 let sdkIconSvgMapPromise = null;
 let sdkSingleColorIconNames = null;
 let sdkSingleColorIconNamesPromise = null;
-const ORB_PALETTES = {
-  light: ["#7c3aed", "#c084fc", "#22d3ee", "#f0abfc"],
-  dark: ["#3b1d70", "#5b21b6", "#075985", "#7e22ce"],
-};
 const DOT_TITLE_GLYPHS = {
   B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
   C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
@@ -224,6 +274,7 @@ const state = {
   history: readHistory(),
   historyCollapsed: readHistoryCollapsed(),
   activeTab: "summary",
+  activeNativeAbi: "",
   worker: null,
   jobId: 0,
   startedAt: 0,
@@ -233,7 +284,6 @@ const state = {
 const elements = {
   themeButtons: [...document.querySelectorAll("[data-theme-choice]")],
   languageSelect: document.querySelector("#language-select"),
-  exportButton: document.querySelector("#export-button"),
   clearButton: document.querySelector("#clear-button"),
   backgroundCanvas: document.querySelector("#color-orb-background"),
   brandTitle: document.querySelector(".brand-title"),
@@ -262,11 +312,12 @@ applyThemeChoice(state.themeChoice, { persist: false });
 elements.languageSelect.value = state.locale;
 applyLocale();
 renderBrandTitle();
+initBrandTitleColorMask();
 renderHistoryList();
 updateHistoryCollapse();
 bindEvents();
 initColorOrbBackground();
-initBrandWave();
+initSdkIconPreview();
 
 function bindEvents() {
   elements.themeButtons.forEach((button) => {
@@ -294,6 +345,20 @@ function bindEvents() {
     setSelectedFile(elements.fileInput.files?.[0] || null);
   });
 
+  elements.dropZone.addEventListener("pointerenter", (event) => {
+    updateDropZonePointer(event);
+    elements.dropZone.classList.add("is-pointer-active");
+  });
+
+  elements.dropZone.addEventListener("pointermove", (event) => {
+    updateDropZonePointer(event);
+    elements.dropZone.classList.add("is-pointer-active");
+  });
+
+  elements.dropZone.addEventListener("pointerleave", () => {
+    elements.dropZone.classList.remove("is-pointer-active");
+  });
+
   elements.form.addEventListener("submit", (event) => {
     event.preventDefault();
     analyzeSelectedFile();
@@ -312,12 +377,6 @@ function bindEvents() {
     event.preventDefault();
     elements.dropZone.classList.remove("is-dragging");
     setSelectedFile(event.dataTransfer?.files?.[0] || null);
-  });
-
-  elements.exportButton.addEventListener("click", () => {
-    if (state.report) {
-      downloadReport(state.report);
-    }
   });
 
   elements.clearButton.addEventListener("click", () => {
@@ -346,6 +405,28 @@ function bindEvents() {
     }
   });
 
+  elements.historyList.addEventListener("pointerover", handleHistoryPointerEvent);
+  elements.historyList.addEventListener("pointermove", handleHistoryPointerEvent);
+  elements.historyList.addEventListener("pointerout", (event) => {
+    const row = event.target.closest(".history-row");
+    if (!row || row.contains(event.relatedTarget)) {
+      return;
+    }
+
+    row.classList.remove("is-pointer-active");
+  });
+
+  elements.historyList.addEventListener("pointerleave", clearHistoryPointerState);
+
+  document.addEventListener("pointermove", (event) => {
+    const row = event.target.closest?.(".history-row");
+    if (elements.historyList.contains(event.target) || (row && elements.historyList.contains(row))) {
+      return;
+    }
+
+    clearHistoryPointerState();
+  });
+
   elements.tabs.addEventListener("click", (event) => {
     const tab = event.target.closest("[data-tab]")?.dataset.tab;
     if (!tab || !VALID_TABS.has(tab)) {
@@ -356,218 +437,194 @@ function bindEvents() {
     updateTabs();
     renderTabPanel();
   });
+
+  elements.tabPanel.addEventListener("click", (event) => {
+    const exportButton = event.target.closest("[data-json-export]");
+    if (exportButton) {
+      if (state.report) {
+        downloadReport(state.report);
+      }
+      return;
+    }
+
+    const button = event.target.closest("[data-native-abi]");
+    if (!button || state.activeTab !== "native") {
+      return;
+    }
+
+    state.activeNativeAbi = button.dataset.nativeAbi || "";
+    renderTabPanel();
+  });
 }
 
-function initBrandWave() {
-  const wave = document.querySelector(".brand-wave");
-  const path = document.querySelector(".brand-wave__path");
-  if (!wave || !path) {
+function updateDropZonePointer(event) {
+  const rect = elements.dropZone.getBoundingClientRect();
+  const x = clamp(event.clientX - rect.left, 0, rect.width);
+  const y = clamp(event.clientY - rect.top, 0, rect.height);
+  elements.dropZone.style.setProperty("--drop-x", `${x.toFixed(1)}px`);
+  elements.dropZone.style.setProperty("--drop-y", `${y.toFixed(1)}px`);
+}
+
+function handleHistoryPointerEvent(event) {
+  const row = event.target.closest(".history-row");
+  if (!row || !elements.historyList.contains(row)) {
+    clearActiveHistoryRows();
     return;
   }
 
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let frameId = 0;
-  let lastTime = 0;
-  let phase = 0;
-  let isPressing = false;
-  let pressStart = 0;
-  let lastPointerEventAt = 0;
-  let lastPressEnd = 0;
-  let waveLevel = 0;
-  let releasePulse = 0;
+  const rect = row.getBoundingClientRect();
+  const x = clamp(event.clientX - rect.left, 0, rect.width);
+  const y = clamp(event.clientY - rect.top, 0, rect.height);
+  row.style.setProperty("--history-row-glass-x", `${x.toFixed(1)}px`);
+  row.style.setProperty("--history-row-glass-y", `${y.toFixed(1)}px`);
 
-  const setWave = (level) => {
-    const amplitude = 2.15 + level * 7.4;
-    const radius = 28.9 + level * 1.9;
-    path.setAttribute("d", buildBrandWavePath({ amplitude, phase, radius }));
-    path.style.opacity = (0.14 + level * 0.18).toFixed(2);
-  };
-
-  const tick = (now) => {
-    const delta = lastTime ? Math.min(now - lastTime, 50) : 16.7;
-    lastTime = now;
-
-    const heldLevel = isPressing ? Math.min((now - pressStart) / 1400, 1) : 0;
-    const targetLevel = Math.max(heldLevel, releasePulse);
-    waveLevel = lerp(waveLevel, targetLevel, 0.085);
-    if (!isPressing) {
-      releasePulse *= Math.pow(0.925, delta / 16.7);
-    }
-
-    phase += delta * (0.0022 + waveLevel * 0.0042);
-    setWave(waveLevel);
-    frameId = window.requestAnimationFrame(tick);
-  };
-
-  const stop = () => {
-    if (!frameId) {
-      return;
-    }
-
-    window.cancelAnimationFrame(frameId);
-    frameId = 0;
-  };
-
-  const start = () => {
-    if (reducedMotion.matches) {
-      setWave(0);
-      return;
-    }
-
-    if (frameId) {
-      return;
-    }
-
-    lastTime = 0;
-    frameId = window.requestAnimationFrame(tick);
-  };
-
-  const beginPress = (now) => {
-    if (isPressing) {
-      return;
-    }
-
-    isPressing = true;
-    pressStart = now;
-    waveLevel = Math.max(waveLevel, 0.08);
-    releasePulse = Math.max(releasePulse, 0.18);
-    setWave(waveLevel);
-  };
-
-  const endPress = (now) => {
-    if (!isPressing) {
-      return;
-    }
-
-    const heldFor = now - pressStart;
-    releasePulse = Math.max(releasePulse, Math.min(heldFor / 1400, 1));
-    isPressing = false;
-    lastPressEnd = now;
-    setWave(Math.max(waveLevel, releasePulse));
-  };
-
-  const onPointerDown = (event) => {
-    if (event.pointerType === "mouse" && event.button !== 0) {
-      return;
-    }
-
-    lastPointerEventAt = performance.now();
-    beginPress(lastPointerEventAt);
-  };
-
-  const onPointerUp = () => {
-    lastPointerEventAt = performance.now();
-    endPress(lastPointerEventAt);
-  };
-
-  const onMouseDown = (event) => {
-    if (event.button !== 0 || performance.now() - lastPointerEventAt < 80) {
-      return;
-    }
-
-    beginPress(performance.now());
-  };
-
-  const onMouseUp = () => {
-    if (performance.now() - lastPointerEventAt < 80) {
-      return;
-    }
-
-    endPress(performance.now());
-  };
-
-  const onClick = () => {
-    const now = performance.now();
-    if (now - lastPressEnd > 80) {
-      waveLevel = Math.max(waveLevel, 0.16);
-      releasePulse = Math.max(releasePulse, 0.28);
-      setWave(Math.max(waveLevel, releasePulse));
-    }
-  };
-
-  document.addEventListener("pointerdown", onPointerDown);
-  document.addEventListener("pointerup", onPointerUp);
-  document.addEventListener("pointercancel", onPointerUp);
-  document.addEventListener("pointerleave", onPointerUp);
-  document.addEventListener("mousedown", onMouseDown);
-  document.addEventListener("mouseup", onMouseUp);
-  document.addEventListener("click", onClick);
-  window.addEventListener("pointerdown", onPointerDown, true);
-  window.addEventListener("pointerup", onPointerUp, true);
-  window.addEventListener("pointercancel", onPointerUp, true);
-  window.addEventListener("mousedown", onMouseDown, true);
-  window.addEventListener("mouseup", onMouseUp, true);
-  window.addEventListener("click", onClick, true);
-
-  reducedMotion.addEventListener("change", () => {
-    if (reducedMotion.matches) {
-      stop();
-      setWave(0);
-      return;
-    }
-
-    start();
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      stop();
-      return;
-    }
-
-    start();
-  });
-
-  setWave(0);
-  start();
+  clearActiveHistoryRows(row);
+  row.classList.add("is-pointer-active");
 }
 
-function buildBrandWavePath({ amplitude, phase, radius }) {
-  const center = 36;
-  const points = [];
-  const pointCount = 54;
+function clearActiveHistoryRows(exceptRow = null) {
+  elements.historyList.querySelectorAll(".history-row.is-pointer-active").forEach((row) => {
+    if (row !== exceptRow) {
+      row.classList.remove("is-pointer-active");
+    }
+  });
+}
 
-  for (let index = 0; index < pointCount; index += 1) {
-    const angle = (index / pointCount) * Math.PI * 2;
-    const wave =
-      Math.sin(angle * 3 + phase) * amplitude * 0.64 +
-      Math.sin(angle * 5 - phase * 0.72 + 1.15) * amplitude * 0.28 +
-      Math.sin(angle * 2 + phase * 0.43 + 2.4) * amplitude * 0.22;
-    const pointRadius = radius + wave;
-    points.push({
-      x: center + Math.cos(angle) * pointRadius,
-      y: center + Math.sin(angle) * pointRadius,
+function clearHistoryPointerState() {
+  clearActiveHistoryRows();
+}
+
+function initSdkIconPreview() {
+  let preview = null;
+  let activeIcon = null;
+
+  const ensurePreview = () => {
+    if (preview) {
+      return preview;
+    }
+
+    preview = document.createElement("div");
+    preview.className = "sdk-icon-preview";
+    preview.setAttribute("aria-hidden", "true");
+    preview.hidden = true;
+    document.body.append(preview);
+    return preview;
+  };
+
+  const getPreviewGraphic = (icon) => {
+    const graphic = icon.querySelector(".sdk-icon__image, .sdk-icon__svg");
+    if (!graphic) {
+      return null;
+    }
+
+    const clone = graphic.cloneNode(true);
+    if (clone instanceof HTMLImageElement) {
+      clone.alt = "";
+    }
+    return clone;
+  };
+
+  const positionPreview = (icon) => {
+    const popup = ensurePreview();
+    const iconRect = icon.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    const gap = 10;
+    const margin = 8;
+    const popupWidth = popupRect.width || 96;
+    const popupHeight = popupRect.height || 96;
+
+    let left = iconRect.left + iconRect.width / 2 - popupWidth / 2;
+    left = clamp(left, margin, window.innerWidth - popupWidth - margin);
+
+    let top = iconRect.top - popupHeight - gap;
+    if (top < margin) {
+      top = iconRect.bottom + gap;
+    }
+    top = clamp(top, margin, window.innerHeight - popupHeight - margin);
+
+    popup.style.setProperty("--preview-x", `${left}px`);
+    popup.style.setProperty("--preview-y", `${top}px`);
+  };
+
+  const hidePreview = () => {
+    if (!preview) {
+      return;
+    }
+
+    preview.classList.remove("is-visible", "is-mono");
+    activeIcon = null;
+    window.setTimeout(() => {
+      if (!activeIcon && preview) {
+        preview.hidden = true;
+      }
+    }, 120);
+  };
+
+  const showPreview = (icon) => {
+    if (activeIcon === icon) {
+      positionPreview(icon);
+      return;
+    }
+
+    const graphic = getPreviewGraphic(icon);
+    if (!graphic) {
+      hidePreview();
+      return;
+    }
+
+    const popup = ensurePreview();
+    popup.hidden = false;
+    popup.classList.remove("is-visible", "is-mono");
+    popup.classList.toggle("is-mono", icon.classList.contains("sdk-icon--mono"));
+    popup.replaceChildren(graphic);
+    activeIcon = icon;
+    positionPreview(icon);
+    window.requestAnimationFrame(() => {
+      if (activeIcon === icon) {
+        popup.classList.add("is-visible");
+      }
     });
-  }
+  };
 
-  return buildClosedSmoothPath(points);
-}
+  const handleHoverEvent = (event) => {
+    const icon = event.target.closest?.(".sdk-icon");
+    if (!icon) {
+      if (activeIcon) {
+        hidePreview();
+      }
+      return;
+    }
 
-function buildClosedSmoothPath(points) {
-  const count = points.length;
-  let path = `M ${formatPoint(points[0])}`;
+    showPreview(icon);
+  };
 
-  for (let index = 0; index < count; index += 1) {
-    const previous = points[(index - 1 + count) % count];
-    const current = points[index];
-    const next = points[(index + 1) % count];
-    const afterNext = points[(index + 2) % count];
-    const controlOne = {
-      x: current.x + (next.x - previous.x) / 6,
-      y: current.y + (next.y - previous.y) / 6,
-    };
-    const controlTwo = {
-      x: next.x - (afterNext.x - current.x) / 6,
-      y: next.y - (afterNext.y - current.y) / 6,
-    };
-    path += ` C ${formatPoint(controlOne)} ${formatPoint(controlTwo)} ${formatPoint(next)}`;
-  }
+  const handleLeaveEvent = (event) => {
+    const icon = event.target.closest?.(".sdk-icon");
+    if (!icon || icon !== activeIcon) {
+      return;
+    }
 
-  return `${path} Z`;
-}
+    if (event.relatedTarget && icon.contains(event.relatedTarget)) {
+      return;
+    }
 
-function formatPoint(point) {
-  return `${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    hidePreview();
+  };
+
+  document.addEventListener("pointerover", handleHoverEvent);
+  document.addEventListener("pointermove", handleHoverEvent);
+  document.addEventListener("mouseover", handleHoverEvent);
+  document.addEventListener("mousemove", handleHoverEvent);
+  document.addEventListener("pointerout", handleLeaveEvent);
+  document.addEventListener("mouseout", handleLeaveEvent);
+
+  window.addEventListener("scroll", () => {
+    if (activeIcon) {
+      positionPreview(activeIcon);
+    }
+  }, true);
+
+  window.addEventListener("resize", hidePreview);
 }
 
 function lerp(from, to, amount) {
@@ -579,316 +636,36 @@ function clamp(value, min, max) {
 }
 
 function initColorOrbBackground() {
-  const canvas = elements.backgroundCanvas;
-  const context = canvas?.getContext?.("2d", { alpha: true });
-  if (!canvas || !context) {
-    return;
+  elements.backgroundCanvas?.setAttribute("data-renderer", "css-mesh");
+}
+
+function rgbToHsl(color) {
+  const r = color.r / 255;
+  const g = color.g / 255;
+  const b = color.b / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  const delta = max - min;
+  if (delta === 0) {
+    return { h: 0, s: 0, l: lightness };
   }
 
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const orb = {
-    x: 0.72,
-    y: 0.22,
-    velocityX: -0.028,
-    velocityY: 0.022,
-    seed: Math.random() * 1000,
-    radiusScale: 1,
-  };
-
-  let width = 0;
-  let height = 0;
-  let pixelRatio = 1;
-  let frameId = 0;
-  let lastTime = 0;
-
-  const resize = () => {
-    const nextWidth = Math.max(1, window.innerWidth);
-    const nextHeight = Math.max(1, window.innerHeight);
-    const nextPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-
-    if (nextWidth === width && nextHeight === height && nextPixelRatio === pixelRatio) {
-      return;
-    }
-
-    width = nextWidth;
-    height = nextHeight;
-    pixelRatio = nextPixelRatio;
-    canvas.width = Math.round(width * pixelRatio);
-    canvas.height = Math.round(height * pixelRatio);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-  };
-
-  const moveOrb = (delta, now) => {
-    const seconds = delta / 1000;
-    const time = now * 0.001;
-    const seed = orb.seed;
-    const flowX =
-      Math.sin(time * 0.73 + seed) * 0.006 +
-      Math.sin(time * 0.37 + seed * 1.91) * 0.004;
-    const flowY =
-      Math.cos(time * 0.61 + seed * 0.83) * 0.006 +
-      Math.sin(time * 0.43 + seed * 2.47) * 0.004;
-
-    orb.velocityX += flowX * seconds;
-    orb.velocityY += flowY * seconds;
-    normalizeOrbVelocity(orb);
-
-    orb.x += orb.velocityX * seconds;
-    orb.y += orb.velocityY * seconds;
-
-    bounceOrb(orb);
-    orb.radiusScale =
-      1 +
-      Math.sin(time * 0.23 + seed * 1.17) * 0.08 +
-      Math.cos(time * 0.11 + seed * 2.61) * 0.05;
-  };
-
-  const step = (now) => {
-    resize();
-
-    const delta = lastTime ? Math.min(now - lastTime, 50) : 16.7;
-    lastTime = now;
-
-    if (reducedMotion.matches) {
-      orb.x = 0.68;
-      orb.y = 0.24;
-      orb.radiusScale = 1;
-      drawColorOrb(context, orb, width, height, now);
-      return;
-    }
-
-    moveOrb(delta, now);
-
-    drawColorOrb(context, orb, width, height, now);
-    frameId = window.requestAnimationFrame(step);
-  };
-
-  const stop = () => {
-    if (!frameId) {
-      return;
-    }
-
-    window.cancelAnimationFrame(frameId);
-    frameId = 0;
-  };
-
-  const start = () => {
-    if (frameId) {
-      return;
-    }
-
-    lastTime = 0;
-    frameId = window.requestAnimationFrame(step);
-  };
-
-  window.addEventListener("resize", () => {
-    resize();
-    drawColorOrb(context, orb, width, height, performance.now());
-  });
-
-  window.addEventListener("apk-theme-change", () => {
-    drawColorOrb(context, orb, width, height, performance.now());
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      stop();
-      return;
-    }
-
-    start();
-  });
-
-  reducedMotion.addEventListener("change", () => {
-    stop();
-    start();
-  });
-
-  systemThemeMedia.addEventListener("change", () => {
-    drawColorOrb(context, orb, width, height, performance.now());
-  });
-
-  resize();
-  start();
-}
-
-function normalizeOrbVelocity(orb) {
-  const speed = Math.hypot(orb.velocityX, orb.velocityY) || 0.001;
-  const minSpeed = 0.018;
-  const maxSpeed = 0.052;
-  const targetSpeed = clamp(speed, minSpeed, maxSpeed);
-
-  orb.velocityX = (orb.velocityX / speed) * targetSpeed;
-  orb.velocityY = (orb.velocityY / speed) * targetSpeed;
-}
-
-function bounceOrb(orb) {
-  const min = 0.03;
-  const max = 0.97;
-
-  if (orb.x < min) {
-    orb.x = min;
-    orb.velocityX = Math.abs(orb.velocityX);
-  } else if (orb.x > max) {
-    orb.x = max;
-    orb.velocityX = -Math.abs(orb.velocityX);
+  const saturation = delta / (1 - Math.abs((2 * lightness) - 1));
+  let hue = 0;
+  if (max === r) {
+    hue = ((g - b) / delta) % 6;
+  } else if (max === g) {
+    hue = ((b - r) / delta) + 2;
+  } else {
+    hue = ((r - g) / delta) + 4;
   }
-
-  if (orb.y < min) {
-    orb.y = min;
-    orb.velocityY = Math.abs(orb.velocityY);
-  } else if (orb.y > max) {
-    orb.y = max;
-    orb.velocityY = -Math.abs(orb.velocityY);
-  }
-}
-
-function drawColorOrb(context, orb, width, height, now) {
-  const colorScheme = document.documentElement.dataset.colorScheme === "dark" ? "dark" : "light";
-  const palette = ORB_PALETTES[colorScheme].map(hexToRgb);
-  const isDark = colorScheme === "dark";
-  const centerX = orb.x * width;
-  const centerY = orb.y * height;
-  const radius = Math.max(190, Math.min(Math.max(width, height) * 0.36, 540)) * orb.radiusScale;
-  const drift = Math.sin(now * 0.00032 + orb.seed) * radius * 0.08;
-  const highlightX = centerX - radius * 0.24 + drift;
-  const highlightY = centerY - radius * 0.3 + Math.cos(now * 0.00027 + orb.seed) * radius * 0.07;
-
-  context.clearRect(0, 0, width, height);
-  context.globalCompositeOperation = "source-over";
-  context.save();
-
-  const shadow = context.createRadialGradient(centerX, centerY + radius * 0.18, 0, centerX, centerY + radius * 0.18, radius * 1.26);
-  shadow.addColorStop(0, rgba(palette[0], isDark ? 0.16 : 0.12));
-  shadow.addColorStop(0.42, rgba(mixLab(palette[0], palette[1], 0.38), isDark ? 0.11 : 0.09));
-  shadow.addColorStop(0.72, rgba(palette[1], isDark ? 0.055 : 0.045));
-  shadow.addColorStop(1, rgba(palette[0], 0));
-  context.fillStyle = shadow;
-  context.beginPath();
-  context.arc(centerX, centerY + radius * 0.18, radius * 1.26, 0, Math.PI * 2);
-  context.fill();
-
-  const body = context.createRadialGradient(highlightX, highlightY, radius * 0.05, centerX, centerY, radius);
-  body.addColorStop(0, rgba(mixLab(palette[3], { r: 255, g: 255, b: 255 }, isDark ? 0.12 : 0.48), isDark ? 0.24 : 0.58));
-  body.addColorStop(0.16, rgba(mixLab(palette[1], palette[3], 0.48), isDark ? 0.22 : 0.44));
-  body.addColorStop(0.34, rgba(mixLab(palette[1], palette[3], 0.25), isDark ? 0.19 : 0.34));
-  body.addColorStop(0.52, rgba(mixLab(palette[0], palette[1], 0.5), isDark ? 0.16 : 0.28));
-  body.addColorStop(0.72, rgba(mixLab(palette[0], palette[2], 0.28), isDark ? 0.1 : 0.18));
-  body.addColorStop(0.9, rgba(palette[0], isDark ? 0.035 : 0.075));
-  body.addColorStop(1, rgba(palette[0], 0));
-  context.fillStyle = body;
-  context.beginPath();
-  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-  context.fill();
-
-  const accent = context.createRadialGradient(centerX + radius * 0.28, centerY + radius * 0.16, 0, centerX + radius * 0.28, centerY + radius * 0.16, radius * 0.78);
-  accent.addColorStop(0, rgba(palette[2], isDark ? 0.09 : 0.18));
-  accent.addColorStop(0.32, rgba(mixLab(palette[2], palette[1], 0.26), isDark ? 0.065 : 0.12));
-  accent.addColorStop(0.72, rgba(palette[2], isDark ? 0.02 : 0.04));
-  accent.addColorStop(1, rgba(palette[2], 0));
-  context.fillStyle = accent;
-  context.beginPath();
-  context.arc(centerX + radius * 0.26, centerY + radius * 0.14, radius * 0.78, 0, Math.PI * 2);
-  context.fill();
-
-  drawOrbGrain(context, centerX, centerY, radius, orb.seed, now, colorScheme);
-  context.restore();
-}
-
-function drawOrbGrain(context, centerX, centerY, radius, seed, now, colorScheme) {
-  const alpha = colorScheme === "dark" ? 0.014 : 0.026;
-  context.save();
-  context.beginPath();
-  context.arc(centerX, centerY, radius * 0.96, 0, Math.PI * 2);
-  context.clip();
-
-  for (let index = 0; index < 72; index += 1) {
-    const base = seededNoise(seed + index * 19.19);
-    const angle = base * Math.PI * 2 + now * 0.000045 * (index % 5);
-    const distance = Math.sqrt(seededNoise(seed + index * 37.7)) * radius * 0.92;
-    const x = centerX + Math.cos(angle) * distance;
-    const y = centerY + Math.sin(angle) * distance;
-    const dotRadius = 0.7 + seededNoise(seed + index * 11.4) * 1.8;
-    context.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-    context.beginPath();
-    context.arc(x, y, dotRadius, 0, Math.PI * 2);
-    context.fill();
-  }
-
-  context.restore();
-}
-
-function seededNoise(value) {
-  const x = Math.sin(value * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
-
-function hexToRgb(value) {
-  const normalized = String(value || "").replace("#", "");
-  const numberValue = Number.parseInt(normalized.length === 3
-    ? normalized.split("").map((part) => `${part}${part}`).join("")
-    : normalized, 16);
 
   return {
-    r: (numberValue >> 16) & 255,
-    g: (numberValue >> 8) & 255,
-    b: numberValue & 255,
+    h: (hue * 60 + 360) % 360,
+    s: saturation,
+    l: lightness,
   };
-}
-
-function rgba(color, alpha) {
-  return `rgba(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)}, ${alpha})`;
-}
-
-function mixLab(left, right, amount) {
-  const leftLab = rgbToLab(left);
-  const rightLab = rgbToLab(right);
-  return labToRgb({
-    l: lerp(leftLab.l, rightLab.l, amount),
-    a: lerp(leftLab.a, rightLab.a, amount),
-    b: lerp(leftLab.b, rightLab.b, amount),
-  });
-}
-
-function rgbToLab(color) {
-  const rgb = [color.r, color.g, color.b].map((channel) => {
-    const value = channel / 255;
-    return value > 0.04045 ? ((value + 0.055) / 1.055) ** 2.4 : value / 12.92;
-  });
-  const x = (rgb[0] * 0.4124 + rgb[1] * 0.3576 + rgb[2] * 0.1805) / 0.95047;
-  const y = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
-  const z = (rgb[0] * 0.0193 + rgb[1] * 0.1192 + rgb[2] * 0.9505) / 1.08883;
-  const lab = [x, y, z].map((value) => value > 0.008856 ? value ** (1 / 3) : (7.787 * value) + (16 / 116));
-
-  return {
-    l: (116 * lab[1]) - 16,
-    a: 500 * (lab[0] - lab[1]),
-    b: 200 * (lab[1] - lab[2]),
-  };
-}
-
-function labToRgb(color) {
-  const y = (color.l + 16) / 116;
-  const x = color.a / 500 + y;
-  const z = y - color.b / 200;
-  const xyz = [x, y, z].map((value) => {
-    const valueCubed = value ** 3;
-    return valueCubed > 0.008856 ? valueCubed : (value - 16 / 116) / 7.787;
-  });
-  const linear = [
-    xyz[0] * 0.95047 * 3.2406 + xyz[1] * -1.5372 + xyz[2] * 1.08883 * -0.4986,
-    xyz[0] * 0.95047 * -0.9689 + xyz[1] * 1.8758 + xyz[2] * 1.08883 * 0.0415,
-    xyz[0] * 0.95047 * 0.0557 + xyz[1] * -0.204 + xyz[2] * 1.08883 * 1.057,
-  ];
-
-  const rgb = linear.map((value) => {
-    const normalized = value > 0.0031308 ? 1.055 * (value ** (1 / 2.4)) - 0.055 : 12.92 * value;
-    return Math.min(255, Math.max(0, normalized * 255));
-  });
-
-  return { r: rgb[0], g: rgb[1], b: rgb[2] };
 }
 
 function readThemeChoice() {
@@ -945,6 +722,18 @@ function renderBrandTitle() {
   node.classList.add("is-dot-rendered");
   node.setAttribute("aria-label", title);
 
+  node.append(
+    buildBrandTitleLayer(title, "brand-title__layer brand-title__layer--base", false),
+    buildBrandTitleLayer(title, "brand-title__layer brand-title__layer--color", true),
+  );
+}
+
+function buildBrandTitleLayer(title, className, colorized) {
+  const layerNode = document.createElement("span");
+  layerNode.className = className;
+  layerNode.setAttribute("aria-hidden", "true");
+  let activeDotIndex = 0;
+
   title.split(" ").forEach((word) => {
     if (!word) {
       return;
@@ -952,7 +741,6 @@ function renderBrandTitle() {
 
     const wordNode = document.createElement("span");
     wordNode.className = "brand-title__word";
-    wordNode.setAttribute("aria-hidden", "true");
 
     Array.from(word.toUpperCase()).forEach((character) => {
       const glyph = DOT_TITLE_GLYPHS[character] || DOT_TITLE_GLYPHS["?"];
@@ -963,6 +751,10 @@ function renderBrandTitle() {
         Array.from(row).forEach((dot) => {
           const dotNode = document.createElement("span");
           dotNode.className = dot === "1" ? "brand-title__dot is-on" : "brand-title__dot";
+          if (colorized && dot === "1") {
+            dotNode.style.setProperty("--dot-hue", String(Math.round((210 + activeDotIndex * 3.1) % 360)));
+            activeDotIndex += 1;
+          }
           letterNode.append(dotNode);
         });
       });
@@ -970,8 +762,132 @@ function renderBrandTitle() {
       wordNode.append(letterNode);
     });
 
-    node.append(wordNode);
+    layerNode.append(wordNode);
   });
+
+  return layerNode;
+}
+
+function initBrandTitleColorMask() {
+  const node = elements.brandTitle;
+  if (!node) {
+    return;
+  }
+
+  const updateMask = (event) => {
+    const rect = node.getBoundingClientRect();
+    const x = clamp(event.clientX - rect.left, 0, rect.width);
+    const y = clamp(event.clientY - rect.top, 0, rect.height);
+    node.style.setProperty("--brand-title-mask-x", `${x.toFixed(1)}px`);
+    node.style.setProperty("--brand-title-mask-y", `${y.toFixed(1)}px`);
+    node.classList.add("is-color-mask-active");
+  };
+
+  node.addEventListener("pointerenter", updateMask);
+  node.addEventListener("pointermove", updateMask);
+  node.addEventListener("pointerleave", () => {
+    node.classList.remove("is-color-mask-active");
+  });
+}
+
+function initAppTitleColorMask(info) {
+  const node = elements.reportHero.querySelector("[data-app-title-mask]");
+  if (!node) {
+    return;
+  }
+
+  const updateMask = (event) => {
+    const rect = node.getBoundingClientRect();
+    const x = clamp(event.clientX - rect.left, 0, rect.width);
+    const y = clamp(event.clientY - rect.top, 0, rect.height);
+    node.style.setProperty("--app-title-mask-x", `${x.toFixed(1)}px`);
+    node.style.setProperty("--app-title-mask-y", `${y.toFixed(1)}px`);
+    node.classList.add("is-color-mask-active");
+  };
+
+  node.addEventListener("pointerenter", updateMask);
+  node.addEventListener("pointermove", updateMask);
+  node.addEventListener("pointerleave", () => {
+    node.classList.remove("is-color-mask-active");
+  });
+
+  extractAppIconHue(info).then((hue) => {
+    if (hue == null || !node.isConnected) {
+      return;
+    }
+
+    node.style.setProperty("--app-title-hue", String(Math.round(hue)));
+  }).catch(() => {
+    // The default accent hue is good enough if canvas sampling is unavailable.
+  });
+}
+
+function extractAppIconHue(info) {
+  const src = sanitizeImageSrc(info?.icon?.dataUri || "");
+  if (!src || typeof Image !== "function") {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => {
+      try {
+        const hue = sampleDominantHue(image);
+        resolve(hue);
+      } catch {
+        resolve(null);
+      }
+    };
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+}
+
+function sampleDominantHue(image) {
+  const canvas = document.createElement("canvas");
+  const size = 36;
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return null;
+  }
+
+  context.drawImage(image, 0, 0, size, size);
+  const pixels = context.getImageData(0, 0, size, size).data;
+  let vectorX = 0;
+  let vectorY = 0;
+  let totalWeight = 0;
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const alpha = pixels[index + 3] / 255;
+    if (alpha < 0.18) {
+      continue;
+    }
+
+    const hsl = rgbToHsl({
+      r: pixels[index],
+      g: pixels[index + 1],
+      b: pixels[index + 2],
+    });
+    if (hsl.l < 0.05 || hsl.l > 0.96 || hsl.s < 0.08) {
+      continue;
+    }
+
+    const lightnessWeight = 1 - Math.min(0.65, Math.abs(hsl.l - 0.54));
+    const weight = alpha * (0.25 + hsl.s) ** 1.55 * lightnessWeight;
+    const radians = (hsl.h * Math.PI) / 180;
+    vectorX += Math.cos(radians) * weight;
+    vectorY += Math.sin(radians) * weight;
+    totalWeight += weight;
+  }
+
+  if (totalWeight < 0.01) {
+    return null;
+  }
+
+  return (Math.atan2(vectorY, vectorX) * 180 / Math.PI + 360) % 360;
 }
 
 function applyLocale() {
@@ -1037,6 +953,7 @@ async function analyzeSelectedFile() {
   state.startedAt = performance.now();
   state.report = null;
   state.activeTab = "summary";
+  state.activeNativeAbi = "";
 
   setBusy(true);
   showProgress("progressReading");
@@ -1099,8 +1016,8 @@ function handleWorkerMessage(event) {
   if (message.type === "result") {
     finishAnalysis();
     state.report = message.report;
+    state.activeNativeAbi = "";
     saveHistoryReport(message.report);
-    elements.exportButton.disabled = false;
     elements.clearButton.disabled = false;
     showProgress("progressDone");
     renderReport();
@@ -1147,12 +1064,12 @@ function resetState() {
   state.selectedFile = null;
   state.report = null;
   state.activeTab = "summary";
+  state.activeNativeAbi = "";
   elements.fileInput.value = "";
   elements.progress.hidden = true;
   elements.progress.classList.remove("is-complete");
   elements.progressTime.textContent = "0.0s";
   elements.progressLabel.textContent = t("progressReady");
-  elements.exportButton.disabled = true;
   elements.clearButton.disabled = true;
   elements.analyzeButton.disabled = true;
   renderSelectedFile();
@@ -1190,11 +1107,11 @@ async function openHistoryItem(id) {
   stopTimer();
   state.report = await hydrateReportSdkIcons(entry.report);
   state.activeTab = "summary";
+  state.activeNativeAbi = "";
   elements.progress.hidden = true;
   elements.progress.classList.remove("is-complete");
   elements.progressTime.textContent = "0.0s";
   elements.progressLabel.textContent = t("progressReady");
-  elements.exportButton.disabled = false;
   elements.clearButton.disabled = false;
   renderReport();
 }
@@ -1304,6 +1221,7 @@ function renderReport() {
   elements.emptyState.hidden = true;
   elements.resultView.hidden = false;
   elements.reportHero.innerHTML = renderHero(state.report);
+  initAppTitleColorMask(state.report.apkInfo);
   updateTabs();
   renderTabPanel();
 }
@@ -1330,6 +1248,8 @@ function renderTabPanel() {
     elements.tabPanel.innerHTML = renderComponentsTab(report);
   } else if (state.activeTab === "permissions") {
     elements.tabPanel.innerHTML = renderPermissionsTab(report);
+  } else if (state.activeTab === "signatures") {
+    elements.tabPanel.innerHTML = renderSignaturesTab(report);
   } else if (state.activeTab === "metadata") {
     elements.tabPanel.innerHTML = renderMetaDataTab(report);
   } else if (state.activeTab === "raw") {
@@ -1344,7 +1264,7 @@ function renderHero(report) {
   return [
     renderAppIcon(info),
     `<div class="hero-copy">`,
-    `<h2>${escapeHtml(info.appName || t("unknown"))}</h2>`,
+    renderAppTitle(info.appName || t("unknown")),
     `<div class="hero-meta">`,
     chip(info.packageName || t("unknown")),
     chip(`${t("versionName")}: ${info.versionName || t("unknown")}`),
@@ -1365,6 +1285,7 @@ function renderSummaryTab(report) {
     metric(t("permissions"), stats.permissions),
     metric(t("nativeLibraries"), stats.nativeLibraries),
     metric(t("components"), stats.components),
+    metric(t("signatures"), stats.signatures),
     metric(t("metaData"), stats.metaData),
     `</section>`,
     section(t("summary"), renderKeyValueTable([
@@ -1401,28 +1322,45 @@ function renderNativeTab(report) {
   }
 
   const groups = groupBy(libraries, (library) => library.abi || t("unknown"));
-  const blocks = [...groups.entries()].map(([abi, items]) => {
-    const rows = items.map((library) => {
-      const sdk = library.sdk ? renderSdkChip(library.sdk) : "";
-      return [
-        `<article class="list-row">`,
-        `<div class="row-title"><span>${escapeHtml(library.name || t("unknown"))}</span></div>`,
-        `<div class="row-meta">${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</div>`,
-        `<div class="row-meta">${escapeHtml(t("path"))}: ${codeChip(library.path || "")}</div>`,
-        sdk ? `<div class="row-meta">${escapeHtml(t("sdk"))}: ${sdk}</div>` : "",
-        `</article>`,
-      ].join("");
-    }).join("");
+  const entries = [...groups.entries()];
+  if (!groups.has(state.activeNativeAbi)) {
+    state.activeNativeAbi = entries[0]?.[0] || "";
+  }
 
+  const abiTabs = entries.map(([abi, items]) => [
+    `<button type="button" class="native-abi-tab${abi === state.activeNativeAbi ? " is-active" : ""}" data-native-abi="${escapeAttr(abi)}" role="tab" aria-selected="${abi === state.activeNativeAbi ? "true" : "false"}">`,
+    `<span>${escapeHtml(abi)}</span>`,
+    `<span class="native-abi-count">${escapeHtml(String(items.length))}</span>`,
+    `</button>`,
+  ].join("")).join("");
+  const activeLibraries = groups.get(state.activeNativeAbi) || [];
+  const rows = activeLibraries.map((library) => {
+    const sdk = library.sdk ? renderSdkChip(library.sdk) : "";
     return [
-      `<section class="group-block">`,
-      `<h4>${escapeHtml(t("abi"))}: ${escapeHtml(abi)} <span class="muted">(${items.length})</span></h4>`,
-      `<div class="list-stack">${rows}</div>`,
-      `</section>`,
+      `<article class="list-row native-library-row">`,
+      `<div class="row-title"><span>${escapeHtml(library.name || t("unknown"))}</span></div>`,
+      `<div class="row-meta">${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</div>`,
+      sdk ? `<div class="row-meta native-library-sdk">${sdk}</div>` : "",
+      `</article>`,
     ].join("");
   }).join("");
 
-  return `<div class="group-grid">${blocks}</div>`;
+  return [
+    `<div class="native-abi-tabs" role="tablist" aria-label="${escapeAttr(t("abi"))}">`,
+    abiTabs,
+    `</div>`,
+    `<div class="list-stack native-library-list">${rows}</div>`,
+  ].join("");
+}
+
+function renderAppTitle(title) {
+  const value = title || t("unknown");
+  return [
+    `<h2 class="app-title-mask" data-app-title-mask>`,
+    `<span class="app-title-mask__base">${escapeHtml(value)}</span>`,
+    `<span class="app-title-mask__color" aria-hidden="true">${escapeHtml(value)}</span>`,
+    `</h2>`,
+  ].join("");
 }
 
 function renderComponentsTab(report) {
@@ -1451,34 +1389,168 @@ function renderComponentsTab(report) {
 
 function renderComponentRow(component) {
   const details = [
-    component.permission ? `${t("permission")}: ${component.permission}` : "",
-    component.process ? `${t("process")}: ${component.process}` : "",
-    component.authorities ? `${t("authorities")}: ${component.authorities}` : "",
-    component.targetActivity ? `${t("targetActivity")}: ${component.targetActivity}` : "",
-    component.actions?.length ? `${t("actions")}: ${component.actions.join(", ")}` : "",
-  ].filter(Boolean);
+    component.sdk ? { label: t("detectedRule"), html: renderSdkInline(component.sdk) } : null,
+    component.permission ? { label: t("permission"), value: component.permission } : null,
+    component.process ? { label: t("process"), value: component.process } : null,
+    component.authorities ? { label: t("authorities"), value: component.authorities } : null,
+    component.targetActivity ? { label: t("targetActivity"), value: component.targetActivity } : null,
+    component.actions?.length ? { label: t("actions"), value: component.actions.join(", ") } : null,
+  ].filter((item) => item?.html || item?.value);
 
   return [
     `<article class="list-row component-row">`,
     `<div class="component-row-header">`,
     `<div class="component-row-main">`,
-    `<div class="row-title component-row-title"><span>${escapeHtml(component.shortName || component.name || t("unknown"))}</span></div>`,
-    `<div class="component-row-path">${codeChip(component.name || t("unknown"))}</div>`,
+    `<div class="row-title component-row-title"><span>${escapeHtml(component.name || t("unknown"))}</span></div>`,
     `</div>`,
-    component.sdk ? `<div class="component-row-sdk">${renderSdkChip(component.sdk)}</div>` : "",
     `</div>`,
-    details.length ? `<div class="component-detail-stack">${details.map((item) => `<div class="row-meta component-detail">${escapeHtml(item)}</div>`).join("")}</div>` : "",
+    details.length ? renderComponentDetails(details) : "",
     `</article>`,
   ].join("");
 }
 
+function renderComponentDetails(details) {
+  const rows = details.map((item) => [
+    item.label,
+    item.html || inlineCodeValue(item.value),
+  ]);
+
+  return renderHtmlKeyValueTable(rows, "component-detail-table divider-kv-table");
+}
+
 function renderPermissionsTab(report) {
-  const permissions = report.apkInfo.permissions || [];
+  const permissions = [...(report.apkInfo.permissions || [])]
+    .sort((left, right) => String(left || "").localeCompare(String(right || ""), "en", { sensitivity: "base" }));
   if (permissions.length === 0) {
     return emptyList(t("noPermissions"));
   }
 
-  return `<div class="chip-cloud">${permissions.map(codeChip).join("")}</div>`;
+  const rows = permissions.map((permission) => [
+    `<div class="kv-row permission-table-row">`,
+    `<div class="kv-value permission-table-value">${inlineCodeValue(permission)}</div>`,
+    `</div>`,
+  ].join("")).join("");
+
+  return `<div class="kv-table permission-table">${rows}</div>`;
+}
+
+function renderSignaturesTab(report) {
+  const signatures = report.apkInfo.signatures || {};
+  const certificates = signatures.certificates || [];
+  if (certificates.length === 0 && !(signatures.schemes || []).length) {
+    return emptyList(t("noSignatures"));
+  }
+
+  const sections = [
+    section(t("signatureSchemes"), renderSignatureSchemePills(signatures.schemes || [])),
+  ];
+
+  certificates.forEach((certificate, index) => {
+    sections.push(section(
+      t("signatureCertificate", { index: index + 1 }),
+      renderSignatureCertificate(certificate),
+    ));
+  });
+
+  return sectionStack(sections);
+}
+
+function renderSignatureSchemePills(schemes) {
+  if (!schemes.length) {
+    return emptyList(t("unknown"));
+  }
+
+  return `<div class="chip-cloud">${schemes.map(codeChip).join("")}</div>`;
+}
+
+function renderSignatureCertificate(certificate) {
+  const publicKey = certificate.publicKey || {};
+  const signatureAlgorithm = certificate.signatureAlgorithm || {};
+  const fingerprints = certificate.fingerprints || {};
+  const validity = certificate.validity || {};
+  const rows = [
+    [t("signatureSchemes"), renderSignatureListValue(certificate.schemes || [])],
+    [t("signatureVersion"), escapeHtml(certificate.version || t("unknown"))],
+    [t("signatureSerialNumber"), renderSignatureSerialNumber(certificate.serialNumber)],
+    [t("signatureIssuer"), renderSignatureCodeValue(certificate.issuer)],
+    [t("signatureSubject"), renderSignatureCodeValue(certificate.subject)],
+    [t("signatureValidFrom"), escapeHtml(formatSignatureDate(validity.notBefore))],
+    [t("signatureValidTo"), escapeHtml(formatSignatureDate(validity.notAfter))],
+    [t("signaturePublicKeyFormat"), escapeHtml(publicKey.format || t("unknown"))],
+    [t("signaturePublicKeyAlgorithm"), escapeHtml(publicKey.algorithm || t("unknown"))],
+    [t("signaturePublicKeyExponent"), renderSignatureInteger(publicKey.exponent)],
+    [t("signaturePublicKeyModulusSize"), publicKey.modulusSizeBits ? escapeHtml(`${publicKey.modulusSizeBits} bits`) : ""],
+    [t("signaturePublicKeyModulus"), renderSignatureModulus(publicKey.modulusHex)],
+    [t("signaturePublicKeyY"), renderSignatureCodeValue(publicKey.y)],
+    [t("signaturePublicKeyType"), escapeHtml(publicKey.type || "")],
+    [t("signatureAlgorithmName"), escapeHtml(signatureAlgorithm.name || t("unknown"))],
+    [t("signatureAlgorithmOid"), renderSignatureCodeValue(signatureAlgorithm.oid)],
+    [t("signatureMd5"), renderSignatureCodeValue(fingerprints.md5)],
+    [t("signatureSha1"), renderSignatureCodeValue(fingerprints.sha1)],
+    [t("signatureSha256"), renderSignatureCodeValue(fingerprints.sha256)],
+    [t("signatureCharString"), renderSignatureCodeValue(certificate.charString)],
+    [t("signatureSourceEntry"), renderSignatureListValue(certificate.sourceEntries || [])],
+    [t("signatureDerLength"), certificate.derLength ? escapeHtml(formatBytes(certificate.derLength)) : ""],
+  ].filter(([, value]) => String(value || "").length > 0);
+
+  return renderHtmlKeyValueTable(rows);
+}
+
+function renderSignatureSerialNumber(serialNumber) {
+  if (!serialNumber) {
+    return escapeHtml(t("unknown"));
+  }
+
+  return renderSignatureCodeValue(`${serialNumber.decimal || t("unknown")} (${serialNumber.hex || t("unknown")})`);
+}
+
+function renderSignatureInteger(value) {
+  if (!value) {
+    return "";
+  }
+
+  return renderSignatureCodeValue(`${value.decimal || t("unknown")} (${value.hex || t("unknown")})`);
+}
+
+function renderSignatureCodeValue(value) {
+  if (!value) {
+    return "";
+  }
+
+  return `<code class="signature-code-value">${escapeHtml(value)}</code>`;
+}
+
+function renderSignatureModulus(value) {
+  if (!value) {
+    return "";
+  }
+
+  return `<code class="signature-code-value signature-modulus">${escapeHtml(formatSignatureHexBlock(value))}</code>`;
+}
+
+function renderSignatureListValue(values) {
+  if (!values.length) {
+    return "";
+  }
+
+  return escapeHtml(values.join(", "));
+}
+
+function formatSignatureHexBlock(value) {
+  const bytes = String(value || "")
+    .split(":")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (bytes.length <= 1) {
+    return String(value || "");
+  }
+
+  const lines = [];
+  for (let index = 0; index < bytes.length; index += 16) {
+    lines.push(bytes.slice(index, index + 16).join(":"));
+  }
+
+  return lines.join("\n");
 }
 
 function renderMetaDataTab(report) {
@@ -1490,7 +1562,7 @@ function renderMetaDataTab(report) {
   const rows = metaData.map((item) => [
     `<article class="list-row">`,
     `<div class="row-title"><span>${escapeHtml(item.name || t("unknown"))}</span></div>`,
-    `<div class="row-meta">${escapeHtml(t("value"))}: ${escapeHtml(item.value || t("unknown"))}</div>`,
+    `<div class="row-meta">${renderMetaDataValue(item)}</div>`,
     item.resourceId != null ? `<div class="row-meta">${escapeHtml(t("resource"))}: ${codeChip(formatResourceId(item.resourceId))}</div>` : "",
     `</article>`,
   ].join("")).join("");
@@ -1498,9 +1570,26 @@ function renderMetaDataTab(report) {
   return `<div class="list-stack">${rows}</div>`;
 }
 
+function renderMetaDataValue(item) {
+  const value = escapeHtml(item.value || t("unknown"));
+  if (!item.hasResourceReference) {
+    return value;
+  }
+
+  return `${escapeHtml(t("value"))}${state.locale === "zh-CN" ? "：" : ": "}${value}`;
+}
+
 function renderRawTab(report) {
   return [
+    `<div class="raw-toolbar">`,
     `<p class="warning-note">${escapeHtml(t("rawNotice"))}</p>`,
+    `<button class="secondary-button raw-export-button" type="button" data-json-export>`,
+    `<svg viewBox="0 0 24 24" aria-hidden="true">`,
+    `<path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.29a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1ZM5 18a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z"></path>`,
+    `</svg>`,
+    `<span>${escapeHtml(t("exportJson"))}</span>`,
+    `</button>`,
+    `</div>`,
     `<pre class="json-block">${escapeHtml(JSON.stringify(buildExportReport(report), null, 2))}</pre>`,
   ].join("");
 }
@@ -1586,6 +1675,10 @@ function renderSdkChip(sdk) {
   return `<span class="chip">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}${escapeHtml(sdk.label || t("unknown"))}</span>`;
 }
 
+function renderSdkInline(sdk) {
+  return `<span class="sdk-inline">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}<span>${escapeHtml(sdk.label || t("unknown"))}</span></span>`;
+}
+
 function renderSdkIcon(src, label, singleColorIcon = false) {
   const safeSrc = sanitizeImageSrc(src || "");
   if (!safeSrc) {
@@ -1599,7 +1692,7 @@ function renderSdkIcon(src, label, singleColorIcon = false) {
     }
   }
 
-  return `<img class="sdk-icon" src="${escapeAttr(safeSrc)}" alt="${escapeAttr(label || "")}">`;
+  return `<span class="sdk-icon"><img class="sdk-icon__image" src="${escapeAttr(safeSrc)}" alt="${escapeAttr(label || "")}"></span>`;
 }
 
 function renderThemedSdkIconSvg(src) {
@@ -1715,11 +1808,25 @@ function isThemeablePaintValue(value) {
 
 function renderKeyValueTable(rows) {
   return [
-    `<div class="kv-table">`,
+    `<div class="kv-table divider-kv-table summary-kv-table">`,
     rows.map(([label, value]) => [
       `<div class="kv-row">`,
       `<div class="kv-label">${escapeHtml(label)}</div>`,
       `<div class="kv-value">${escapeHtml(value || t("unknown"))}</div>`,
+      `</div>`,
+    ].join("")).join(""),
+    `</div>`,
+  ].join("");
+}
+
+function renderHtmlKeyValueTable(rows, className = "") {
+  const classes = ["kv-table", className].filter(Boolean).join(" ");
+  return [
+    `<div class="${escapeAttr(classes)}">`,
+    rows.map(([label, value]) => [
+      `<div class="kv-row">`,
+      `<div class="kv-label">${escapeHtml(label)}</div>`,
+      `<div class="kv-value">${value || escapeHtml(t("unknown"))}</div>`,
       `</div>`,
     ].join("")).join(""),
     `</div>`,
@@ -1751,6 +1858,10 @@ function codeChip(value) {
   return `<span class="code-chip">${escapeHtml(value || t("unknown"))}</span>`;
 }
 
+function inlineCodeValue(value) {
+  return `<code class="inline-code-value">${escapeHtml(value || t("unknown"))}</code>`;
+}
+
 function emptyList(message) {
   return `<p class="empty-list">${escapeHtml(message)}</p>`;
 }
@@ -1760,6 +1871,7 @@ function getStats(info) {
     permissions: info.permissions?.length || 0,
     nativeLibraries: info.nativeLibraries?.length || 0,
     components: countComponents(info.components),
+    signatures: info.signatures?.certificates?.length || 0,
     metaData: info.metaData?.application?.length || 0,
   };
 }
@@ -2097,6 +2209,19 @@ function formatDate(value) {
   } catch {
     return value;
   }
+}
+
+function formatSignatureDate(value) {
+  if (!value) {
+    return t("unknown");
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return value;
+  }
+
+  return formatDate(value);
 }
 
 function formatBytes(bytes) {

@@ -26,15 +26,18 @@
     <link rel="stylesheet" href="./app.css?__BUILD_VERSION__">
   </head>
   <body>
-    <canvas class="color-orb-background" id="color-orb-background" aria-hidden="true"></canvas>
+    <div class="color-orb-background" id="color-orb-background" aria-hidden="true">
+      <span class="color-mesh-spot color-mesh-spot--violet"></span>
+      <span class="color-mesh-spot color-mesh-spot--blue"></span>
+      <span class="color-mesh-spot color-mesh-spot--rose"></span>
+      <span class="color-mesh-spot color-mesh-spot--mint"></span>
+      <span class="color-mesh-spot color-mesh-spot--amber"></span>
+    </div>
     <div class="app-shell">
       <header class="topbar">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">
             <span class="brand-orb">
-              <svg class="brand-wave" viewBox="0 0 72 72">
-                <path class="brand-wave__path"></path>
-              </svg>
               <img class="brand-orb__icon" src="./assets/icon_round.svg" alt="">
               <span class="brand-orb__gloss"></span>
             </span>
@@ -62,11 +65,6 @@
               <option value="en">English</option>
             </select>
           </label>
-          <button class="icon-button" id="export-button" type="button" disabled aria-label="导出 JSON" data-title-i18n="exportJson">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3a1 1 0 0 1 1 1v8.59l2.3-2.29a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1ZM5 18a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z"></path>
-            </svg>
-          </button>
           <button class="icon-button" id="clear-button" type="button" disabled aria-label="清空" data-title-i18n="clear">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M8.7 7.3a1 1 0 0 0-1.4 1.4l3.29 3.3-3.3 3.3a1 1 0 1 0 1.42 1.4l3.29-3.29 3.3 3.3a1 1 0 0 0 1.4-1.42L13.42 12l3.3-3.3a1 1 0 1 0-1.42-1.4L12 10.58 8.7 7.3Z"></path>
@@ -93,7 +91,7 @@
             <button class="primary-button" id="analyze-button" type="submit" disabled>
               <span data-i18n="analyze">开始分析</span>
             </button>
-            <p class="local-note" data-i18n="localNote">文件只在当前浏览器中解析。</p>
+            <p class="local-note" data-i18n="localNote">文件只在当前浏览器中解析</p>
           </div>
           <div class="progress" id="progress" hidden aria-live="polite">
             <div class="progress-header">
@@ -117,7 +115,7 @@
               </button>
               <div>
               <h2 data-i18n="historyTitle">历史记录</h2>
-              <p data-i18n="historyNote">保存在当前浏览器中，点击记录可重新打开结果。</p>
+              <p data-i18n="historyNote">保存在当前浏览器中，点击记录可重新打开结果</p>
               </div>
             </div>
             <button class="secondary-button" id="clear-history-button" type="button" data-i18n="clearHistory">清空历史</button>
@@ -133,8 +131,10 @@
               <path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm6 2H7v14h10V9h-4V5Zm-3 8h4a1 1 0 1 1 0 2h-4a1 1 0 1 1 0-2Zm0 3h4a1 1 0 1 1 0 2h-4a1 1 0 1 1 0-2Z"></path>
             </svg>
           </div>
-          <h2 data-i18n="emptyTitle">等待 APK</h2>
-          <p data-i18n="emptyBody">分析完成后会在这里展示摘要、SDK 标记、组件、权限和 meta-data。</p>
+          <div class="empty-state-copy">
+            <h2 data-i18n="emptyTitle">等待 APK</h2>
+            <p data-i18n="emptyBody">分析完成后会在这里展示摘要、SDK 标记、组件、权限、签名和元数据</p>
+          </div>
         </section>
 
         <section class="result-view" id="result-view" hidden>
@@ -145,7 +145,8 @@
             <button type="button" class="tab" data-tab="native" role="tab" aria-selected="false" data-i18n="tabNative">原生库</button>
             <button type="button" class="tab" data-tab="components" role="tab" aria-selected="false" data-i18n="tabComponents">组件</button>
             <button type="button" class="tab" data-tab="permissions" role="tab" aria-selected="false" data-i18n="tabPermissions">权限</button>
-            <button type="button" class="tab" data-tab="metadata" role="tab" aria-selected="false" data-i18n="tabMeta">Meta-Data</button>
+            <button type="button" class="tab" data-tab="signatures" role="tab" aria-selected="false" data-i18n="tabSignatures">签名</button>
+            <button type="button" class="tab" data-tab="metadata" role="tab" aria-selected="false" data-i18n="tabMeta">元数据</button>
             <button type="button" class="tab" data-tab="raw" role="tab" aria-selected="false" data-i18n="tabRaw">JSON</button>
           </nav>
           <div class="tab-panel" id="tab-panel" role="tabpanel"></div>
