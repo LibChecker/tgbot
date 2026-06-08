@@ -1947,7 +1947,7 @@ svg {
   line-height: 1.55;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .app-shell {
     width: min(calc(100% - 16px), 100%);
     padding-top: 8px;
@@ -1960,7 +1960,7 @@ svg {
 
   .topbar-actions {
     width: 100%;
-    justify-content: flex-end;
+    justify-content: flex-start;
   }
 
   .tool-panel {
