@@ -41,7 +41,8 @@
   --drop-glass-glow: rgba(236, 72, 153, 0.08);
   --drop-glass-ring: rgba(124, 58, 237, 0.3);
   --drop-glass-shadow: rgba(124, 58, 237, 0.16);
-  --radius: 8px;
+  --corner-curve: squircle;
+  --radius: 12px;
 }
 
 :root[data-color-scheme="dark"] {
@@ -89,8 +90,11 @@
   --drop-glass-shadow: rgba(167, 139, 250, 0.18);
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+  corner-shape: var(--corner-curve);
 }
 
 html,
@@ -476,7 +480,7 @@ svg {
   z-index: 0;
   width: var(--theme-indicator-width, 46px);
   height: var(--theme-indicator-height, 30px);
-  border-radius: 6px;
+  border-radius: 10px;
   background: var(--accent-soft);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.1),
@@ -494,7 +498,7 @@ svg {
   min-width: 46px;
   min-height: 30px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 10px;
   background: transparent;
   color: var(--control-text);
   padding: 0 9px;
@@ -1606,7 +1610,7 @@ svg {
 .sdk-rule-label.has-rule-detail:focus-visible {
   outline: 2px solid var(--accent-border);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: 8px;
 }
 
 .sdk-inline .sdk-icon {
@@ -1821,7 +1825,7 @@ svg {
 .sdk-rule-preview a:focus-visible {
   outline: 2px solid var(--accent-border);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 8px;
 }
 
 .sdk-row {

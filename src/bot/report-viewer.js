@@ -49,10 +49,14 @@ function renderReportPage(page, locale) {
         --soft: #f8fafc;
         --code-bg: #f3f4f6;
         --shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+        --corner-curve: squircle;
       }
 
-      * {
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
+        corner-shape: var(--corner-curve);
       }
 
       html {
@@ -84,7 +88,7 @@ function renderReportPage(page, locale) {
       .card {
         background: var(--card);
         border: 1px solid rgba(229, 231, 235, 0.9);
-        border-radius: 24px;
+        border-radius: 28px;
         box-shadow: var(--shadow);
         padding: clamp(20px, 3vw, 34px) clamp(16px, 3vw, 30px);
       }
@@ -161,7 +165,7 @@ function renderReportPage(page, locale) {
         padding: clamp(18px, 2.4vw, 26px) clamp(16px, 2.2vw, 24px);
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
         border: 1px solid rgba(229, 231, 235, 0.95);
-        border-radius: 22px;
+        border-radius: 26px;
         box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
       }
 
@@ -216,7 +220,7 @@ function renderReportPage(page, locale) {
         padding: clamp(14px, 2vw, 18px) clamp(14px, 2vw, 18px);
         background: var(--soft);
         border: 1px solid var(--line);
-        border-radius: 18px;
+        border-radius: 22px;
         overflow-x: auto;
         white-space: pre-wrap;
         word-break: break-word;
@@ -263,7 +267,7 @@ function renderReportPage(page, locale) {
         padding: 14px;
         background: linear-gradient(180deg, #ffffff, #f8fafc);
         border: 1px solid var(--line);
-        border-radius: 22px;
+        border-radius: 26px;
         box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
       }
 
@@ -271,7 +275,7 @@ function renderReportPage(page, locale) {
         width: clamp(64px, 12vw, 88px);
         height: clamp(64px, 12vw, 88px);
         margin: 0;
-        border-radius: 22%;
+        border-radius: 26%;
         object-fit: contain;
       }
 
@@ -292,7 +296,7 @@ function renderReportPage(page, locale) {
         background:
           linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.96));
         border: 1px solid var(--line);
-        border-radius: 18px;
+        border-radius: 22px;
       }
 
       .kv-row {
@@ -371,7 +375,7 @@ function renderReportPage(page, locale) {
         padding: clamp(14px, 2vw, 18px);
         background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(248, 250, 252, 0.96));
         border: 1px solid var(--line);
-        border-radius: 18px;
+        border-radius: 22px;
       }
 
       .group-card.group-card--wide {
@@ -398,7 +402,7 @@ function renderReportPage(page, locale) {
         padding: clamp(12px, 1.8vw, 14px) clamp(12px, 1.8vw, 14px) clamp(10px, 1.4vw, 12px);
         background: rgba(248, 250, 252, 0.9);
         border: 1px solid rgba(229, 231, 235, 0.9);
-        border-radius: 16px;
+        border-radius: 20px;
         font-size: 0.92rem;
         line-height: 1.62;
       }
@@ -461,7 +465,7 @@ function renderReportPage(page, locale) {
         padding: clamp(14px, 2vw, 18px);
         background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.96));
         border: 1px solid rgba(229, 231, 235, 0.95);
-        border-radius: 18px;
+        border-radius: 22px;
       }
 
       .sdk-chart-header {
@@ -558,7 +562,7 @@ function renderReportPage(page, locale) {
         }
 
         .card {
-          border-radius: 18px;
+          border-radius: 22px;
           padding: 18px 12px;
         }
 
@@ -593,7 +597,7 @@ function renderReportPage(page, locale) {
           width: 100%;
           justify-content: flex-start;
           align-items: flex-start;
-          border-radius: 18px;
+          border-radius: 22px;
         }
 
         .feature-pill img {
@@ -620,7 +624,7 @@ function renderReportPage(page, locale) {
         .chip-cloud code,
         .sdk-chart-preview code {
           width: 100%;
-          border-radius: 14px;
+          border-radius: 18px;
         }
       }
     </style>
@@ -655,12 +659,19 @@ function renderErrorPage(message, locale) {
         color: #1f2937;
       }
 
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        corner-shape: squircle;
+      }
+
       .panel {
         width: min(520px, calc(100vw - 28px));
         padding: clamp(22px, 3vw, 28px) clamp(18px, 3vw, 24px);
         background: #fff;
         border: 1px solid #e5e7eb;
-        border-radius: 20px;
+        border-radius: 24px;
         box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
       }
 

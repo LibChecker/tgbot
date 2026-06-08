@@ -32,10 +32,14 @@ export function renderUploadPage({
         --danger-bg: #fff1f2;
         --danger-text: #9f1239;
         --shadow: 0 18px 44px rgba(23, 32, 51, 0.09);
+        --corner-curve: squircle;
       }
 
-      * {
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
+        corner-shape: var(--corner-curve);
       }
 
       html,
@@ -67,7 +71,7 @@ export function renderUploadPage({
         padding: 24px;
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 12px;
         box-shadow: var(--shadow);
       }
 
@@ -102,7 +106,7 @@ export function renderUploadPage({
       button {
         width: 100%;
         min-width: 0;
-        border-radius: 8px;
+        border-radius: 12px;
         font: inherit;
       }
 
@@ -141,7 +145,7 @@ export function renderUploadPage({
         gap: 8px;
         padding: 12px;
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 12px;
         background: #f8fafc;
       }
 
@@ -189,7 +193,7 @@ export function renderUploadPage({
       .alert {
         margin-top: 18px;
         padding: 12px;
-        border-radius: 8px;
+        border-radius: 12px;
         background: var(--danger-bg);
         color: var(--danger-text);
         line-height: 1.6;
