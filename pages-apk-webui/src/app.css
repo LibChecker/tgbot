@@ -1702,6 +1702,7 @@ svg {
   width: min(380px, calc(100vw - 16px));
   max-height: min(420px, calc(100vh - 16px));
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--card-bg) 94%, transparent);
@@ -1713,11 +1714,16 @@ svg {
   transform-origin: top center;
   transition: opacity 140ms ease, transform 140ms ease;
   backdrop-filter: blur(18px);
+  -webkit-overflow-scrolling: touch;
 }
 
 .sdk-rule-preview.is-visible {
   opacity: 1;
   transform: translateY(0) scale(1);
+}
+
+.sdk-rule-preview.is-pinned {
+  pointer-events: auto;
 }
 
 .sdk-rule-preview-card {

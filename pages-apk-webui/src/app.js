@@ -250,6 +250,8 @@ function clearHistoryPointerState() {
 function initSdkIconPreview() {
   let preview = null;
   let activeIcon = null;
+  let activePinned = false;
+  let lastPointerType = "";
 
   const ensurePreview = () => {
     if (preview) {
@@ -304,8 +306,9 @@ function initSdkIconPreview() {
       return;
     }
 
-    preview.classList.remove("is-visible", "is-mono");
+    preview.classList.remove("is-visible", "is-mono", "is-pinned");
     activeIcon = null;
+    activePinned = false;
     window.setTimeout(() => {
       if (!activeIcon && preview) {
         preview.hidden = true;
@@ -313,8 +316,11 @@ function initSdkIconPreview() {
     }, 120);
   };
 
-  const showPreview = (icon) => {
+  const showPreview = (icon, options = {}) => {
+    const pinned = Boolean(options.pinned);
     if (activeIcon === icon) {
+      activePinned = activePinned || pinned;
+      ensurePreview().classList.toggle("is-pinned", activePinned);
       positionPreview(icon);
       return;
     }
@@ -329,8 +335,10 @@ function initSdkIconPreview() {
     popup.hidden = false;
     popup.classList.remove("is-visible", "is-mono");
     popup.classList.toggle("is-mono", icon.classList.contains("sdk-icon--mono"));
+    popup.classList.toggle("is-pinned", pinned);
     popup.replaceChildren(graphic);
     activeIcon = icon;
+    activePinned = pinned;
     positionPreview(icon);
     window.requestAnimationFrame(() => {
       if (activeIcon === icon) {
@@ -340,6 +348,10 @@ function initSdkIconPreview() {
   };
 
   const handleHoverEvent = (event) => {
+    if (shouldUseTapPopups(event.pointerType || lastPointerType) || activePinned) {
+      return;
+    }
+
     const icon = event.target.closest?.(".sdk-icon");
     if (!icon) {
       if (activeIcon) {
@@ -352,6 +364,10 @@ function initSdkIconPreview() {
   };
 
   const handleLeaveEvent = (event) => {
+    if (shouldUseTapPopups(event.pointerType || lastPointerType) || activePinned) {
+      return;
+    }
+
     const icon = event.target.closest?.(".sdk-icon");
     if (!icon || icon !== activeIcon) {
       return;
@@ -364,12 +380,26 @@ function initSdkIconPreview() {
     hidePreview();
   };
 
+  document.addEventListener("pointerdown", (event) => {
+    lastPointerType = event.pointerType || "";
+  });
   document.addEventListener("pointerover", handleHoverEvent);
   document.addEventListener("pointermove", handleHoverEvent);
   document.addEventListener("mouseover", handleHoverEvent);
   document.addEventListener("mousemove", handleHoverEvent);
   document.addEventListener("pointerout", handleLeaveEvent);
   document.addEventListener("mouseout", handleLeaveEvent);
+  document.addEventListener("click", (event) => {
+    const icon = event.target.closest?.(".sdk-icon");
+    if (icon) {
+      showPreview(icon, { pinned: true });
+      return;
+    }
+
+    if (activePinned && !event.target.closest?.(".sdk-icon-preview")) {
+      hidePreview();
+    }
+  });
 
   window.addEventListener("scroll", () => {
     if (activeIcon) {
@@ -383,6 +413,8 @@ function initSdkIconPreview() {
 function initSdkRulePreview() {
   let preview = null;
   let activeLabel = null;
+  let activePinned = false;
+  let lastPointerType = "";
 
   const ensurePreview = () => {
     if (preview) {
@@ -425,9 +457,10 @@ function initSdkRulePreview() {
       return;
     }
 
-    preview.classList.remove("is-visible");
+    preview.classList.remove("is-visible", "is-pinned");
     preview.setAttribute("aria-hidden", "true");
     activeLabel = null;
+    activePinned = false;
     window.setTimeout(() => {
       if (!activeLabel && preview) {
         preview.hidden = true;
@@ -435,7 +468,7 @@ function initSdkRulePreview() {
     }, 140);
   };
 
-  const showPreview = (label) => {
+  const showPreview = (label, options = {}) => {
     const detail = getRegisteredSdkRuleDetail(label.dataset.ruleDetailId);
     const content = buildRulePreviewContent(label, detail);
     if (!content) {
@@ -444,16 +477,21 @@ function initSdkRulePreview() {
     }
 
     const popup = ensurePreview();
+    const pinned = Boolean(options.pinned);
     if (activeLabel === label) {
+      activePinned = activePinned || pinned;
+      popup.classList.toggle("is-pinned", activePinned);
       positionPreview(label);
       return;
     }
 
     popup.hidden = false;
-    popup.classList.remove("is-visible");
+    popup.classList.remove("is-visible", "is-pinned");
+    popup.classList.toggle("is-pinned", pinned);
     popup.setAttribute("aria-hidden", "false");
     popup.replaceChildren(content);
     activeLabel = label;
+    activePinned = pinned;
     positionPreview(label);
     window.requestAnimationFrame(() => {
       if (activeLabel === label) {
@@ -463,6 +501,10 @@ function initSdkRulePreview() {
   };
 
   const handleHoverEvent = (event) => {
+    if (shouldUseTapPopups(event.pointerType || lastPointerType) || activePinned) {
+      return;
+    }
+
     const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
     if (!label) {
       if (activeLabel && !document.activeElement?.closest?.(".sdk-rule-label.has-rule-detail")) {
@@ -475,6 +517,10 @@ function initSdkRulePreview() {
   };
 
   const handleLeaveEvent = (event) => {
+    if (shouldUseTapPopups(event.pointerType || lastPointerType) || activePinned) {
+      return;
+    }
+
     const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
     if (!label || label !== activeLabel) {
       return;
@@ -487,12 +533,26 @@ function initSdkRulePreview() {
     hidePreview();
   };
 
+  document.addEventListener("pointerdown", (event) => {
+    lastPointerType = event.pointerType || "";
+  });
   document.addEventListener("pointerover", handleHoverEvent);
   document.addEventListener("pointermove", handleHoverEvent);
   document.addEventListener("mouseover", handleHoverEvent);
   document.addEventListener("mousemove", handleHoverEvent);
   document.addEventListener("pointerout", handleLeaveEvent);
   document.addEventListener("mouseout", handleLeaveEvent);
+  document.addEventListener("click", (event) => {
+    const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
+    if (label) {
+      showPreview(label, { pinned: true });
+      return;
+    }
+
+    if (activePinned && !event.target.closest?.(".sdk-rule-preview")) {
+      hidePreview();
+    }
+  });
   document.addEventListener("focusin", (event) => {
     const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
     if (label) {
@@ -513,6 +573,14 @@ function initSdkRulePreview() {
   }, true);
 
   window.addEventListener("resize", hidePreview);
+}
+
+function shouldUseTapPopups(pointerType = "") {
+  return (
+    pointerType === "touch" ||
+    pointerType === "pen" ||
+    window.matchMedia?.("(hover: none), (pointer: coarse)")?.matches
+  );
 }
 
 function buildRulePreviewContent(label, detail) {
