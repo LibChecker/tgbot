@@ -4,8 +4,9 @@ This repository contains two deployable parts:
 
 | Part | Path | Platform | Purpose |
 | --- | --- | --- | --- |
-| tgbot | `src/` | Cloudflare Workers | Telegram bot, APK link preview, upload page, report rendering, webhook/admin APIs. |
+| tgbot | `src/bot/` | Cloudflare Workers | Telegram bot, APK link preview, upload page, report rendering, webhook/admin APIs. |
 | Web UI | `pages-apk-webui/` | Cloudflare Pages | Standalone browser APK analyzer powered by the same parser and LibChecker rules. |
+| Shared analyzer | `src/shared/` | Worker and Pages | APK parser, signature parser, SDK marker rules, and generated LibChecker bundles. |
 
 ## tgbot
 
@@ -141,14 +142,18 @@ Optional repository variable:
 ## Project Layout
 
 ```text
-src/                 tgbot Worker source
-  index.js           Worker entry, Telegram webhook, admin API
-  apk.js             APK, manifest, and resources parser
-  apk-url-preview.js APK link preview parser
-  report-viewer.js   Worker-hosted report pages
-  upload-view.js     Worker-hosted upload page
-  observability.js   Logs and Analytics Engine events
-  generated/         LibChecker rule and icon bundles
+src/
+  bot/               tgbot Worker source
+    index.js         Worker entry, Telegram webhook, admin API
+    apk-url-preview.js APK link preview parser
+    report-viewer.js Worker-hosted report pages
+    upload-view.js   Worker-hosted upload page
+    observability.js Logs and Analytics Engine events
+  shared/            Shared APK analyzer source
+    apk.js           APK, manifest, resources, and icon parser
+    apk-signatures.js APK signing block, X.509, and digest parser
+    sdk-markers.js   LibChecker SDK marker annotator
+    generated/       LibChecker rule and icon bundles
 pages-apk-webui/     Web UI Pages app
 scripts/             Shared maintenance and webhook scripts
 wrangler.toml        Worker deployment config

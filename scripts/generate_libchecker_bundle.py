@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
-OUTPUT_DIR = Path("src/generated")
+OUTPUT_DIR = Path("src/shared/generated")
 RULES_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules.js"
 ICONS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-sdk-icons.js"
 

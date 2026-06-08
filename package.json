@@ -18,7 +18,7 @@
     "pages:check": "npm --prefix pages-apk-webui run check",
     "pages:dev": "npm --prefix pages-apk-webui run dev",
     "pages:deploy": "npm --prefix pages-apk-webui run deploy",
-    "check": "node --check src/index.js && node --check src/apk.js && node --check src/apk-url-preview.js && node --check src/i18n.js && node --check src/icons.js && node --check src/observability.js && node --check src/sdk-markers.js && node --check src/report-viewer.js && node --check src/telegraph.js && node --check src/upload-view.js && node --check src/generated/libchecker-rules.js && node --check src/generated/libchecker-sdk-icons.js && node --check scripts/manage-webhook.mjs && npm run pages:check"
+    "check": "node --check src/bot/index.js && node --check src/bot/apk-url-preview.js && node --check src/bot/i18n.js && node --check src/bot/icons.js && node --check src/bot/observability.js && node --check src/bot/report-viewer.js && node --check src/bot/telegraph.js && node --check src/bot/upload-view.js && node --check src/shared/apk.js && node --check src/shared/apk-signatures.js && node --check src/shared/sdk-markers.js && node --check src/shared/generated/libchecker-rules.js && node --check src/shared/generated/libchecker-sdk-icons.js && node --check scripts/manage-webhook.mjs && npm run pages:check"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

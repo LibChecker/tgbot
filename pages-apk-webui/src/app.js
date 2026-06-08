@@ -1,270 +1,18 @@
-const I18N = {
-  "zh-CN": {
-    title: "LibChecker WebUI",
-    subtitle: "在线分析 APK",
-    themeLabel: "主题",
-    themeDark: "深色",
-    themeLight: "浅色",
-    themeSystem: "系统",
-    languageLabel: "语言",
-    exportJson: "导出 JSON",
-    clear: "清空",
-    filePrompt: "选择或拖入 APK",
-    fileIdle: "未选择文件",
-    localNote: "文件只在当前浏览器中解析",
-    analyze: "开始分析",
-    analyzing: "分析中",
-    progressReady: "等待文件",
-    progressReading: "读取 APK",
-    progressParsing: "解析 Manifest、资源与 DEX 标记",
-    progressDone: "分析完成",
-    historyTitle: "历史记录",
-    historyNote: "保存在当前浏览器中，点击记录可重新打开结果",
-    historyEmpty: "还没有历史记录",
-    historyOpen: "打开历史记录",
-    historyDelete: "删除",
-    historyExpand: "展开历史",
-    historyCollapse: "收起历史",
-    clearHistory: "清空历史",
-    historyItemMeta: "{version} · Target SDK {targetSdk}",
-    historyFileMeta: "{file} · {size} · {date}",
-    emptyTitle: "等待 APK",
-    emptyBody: "分析完成后会在这里展示摘要、SDK 标记、组件、权限、签名和元数据",
-    tabSummary: "摘要",
-    tabSdk: "SDK",
-    tabNative: "原生库",
-    tabComponents: "组件",
-    tabPermissions: "权限",
-    tabSignatures: "签名",
-    tabMeta: "元数据",
-    tabRaw: "JSON",
-    noFile: "请选择一个 APK 文件",
-    invalidFile: "请上传 .apk 文件",
-    workerFailed: "分析进程启动失败",
-    appName: "应用名",
-    packageName: "包名",
-    versionName: "versionName",
-    versionCode: "versionCode",
-    targetSdk: "Target SDK",
-    minSdk: "Min SDK",
-    compileSdk: "Compile SDK",
-    fileName: "文件名",
-    fileSize: "文件大小",
-    analyzedAt: "分析时间",
-    duration: "耗时",
-    terminalSystem: "终端系统",
-    permissions: "权限",
-    nativeLibraries: "原生库",
-    components: "组件",
-    signatures: "签名",
-    metaData: "元数据",
-    buildFeatures: "构建特性",
-    noBuildFeatures: "未识别到构建特性",
-    noNativeLibraries: "未发现原生库",
-    noSdkMarkers: "未匹配到 SDK 标记",
-    noComponents: "未声明组件",
-    noPermissions: "未声明权限",
-    noSignatures: "未发现签名证书",
-    noMetaData: "未声明 application 级元数据",
-    summary: "摘要",
-    sdkNative: "原生库 SDK 标记",
-    sdkComponents: "组件 SDK 标记",
-    activities: "Activity",
-    services: "Service",
-    receivers: "Receiver",
-    providers: "Provider",
-    exported: "exported",
-    notExported: "not exported",
-    enabled: "enabled",
-    disabled: "disabled",
-    unknown: "未知",
-    permission: "权限",
-    process: "进程",
-    authorities: "authorities",
-    actions: "actions",
-    targetActivity: "targetActivity",
-    sdk: "SDK",
-    abi: "ABI",
-    path: "路径",
-    size: "大小",
-    value: "值",
-    resource: "资源",
-    detectedRule: "标记规则",
-    signatureSchemes: "签名方案",
-    signatureCertificate: "签名证书 {index}",
-    signatureVersion: "版本",
-    signatureSerialNumber: "序列号",
-    signatureIssuer: "发行人",
-    signatureSubject: "主题",
-    signatureValidFrom: "有效期始",
-    signatureValidTo: "有效期至",
-    signaturePublicKeyFormat: "公钥格式",
-    signaturePublicKeyAlgorithm: "公钥算法",
-    signaturePublicKeyExponent: "公钥指数",
-    signaturePublicKeyModulusSize: "模数大小",
-    signaturePublicKeyModulus: "模数",
-    signaturePublicKeyY: "公钥值Y",
-    signaturePublicKeyType: "公钥类型",
-    signatureAlgorithmName: "签名算法",
-    signatureAlgorithmOid: "签名算法 OID",
-    signatureMd5: "MD5",
-    signatureSha1: "SHA1",
-    signatureSha256: "SHA256",
-    signatureCharString: "CharString",
-    signatureSourceEntry: "来源条目",
-    signatureDerLength: "证书大小",
-    rawNotice: "JSON 视图默认省略较大的 data URI",
-    selectedFile: "{name} · {size}",
-    completedIn: "{seconds}s",
-    localFile: "本地文件",
-  },
-  en: {
-    title: "LibChecker WebUI",
-    subtitle: "APK Analyzer in Browser",
-    themeLabel: "Theme",
-    themeDark: "Dark",
-    themeLight: "Light",
-    themeSystem: "System",
-    languageLabel: "Language",
-    exportJson: "Export JSON",
-    clear: "Clear",
-    filePrompt: "Choose or drop an APK",
-    fileIdle: "No file selected",
-    localNote: "The file is analyzed in this browser.",
-    analyze: "Analyze",
-    analyzing: "Analyzing",
-    progressReady: "Waiting for file",
-    progressReading: "Reading APK",
-    progressParsing: "Parsing manifest, resources, and DEX markers",
-    progressDone: "Analysis complete",
-    historyTitle: "History",
-    historyNote: "Saved in this browser. Click an item to reopen the report.",
-    historyEmpty: "No history yet.",
-    historyOpen: "Open history item",
-    historyDelete: "Delete",
-    historyExpand: "Expand History",
-    historyCollapse: "Collapse History",
-    clearHistory: "Clear History",
-    historyItemMeta: "{version} · Target SDK {targetSdk}",
-    historyFileMeta: "{file} · {size} · {date}",
-    emptyTitle: "Waiting for APK",
-    emptyBody: "The report will show summary, SDK markers, components, permissions, signatures, and meta-data.",
-    tabSummary: "Summary",
-    tabSdk: "SDK",
-    tabNative: "Native",
-    tabComponents: "Components",
-    tabPermissions: "Permissions",
-    tabSignatures: "Signatures",
-    tabMeta: "Meta-Data",
-    tabRaw: "JSON",
-    noFile: "Choose an APK file.",
-    invalidFile: "Please upload a .apk file.",
-    workerFailed: "Failed to start the analyzer worker.",
-    appName: "App Name",
-    packageName: "Package Name",
-    versionName: "versionName",
-    versionCode: "versionCode",
-    targetSdk: "Target SDK",
-    minSdk: "Min SDK",
-    compileSdk: "Compile SDK",
-    fileName: "File Name",
-    fileSize: "File Size",
-    analyzedAt: "Analyzed At",
-    duration: "Duration",
-    terminalSystem: "Terminal System",
-    permissions: "Permissions",
-    nativeLibraries: "Native Libraries",
-    components: "Components",
-    signatures: "Signatures",
-    metaData: "Meta-Data",
-    buildFeatures: "Build Features",
-    noBuildFeatures: "No build features detected.",
-    noNativeLibraries: "No native libraries found.",
-    noSdkMarkers: "No SDK markers matched.",
-    noComponents: "No components declared.",
-    noPermissions: "No permissions declared.",
-    noSignatures: "No signature certificates found.",
-    noMetaData: "No application-level meta-data declared.",
-    summary: "Summary",
-    sdkNative: "Native Library SDK Markers",
-    sdkComponents: "Component SDK Markers",
-    activities: "Activity",
-    services: "Service",
-    receivers: "Receiver",
-    providers: "Provider",
-    exported: "exported",
-    notExported: "not exported",
-    enabled: "enabled",
-    disabled: "disabled",
-    unknown: "Unknown",
-    permission: "Permission",
-    process: "Process",
-    authorities: "authorities",
-    actions: "actions",
-    targetActivity: "targetActivity",
-    sdk: "SDK",
-    abi: "ABI",
-    path: "Path",
-    size: "Size",
-    value: "Value",
-    resource: "Resource",
-    detectedRule: "Matched Rule",
-    signatureSchemes: "Signing Schemes",
-    signatureCertificate: "Signature Certificate {index}",
-    signatureVersion: "Version",
-    signatureSerialNumber: "Serial Number",
-    signatureIssuer: "Issuer",
-    signatureSubject: "Subject",
-    signatureValidFrom: "Valid From",
-    signatureValidTo: "Valid To",
-    signaturePublicKeyFormat: "Public Key Format",
-    signaturePublicKeyAlgorithm: "Public Key Algorithm",
-    signaturePublicKeyExponent: "Public Key Exponent",
-    signaturePublicKeyModulusSize: "Modulus Size",
-    signaturePublicKeyModulus: "Modulus",
-    signaturePublicKeyY: "Public Key Y",
-    signaturePublicKeyType: "Public Key Type",
-    signatureAlgorithmName: "Signature Algorithm",
-    signatureAlgorithmOid: "Signature Algorithm OID",
-    signatureMd5: "MD5",
-    signatureSha1: "SHA1",
-    signatureSha256: "SHA256",
-    signatureCharString: "CharString",
-    signatureSourceEntry: "Source Entry",
-    signatureDerLength: "Certificate Size",
-    rawNotice: "The JSON view omits large data URIs by default.",
-    selectedFile: "{name} · {size}",
-    completedIn: "{seconds}s",
-    localFile: "Local file",
-  },
-};
-
-const COMPONENT_SECTIONS = ["activities", "services", "receivers", "providers"];
+import { escapeAttr, escapeHtml } from "./app/html.js";
+import { normalizeLocale, translate } from "./app/i18n.js";
+import { clamp } from "./app/math.js";
+import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeImageSrc, stripDataUris } from "./app/format.js";
+import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
+import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
+import { hydrateReportSdkIcons } from "./app/sdk-icon-cache.js";
+import { renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase } from "./app/sdk-icon-renderer.js";
+import { detectTerminalSystem } from "./app/system.js";
+import { initAppTitleColorMask, initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
 const THEME_STORAGE_KEY = "apk-webui-theme";
 const THEME_CHOICES = new Set(["light", "dark", "system"]);
-const HISTORY_STORAGE_KEY = "apk-webui-history";
-const HISTORY_COLLAPSED_STORAGE_KEY = "apk-webui-history-collapsed";
-const MAX_HISTORY_ITEMS = 12;
-const HISTORY_MAX_APP_ICON_DATA_URI_LENGTH = 180_000;
 const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
-let sdkIconSvgMap = null;
-let sdkIconSvgMapPromise = null;
-let sdkSingleColorIconNames = null;
-let sdkSingleColorIconNamesPromise = null;
-const DOT_TITLE_GLYPHS = {
-  B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
-  C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
-  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
-  H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
-  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
-  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
-  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
-  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
-  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
-  W: ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
-  "?": ["11111", "00001", "00010", "00100", "00100", "00000", "00100"],
-};
+
 
 const state = {
   locale: normalizeLocale(navigator.language),
@@ -308,11 +56,15 @@ const elements = {
   tabPanel: document.querySelector("#tab-panel"),
 };
 
+function t(key, variables = {}) {
+  return translate(state.locale, key, variables);
+}
+
 applyThemeChoice(state.themeChoice, { persist: false });
 elements.languageSelect.value = state.locale;
 applyLocale();
-renderBrandTitle();
-initBrandTitleColorMask();
+renderBrandTitle(elements.brandTitle, t("title"));
+initBrandTitleColorMask(elements.brandTitle);
 renderHistoryList();
 updateHistoryCollapse();
 bindEvents();
@@ -627,46 +379,11 @@ function initSdkIconPreview() {
   window.addEventListener("resize", hidePreview);
 }
 
-function lerp(from, to, amount) {
-  return from + (to - from) * amount;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
 
 function initColorOrbBackground() {
   elements.backgroundCanvas?.setAttribute("data-renderer", "css-mesh");
 }
 
-function rgbToHsl(color) {
-  const r = color.r / 255;
-  const g = color.g / 255;
-  const b = color.b / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const lightness = (max + min) / 2;
-  const delta = max - min;
-  if (delta === 0) {
-    return { h: 0, s: 0, l: lightness };
-  }
-
-  const saturation = delta / (1 - Math.abs((2 * lightness) - 1));
-  let hue = 0;
-  if (max === r) {
-    hue = ((g - b) / delta) % 6;
-  } else if (max === g) {
-    hue = ((b - r) / delta) + 2;
-  } else {
-    hue = ((r - g) / delta) + 4;
-  }
-
-  return {
-    h: (hue * 60 + 360) % 360,
-    s: saturation,
-    l: lightness,
-  };
-}
 
 function readThemeChoice() {
   try {
@@ -711,184 +428,6 @@ function resolveColorScheme(choice) {
   return systemThemeMedia.matches ? "dark" : "light";
 }
 
-function renderBrandTitle() {
-  const node = elements.brandTitle;
-  if (!node) {
-    return;
-  }
-
-  const title = node.dataset.dotTitle || t("title");
-  node.textContent = "";
-  node.classList.add("is-dot-rendered");
-  node.setAttribute("aria-label", title);
-
-  node.append(
-    buildBrandTitleLayer(title, "brand-title__layer brand-title__layer--base", false),
-    buildBrandTitleLayer(title, "brand-title__layer brand-title__layer--color", true),
-  );
-}
-
-function buildBrandTitleLayer(title, className, colorized) {
-  const layerNode = document.createElement("span");
-  layerNode.className = className;
-  layerNode.setAttribute("aria-hidden", "true");
-  let activeDotIndex = 0;
-
-  title.split(" ").forEach((word) => {
-    if (!word) {
-      return;
-    }
-
-    const wordNode = document.createElement("span");
-    wordNode.className = "brand-title__word";
-
-    Array.from(word.toUpperCase()).forEach((character) => {
-      const glyph = DOT_TITLE_GLYPHS[character] || DOT_TITLE_GLYPHS["?"];
-      const letterNode = document.createElement("span");
-      letterNode.className = "brand-title__letter";
-
-      glyph.forEach((row) => {
-        Array.from(row).forEach((dot) => {
-          const dotNode = document.createElement("span");
-          dotNode.className = dot === "1" ? "brand-title__dot is-on" : "brand-title__dot";
-          if (colorized && dot === "1") {
-            dotNode.style.setProperty("--dot-hue", String(Math.round((210 + activeDotIndex * 3.1) % 360)));
-            activeDotIndex += 1;
-          }
-          letterNode.append(dotNode);
-        });
-      });
-
-      wordNode.append(letterNode);
-    });
-
-    layerNode.append(wordNode);
-  });
-
-  return layerNode;
-}
-
-function initBrandTitleColorMask() {
-  const node = elements.brandTitle;
-  if (!node) {
-    return;
-  }
-
-  const updateMask = (event) => {
-    const rect = node.getBoundingClientRect();
-    const x = clamp(event.clientX - rect.left, 0, rect.width);
-    const y = clamp(event.clientY - rect.top, 0, rect.height);
-    node.style.setProperty("--brand-title-mask-x", `${x.toFixed(1)}px`);
-    node.style.setProperty("--brand-title-mask-y", `${y.toFixed(1)}px`);
-    node.classList.add("is-color-mask-active");
-  };
-
-  node.addEventListener("pointerenter", updateMask);
-  node.addEventListener("pointermove", updateMask);
-  node.addEventListener("pointerleave", () => {
-    node.classList.remove("is-color-mask-active");
-  });
-}
-
-function initAppTitleColorMask(info) {
-  const node = elements.reportHero.querySelector("[data-app-title-mask]");
-  if (!node) {
-    return;
-  }
-
-  const updateMask = (event) => {
-    const rect = node.getBoundingClientRect();
-    const x = clamp(event.clientX - rect.left, 0, rect.width);
-    const y = clamp(event.clientY - rect.top, 0, rect.height);
-    node.style.setProperty("--app-title-mask-x", `${x.toFixed(1)}px`);
-    node.style.setProperty("--app-title-mask-y", `${y.toFixed(1)}px`);
-    node.classList.add("is-color-mask-active");
-  };
-
-  node.addEventListener("pointerenter", updateMask);
-  node.addEventListener("pointermove", updateMask);
-  node.addEventListener("pointerleave", () => {
-    node.classList.remove("is-color-mask-active");
-  });
-
-  extractAppIconHue(info).then((hue) => {
-    if (hue == null || !node.isConnected) {
-      return;
-    }
-
-    node.style.setProperty("--app-title-hue", String(Math.round(hue)));
-  }).catch(() => {
-    // The default accent hue is good enough if canvas sampling is unavailable.
-  });
-}
-
-function extractAppIconHue(info) {
-  const src = sanitizeImageSrc(info?.icon?.dataUri || "");
-  if (!src || typeof Image !== "function") {
-    return Promise.resolve(null);
-  }
-
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.decoding = "async";
-    image.onload = () => {
-      try {
-        const hue = sampleDominantHue(image);
-        resolve(hue);
-      } catch {
-        resolve(null);
-      }
-    };
-    image.onerror = () => resolve(null);
-    image.src = src;
-  });
-}
-
-function sampleDominantHue(image) {
-  const canvas = document.createElement("canvas");
-  const size = 36;
-  canvas.width = size;
-  canvas.height = size;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    return null;
-  }
-
-  context.drawImage(image, 0, 0, size, size);
-  const pixels = context.getImageData(0, 0, size, size).data;
-  let vectorX = 0;
-  let vectorY = 0;
-  let totalWeight = 0;
-
-  for (let index = 0; index < pixels.length; index += 4) {
-    const alpha = pixels[index + 3] / 255;
-    if (alpha < 0.18) {
-      continue;
-    }
-
-    const hsl = rgbToHsl({
-      r: pixels[index],
-      g: pixels[index + 1],
-      b: pixels[index + 2],
-    });
-    if (hsl.l < 0.05 || hsl.l > 0.96 || hsl.s < 0.08) {
-      continue;
-    }
-
-    const lightnessWeight = 1 - Math.min(0.65, Math.abs(hsl.l - 0.54));
-    const weight = alpha * (0.25 + hsl.s) ** 1.55 * lightnessWeight;
-    const radians = (hsl.h * Math.PI) / 180;
-    vectorX += Math.cos(radians) * weight;
-    vectorY += Math.sin(radians) * weight;
-    totalWeight += weight;
-  }
-
-  if (totalWeight < 0.01) {
-    return null;
-  }
-
-  return (Math.atan2(vectorY, vectorX) * 180 / Math.PI + 360) % 360;
-}
 
 function applyLocale() {
   document.documentElement.lang = state.locale === "en" ? "en" : "zh-CN";
@@ -1091,7 +630,7 @@ function saveHistoryReport(report) {
   const nextHistory = [
     entry,
     ...state.history.filter((item) => item.key !== entry.key),
-  ].slice(0, MAX_HISTORY_ITEMS);
+  ];
 
   state.history = persistHistory(nextHistory);
   renderHistoryList();
@@ -1140,11 +679,7 @@ function setHistoryCollapsed(isCollapsed, options = {}) {
     return;
   }
 
-  try {
-    window.localStorage.setItem(HISTORY_COLLAPSED_STORAGE_KEY, state.historyCollapsed ? "true" : "false");
-  } catch {
-    // The panel remains interactive even if the preference cannot be saved.
-  }
+  persistHistoryCollapsed(state.historyCollapsed);
 }
 
 function updateHistoryCollapse() {
@@ -1221,7 +756,7 @@ function renderReport() {
   elements.emptyState.hidden = true;
   elements.resultView.hidden = false;
   elements.reportHero.innerHTML = renderHero(state.report);
-  initAppTitleColorMask(state.report.apkInfo);
+  initAppTitleColorMask(elements.reportHero, state.report.apkInfo);
   updateTabs();
   renderTabPanel();
 }
@@ -1662,6 +1197,14 @@ function renderFeaturePills(buildFeatures = {}) {
   return `<div class="feature-grid">${features.map((item) => `<span class="feature-pill">${escapeHtml(item)}</span>`).join("")}</div>`;
 }
 
+function renderSdkChip(sdk) {
+  return renderSdkChipBase(sdk, t("unknown"));
+}
+
+function renderSdkInline(sdk) {
+  return renderSdkInlineBase(sdk, t("unknown"));
+}
+
 function renderAppIcon(info) {
   const src = sanitizeImageSrc(info.icon?.dataUri || "");
   if (src) {
@@ -1671,140 +1214,6 @@ function renderAppIcon(info) {
   return `<div class="app-icon-placeholder" aria-hidden="true">${escapeHtml(getInitial(info.appName || info.packageName))}</div>`;
 }
 
-function renderSdkChip(sdk) {
-  return `<span class="chip">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}${escapeHtml(sdk.label || t("unknown"))}</span>`;
-}
-
-function renderSdkInline(sdk) {
-  return `<span class="sdk-inline">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}<span>${escapeHtml(sdk.label || t("unknown"))}</span></span>`;
-}
-
-function renderSdkIcon(src, label, singleColorIcon = false) {
-  const safeSrc = sanitizeImageSrc(src || "");
-  if (!safeSrc) {
-    return "";
-  }
-
-  if (singleColorIcon) {
-    const themedSvg = renderThemedSdkIconSvg(safeSrc);
-    if (themedSvg) {
-      return `<span class="sdk-icon sdk-icon--mono" aria-hidden="true">${themedSvg}</span>`;
-    }
-  }
-
-  return `<span class="sdk-icon"><img class="sdk-icon__image" src="${escapeAttr(safeSrc)}" alt="${escapeAttr(label || "")}"></span>`;
-}
-
-function renderThemedSdkIconSvg(src) {
-  const svgText = decodeSvgDataUri(src);
-  if (
-    !svgText ||
-    typeof DOMParser !== "function" ||
-    typeof XMLSerializer !== "function" ||
-    /<(?:script|foreignObject)\b|javascript:/iu.test(svgText)
-  ) {
-    return "";
-  }
-
-  const document = new DOMParser().parseFromString(svgText, "image/svg+xml");
-  const svg = document.documentElement;
-  if (document.querySelector("parsererror") || !svg || svg.localName.toLowerCase() !== "svg") {
-    return "";
-  }
-
-  svg.setAttribute("class", "sdk-icon__svg");
-  svg.removeAttribute("width");
-  svg.removeAttribute("height");
-
-  for (const element of [svg, ...svg.querySelectorAll("*")]) {
-    for (const attribute of Array.from(element.attributes)) {
-      const name = attribute.name.toLowerCase();
-      const value = attribute.value;
-      if (name.startsWith("on") || /javascript:/iu.test(value)) {
-        element.removeAttribute(attribute.name);
-      }
-    }
-
-    themeSvgPaintAttribute(element, "fill");
-    themeSvgPaintAttribute(element, "stroke");
-    themeSvgInlineStyle(element);
-  }
-
-  return new XMLSerializer().serializeToString(svg);
-}
-
-function decodeSvgDataUri(src) {
-  const value = String(src || "");
-  const match = value.match(/^data:image\/svg\+xml(?:;[^,]*)?,(.*)$/iu);
-  if (!match) {
-    return "";
-  }
-
-  const meta = value.slice(0, value.indexOf(",")).toLowerCase();
-  try {
-    if (meta.includes(";base64")) {
-      const binary = atob(match[1]);
-      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-      return new TextDecoder().decode(bytes);
-    }
-
-    return decodeURIComponent(match[1]);
-  } catch {
-    return "";
-  }
-}
-
-function themeSvgPaintAttribute(element, attributeName) {
-  const value = element.getAttribute(attributeName);
-  if (isThemeablePaintValue(value)) {
-    element.setAttribute(attributeName, "currentColor");
-  }
-}
-
-function themeSvgInlineStyle(element) {
-  const style = element.getAttribute("style");
-  if (!style) {
-    return;
-  }
-
-  const declarations = style
-    .split(";")
-    .map((declaration) => {
-      const separator = declaration.indexOf(":");
-      if (separator < 0) {
-        return declaration.trim();
-      }
-
-      const property = declaration.slice(0, separator).trim();
-      const value = declaration.slice(separator + 1).trim();
-      if ((property.toLowerCase() === "fill" || property.toLowerCase() === "stroke") && isThemeablePaintValue(value)) {
-        return `${property}: currentColor`;
-      }
-
-      return value ? `${property}: ${value}` : "";
-    })
-    .filter(Boolean);
-
-  if (declarations.length) {
-    element.setAttribute("style", declarations.join("; "));
-  } else {
-    element.removeAttribute("style");
-  }
-}
-
-function isThemeablePaintValue(value) {
-  if (!value) {
-    return false;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  return (
-    normalized !== "none" &&
-    normalized !== "transparent" &&
-    normalized !== "currentcolor" &&
-    !normalized.startsWith("url(")
-  );
-}
 
 function renderKeyValueTable(rows) {
   return [
@@ -1866,30 +1275,6 @@ function emptyList(message) {
   return `<p class="empty-list">${escapeHtml(message)}</p>`;
 }
 
-function getStats(info) {
-  return {
-    permissions: info.permissions?.length || 0,
-    nativeLibraries: info.nativeLibraries?.length || 0,
-    components: countComponents(info.components),
-    signatures: info.signatures?.certificates?.length || 0,
-    metaData: info.metaData?.application?.length || 0,
-  };
-}
-
-function countComponents(components = {}) {
-  return COMPONENT_SECTIONS.reduce((sum, key) => sum + (components[key]?.length || 0), 0);
-}
-
-function groupBy(items, getKey) {
-  const groups = new Map();
-  for (const item of items) {
-    const key = getKey(item);
-    const values = groups.get(key) || [];
-    values.push(item);
-    groups.set(key, values);
-  }
-  return groups;
-}
 
 function buildFeatureLabel(name, version) {
   return version ? `${name} ${version}` : name;
@@ -1923,278 +1308,8 @@ function buildExportReport(report) {
   });
 }
 
-function createHistoryEntry(report) {
-  const compactReport = compactReportForHistory(report, { keepAppIcon: true });
-  const savedAt = new Date().toISOString();
 
-  return {
-    id: createHistoryId(),
-    key: buildHistoryKey(report),
-    savedAt,
-    summary: buildHistorySummary(compactReport),
-    report: compactReport,
-  };
-}
 
-function buildHistorySummary(report) {
-  const info = report.apkInfo || {};
-  const sdkSummary = info.sdkSummary || {};
-  const iconDataUri = sanitizeImageSrc(info.icon?.dataUri || "");
-
-  return {
-    appName: info.appName || "",
-    packageName: info.packageName || "",
-    versionName: info.versionName || "",
-    versionCode: info.versionCode || "",
-    targetSdk: info.targetSdk || "",
-    fileName: report.fileName || "",
-    fileSizeBytes: report.fileSizeBytes || 0,
-    analyzedAt: report.analyzedAt || "",
-    iconDataUri,
-    sdkCount: (sdkSummary.native?.length || 0) + (sdkSummary.components?.length || 0),
-    stats: getStats(info),
-  };
-}
-
-function buildHistoryKey(report) {
-  const info = report.apkInfo || {};
-  return [
-    info.packageName || "",
-    info.versionCode || "",
-    report.fileName || "",
-    report.fileSizeBytes || "",
-  ].join("::");
-}
-
-function createHistoryId() {
-  if (window.crypto?.randomUUID) {
-    return window.crypto.randomUUID();
-  }
-
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function readHistory() {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(HISTORY_STORAGE_KEY) || "[]");
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.map(normalizeHistoryEntry).filter(Boolean).slice(0, MAX_HISTORY_ITEMS);
-  } catch {
-    return [];
-  }
-}
-
-function readHistoryCollapsed() {
-  try {
-    return window.localStorage.getItem(HISTORY_COLLAPSED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function normalizeHistoryEntry(entry) {
-  if (!entry || typeof entry !== "object" || !entry.report || typeof entry.report !== "object") {
-    return null;
-  }
-
-  const computedSummary = buildHistorySummary(entry.report);
-  const providedSummary = entry.summary && typeof entry.summary === "object" ? entry.summary : {};
-
-  return {
-    id: String(entry.id || createHistoryId()),
-    key: String(entry.key || buildHistoryKey(entry.report)),
-    savedAt: String(entry.savedAt || entry.report.analyzedAt || new Date().toISOString()),
-    summary: {
-      ...computedSummary,
-      ...providedSummary,
-      iconDataUri: sanitizeImageSrc(providedSummary.iconDataUri || computedSummary.iconDataUri || ""),
-      stats: {
-        ...computedSummary.stats,
-        ...(providedSummary.stats || {}),
-      },
-    },
-    report: entry.report,
-  };
-}
-
-function persistHistory(history) {
-  const normalized = history.map(normalizeHistoryEntry).filter(Boolean).slice(0, MAX_HISTORY_ITEMS);
-  const candidates = [
-    normalized,
-    normalized.slice(0, 8).map((entry) => compactHistoryEntry(entry, { keepAppIcon: true })),
-    normalized.slice(0, 6).map((entry) => compactHistoryEntry(entry, { keepAppIcon: false })),
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(candidate));
-      return candidate;
-    } catch {
-      // Try a smaller representation below.
-    }
-  }
-
-  return normalized;
-}
-
-function compactHistoryEntry(entry, options) {
-  const report = compactReportForHistory(entry.report, options);
-  const summary = buildHistorySummary(report);
-
-  return {
-    ...entry,
-    summary,
-    report,
-  };
-}
-
-function compactReportForHistory(report, options = {}) {
-  return compactHistoryValue(report, [], {
-    keepAppIcon: options.keepAppIcon !== false,
-  });
-}
-
-function compactHistoryValue(value, path, options) {
-  if (Array.isArray(value)) {
-    return value.map((entry, index) => compactHistoryValue(entry, [...path, String(index)], options));
-  }
-
-  if (!value || typeof value !== "object") {
-    if (typeof value !== "string" || !value.startsWith("data:image/")) {
-      return value;
-    }
-
-    const isAppIcon = path.join(".") === "apkInfo.icon.dataUri";
-    if (options.keepAppIcon && isAppIcon && value.length <= HISTORY_MAX_APP_ICON_DATA_URI_LENGTH) {
-      return value;
-    }
-
-    return "";
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      compactHistoryValue(entry, [...path, key], options),
-    ]),
-  );
-}
-
-async function hydrateReportSdkIcons(report) {
-  const [iconMap, singleColorIconNames] = await Promise.all([
-    loadSdkIconSvgMap(),
-    loadSdkSingleColorIconNames(),
-  ]);
-  if (!Object.keys(iconMap).length) {
-    return report;
-  }
-
-  const info = report.apkInfo || {};
-  hydrateSdkIconList(info.sdkSummary?.native, iconMap, singleColorIconNames);
-  hydrateSdkIconList(info.sdkSummary?.components, iconMap, singleColorIconNames);
-
-  for (const library of info.nativeLibraries || []) {
-    hydrateSdkIcon(library.sdk, iconMap, singleColorIconNames);
-  }
-
-  for (const sectionName of COMPONENT_SECTIONS) {
-    for (const component of info.components?.[sectionName] || []) {
-      hydrateSdkIcon(component.sdk, iconMap, singleColorIconNames);
-    }
-  }
-
-  return report;
-}
-
-async function loadSdkIconSvgMap() {
-  if (sdkIconSvgMap) {
-    return sdkIconSvgMap;
-  }
-
-  if (!sdkIconSvgMapPromise) {
-    sdkIconSvgMapPromise = import("./modules/generated/libchecker-sdk-icons.js")
-      .then((module) => module.LIBCHECKER_SDK_ICON_SVGS || {})
-      .catch(() => ({}));
-  }
-
-  sdkIconSvgMap = await sdkIconSvgMapPromise;
-  return sdkIconSvgMap;
-}
-
-async function loadSdkSingleColorIconNames() {
-  if (sdkSingleColorIconNames) {
-    return sdkSingleColorIconNames;
-  }
-
-  if (!sdkSingleColorIconNamesPromise) {
-    sdkSingleColorIconNamesPromise = import("./modules/generated/libchecker-rules.js")
-      .then((module) => new Set(
-        (module.LIBCHECKER_RULES || [])
-          .filter((rule) => rule.singleColorIcon && rule.iconName)
-          .map((rule) => rule.iconName),
-      ))
-      .catch(() => new Set());
-  }
-
-  sdkSingleColorIconNames = await sdkSingleColorIconNamesPromise;
-  return sdkSingleColorIconNames;
-}
-
-function hydrateSdkIconList(entries = [], iconMap, singleColorIconNames) {
-  for (const entry of entries) {
-    hydrateSdkIcon(entry, iconMap, singleColorIconNames);
-  }
-}
-
-function hydrateSdkIcon(sdk, iconMap, singleColorIconNames = new Set()) {
-  if (!sdk || typeof sdk !== "object") {
-    return;
-  }
-
-  if (typeof sdk.singleColorIcon !== "boolean") {
-    sdk.singleColorIcon = Boolean(sdk.iconName && singleColorIconNames.has(sdk.iconName));
-  }
-
-  if (sanitizeImageSrc(sdk.iconUrl || "")) {
-    return;
-  }
-
-  sdk.iconUrl = resolveSdkIconDataUri(sdk.iconName, iconMap);
-}
-
-function resolveSdkIconDataUri(iconName, iconMap) {
-  const svg = iconMap?.[iconName] || iconMap?.ic_sdk_placeholder;
-  if (!svg) {
-    return "";
-  }
-
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-}
-
-function stripDataUris(value) {
-  if (Array.isArray(value)) {
-    return value.map(stripDataUris);
-  }
-
-  if (!value || typeof value !== "object") {
-    if (typeof value === "string" && value.startsWith("data:image/")) {
-      return `[omitted ${value.length} chars]`;
-    }
-    return value;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      typeof entry === "string" && entry.startsWith("data:image/")
-        ? `[omitted ${entry.length} chars]`
-        : stripDataUris(entry),
-    ]),
-  );
-}
 
 function formatDate(value) {
   if (!value) {
@@ -2224,22 +1339,6 @@ function formatSignatureDate(value) {
   return formatDate(value);
 }
 
-function formatBytes(bytes) {
-  const size = Number(bytes) || 0;
-  if (size <= 0) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB"];
-  let value = size;
-  let index = 0;
-  while (value >= 1024 && index < units.length - 1) {
-    value /= 1024;
-    index += 1;
-  }
-
-  return `${value.toFixed(2)} ${units[index]}`;
-}
 
 function formatTerminalSystem(report) {
   const system = report.terminalSystem || report.analysisProfile?.runtime?.system || {};
@@ -2251,203 +1350,4 @@ function formatTerminalSystem(report) {
   }
 
   return [name, version].filter(Boolean).join(" ");
-}
-
-async function detectTerminalSystem() {
-  const navigatorValue = window.navigator || {};
-  const userAgentData = navigatorValue.userAgentData;
-
-  if (userAgentData && typeof userAgentData.getHighEntropyValues === "function") {
-    try {
-      const values = await userAgentData.getHighEntropyValues(["platform", "platformVersion"]);
-      const system = normalizeSystemPlatform(
-        values.platform || userAgentData.platform || navigatorValue.platform,
-        values.platformVersion,
-      );
-
-      if (system.name || system.version) {
-        return {
-          ...system,
-          source: "userAgentData",
-        };
-      }
-    } catch {
-      // Fall back to the reduced user agent string.
-    }
-  }
-
-  return parseSystemFromUserAgent(navigatorValue.userAgent, navigatorValue.platform);
-}
-
-function normalizeSystemPlatform(platform, version) {
-  const platformText = String(platform || "").trim();
-  const versionText = cleanSystemVersion(version);
-  const platformKey = platformText.toLowerCase();
-
-  if (!platformText) {
-    return { name: "", version: versionText };
-  }
-
-  if (platformKey.includes("mac")) {
-    return { name: "macOS", version: versionText };
-  }
-
-  if (platformKey.includes("win")) {
-    return { name: "Windows", version: normalizeWindowsUaDataVersion(versionText) };
-  }
-
-  if (platformKey.includes("android")) {
-    return { name: "Android", version: versionText };
-  }
-
-  if (platformKey.includes("ios")) {
-    return { name: "iOS", version: versionText };
-  }
-
-  if (platformKey.includes("chrome os") || platformKey.includes("cros")) {
-    return { name: "ChromeOS", version: versionText };
-  }
-
-  if (platformKey.includes("linux")) {
-    return { name: "Linux", version: versionText };
-  }
-
-  return { name: platformText, version: versionText };
-}
-
-function parseSystemFromUserAgent(userAgent, platform = "") {
-  const userAgentText = String(userAgent || "");
-  const platformText = String(platform || "");
-  const iosVersion = userAgentText.match(/(?:CPU(?: iPhone)? OS|iPhone OS)\s+([0-9_]+)/iu);
-  const androidVersion = userAgentText.match(/Android\s+([0-9][0-9._]*)/iu);
-  const chromeOsVersion = userAgentText.match(/CrOS\s+\S+\s+([0-9.]+)/iu);
-  const macOsVersion = userAgentText.match(/Mac OS X\s+([0-9_]+)/iu);
-  const windowsVersion = userAgentText.match(/Windows NT\s+([0-9.]+)/iu);
-
-  if (/iPad/iu.test(platformText)) {
-    return buildTerminalSystem("iPadOS", iosVersion?.[1]);
-  }
-
-  if (/iPhone|iPod/iu.test(platformText)) {
-    return buildTerminalSystem("iOS", iosVersion?.[1]);
-  }
-
-  if (androidVersion) {
-    return buildTerminalSystem("Android", androidVersion[1]);
-  }
-
-  if (chromeOsVersion) {
-    return buildTerminalSystem("ChromeOS", chromeOsVersion[1]);
-  }
-
-  if (macOsVersion && /Mobile/iu.test(userAgentText)) {
-    return buildTerminalSystem("iPadOS", iosVersion?.[1] || macOsVersion[1]);
-  }
-
-  if (macOsVersion) {
-    return buildTerminalSystem("macOS", macOsVersion[1]);
-  }
-
-  if (windowsVersion) {
-    return buildTerminalSystem("Windows", normalizeWindowsVersion(windowsVersion[1]));
-  }
-
-  if (/Linux/iu.test(userAgentText) || /Linux/iu.test(platformText)) {
-    return buildTerminalSystem("Linux", "");
-  }
-
-  return buildTerminalSystem(platformText || "Unknown", "");
-}
-
-function buildTerminalSystem(name, version) {
-  return {
-    name: String(name || "Unknown").trim(),
-    version: cleanSystemVersion(version),
-    source: "userAgent",
-  };
-}
-
-function cleanSystemVersion(value) {
-  return String(value || "").trim().replaceAll("_", ".");
-}
-
-function normalizeWindowsVersion(value) {
-  const version = cleanSystemVersion(value);
-  const knownVersions = {
-    "10.0": "10",
-    "6.3": "8.1",
-    "6.2": "8",
-    "6.1": "7",
-  };
-
-  return knownVersions[version] || version;
-}
-
-function normalizeWindowsUaDataVersion(value) {
-  const version = cleanSystemVersion(value);
-  const major = Number.parseInt(version.split(".")[0], 10);
-
-  if (major >= 13) {
-    return "11";
-  }
-
-  if (major > 0) {
-    return "10";
-  }
-
-  return version;
-}
-
-function formatResourceId(value) {
-  const numberValue = Number(value);
-  if (!Number.isFinite(numberValue)) {
-    return String(value);
-  }
-
-  return `0x${(numberValue >>> 0).toString(16).padStart(8, "0")}`;
-}
-
-function sanitizeFilePart(value) {
-  return String(value || "apk-report").replaceAll(/[^a-z0-9._-]+/giu, "_").slice(0, 120) || "apk-report";
-}
-
-function sanitizeImageSrc(value) {
-  const src = String(value || "");
-  if (/^data:image\/(?:png|jpeg|jpg|webp|gif|svg\+xml)(?:;[a-z0-9=_-]+)*(?:;base64)?,/iu.test(src)) {
-    return src;
-  }
-
-  return "";
-}
-
-function getInitial(value) {
-  const normalized = String(value || "A").trim();
-  return [...normalized][0]?.toUpperCase() || "A";
-}
-
-function normalizeLocale(value) {
-  const locale = String(value || "").toLowerCase();
-  return locale.startsWith("en") ? "en" : "zh-CN";
-}
-
-function t(key, variables = {}) {
-  const dictionary = I18N[state.locale] || I18N["zh-CN"];
-  const template = dictionary[key] || I18N["zh-CN"][key] || key;
-  return template.replace(/\{(\w+)\}/gu, (_, name) => {
-    const value = variables[name];
-    return value == null ? "" : String(value);
-  });
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value).replaceAll("`", "&#96;");
 }
