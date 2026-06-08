@@ -463,8 +463,8 @@ svg {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  min-height: 42px;
-  padding: 4px;
+  height: 38px;
+  padding: 3px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -510,7 +510,7 @@ svg {
   align-items: center;
   justify-content: center;
   min-width: 46px;
-  min-height: 34px;
+  min-height: 30px;
   border: 0;
   border-radius: 10px;
   background: transparent;
