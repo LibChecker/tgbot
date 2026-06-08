@@ -22,9 +22,13 @@ The build script copies shared analyzer files into `dist/modules/`:
 
 - `src/shared/apk.js`
 - `src/shared/apk-signatures.js`
+- `src/shared/i18n.js`
 - `src/shared/sdk-markers.js`
+- `src/shared/generated/i18n-catalogs.js`
 - `src/shared/generated/libchecker-rules.js`
 - `src/shared/generated/libchecker-sdk-icons.js`
+
+UI translations are sourced from the repository-level `locales/*.json` files. The Pages build runs `scripts/generate_i18n_catalogs.mjs` before copying modules, so Crowdin or GitHub PR translation updates only need to touch the locale JSON files.
 
 ## Local Development
 

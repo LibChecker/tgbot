@@ -103,11 +103,31 @@ npm run pages:deploy
 | `npm run webhook:set` | tgbot | Register the Telegram webhook. |
 | `npm run webhook:delete` | tgbot | Delete the Telegram webhook. |
 | `npm run commands:set` | tgbot | Sync Telegram bot commands. |
+| `npm run i18n:generate` | shared | Generate runtime i18n catalogs from `locales/*.json`. |
+| `npm run i18n:check` | shared | Verify the generated i18n catalog is up to date. |
 | `npm run rules:update` | shared | Refresh generated LibChecker rules. |
 | `npm run pages:dev` | Web UI | Run the Pages app locally. |
 | `npm run pages:build` | Web UI | Build the Pages app. |
 | `npm run pages:deploy` | Web UI | Deploy the Pages app. |
 | `npm run check` | shared | Validate Worker, scripts, generated files, and Web UI. |
+
+## Localization
+
+User-facing copy lives in `locales/*.json`. These files are the translation source of truth for both the Telegram bot and the Web UI.
+
+- `locales/zh-CN.json` is the default source catalog.
+- `locales/en.json` is the English translation catalog.
+- `crowdin.yml` maps Crowdin translations to `locales/%locale%.json`.
+- Runtime modules import the generated `src/shared/generated/i18n-catalogs.js`; do not edit that generated file by hand.
+
+When contributing through GitHub PRs or Crowdin, edit or add locale JSON files only. Keep the same key tree as `locales/zh-CN.json`, and keep placeholders such as `{count}` or `{appName}` unchanged.
+
+After changing translations, run:
+
+```bash
+npm run i18n:generate
+npm run check
+```
 
 ## Admin API
 
@@ -152,8 +172,10 @@ src/
   shared/            Shared APK analyzer source
     apk.js           APK, manifest, resources, and icon parser
     apk-signatures.js APK signing block, X.509, and digest parser
+    i18n.js          Shared localization runtime
     sdk-markers.js   LibChecker SDK marker annotator
-    generated/       LibChecker rule and icon bundles
+    generated/       Generated i18n, LibChecker rule, and icon bundles
+locales/             Translation JSON catalogs
 pages-apk-webui/     Web UI Pages app
 scripts/             Shared maintenance and webhook scripts
 wrangler.toml        Worker deployment config

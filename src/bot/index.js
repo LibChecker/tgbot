@@ -1,7 +1,7 @@
 import { readApkInfo } from "../shared/apk.js";
 import { readApkInfoFromUrl } from "./apk-url-preview.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
-import { createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
 import {
   createRequestTelemetryContext,
   extendTelemetryContext,
@@ -23,7 +23,7 @@ const TELEGRAM_ALLOWED_UPDATES = [
   "channel_post",
   "edited_channel_post",
 ];
-const MANAGED_COMMAND_LANGUAGE_CODES = [null, "en"];
+const MANAGED_COMMAND_LANGUAGE_CODES = [null, ...SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE)];
 
 let cachedBotIdentity = null;
 

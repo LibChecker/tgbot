@@ -1,4 +1,4 @@
-import { createI18n, normalizeLocale } from "./i18n.js";
+import { createI18n, getSupportedLocales, normalizeLocale } from "./i18n.js";
 
 export function renderUploadPage({
   locale = undefined,
@@ -9,6 +9,12 @@ export function renderUploadPage({
   const normalizedLocale = normalizeLocale(locale);
   const { t, languageTag } = createI18n(normalizedLocale);
   const escapedUploadUrl = escapeHtml(uploadUrl);
+  const languageOptions = getSupportedLocales()
+    .map((item) => {
+      const selected = item.locale === normalizedLocale ? " selected" : "";
+      return `<option value="${escapeAttr(item.locale)}"${selected}>${escapeHtml(item.nativeName)}</option>`;
+    })
+    .join("");
   const errorBlock = error
     ? `<div class="alert" role="alert">${escapeHtml(error)}</div>`
     : "";
@@ -241,8 +247,7 @@ export function renderUploadPage({
           <label>
             ${escapeHtml(t("upload.language_label"))}
             <select name="lang">
-              <option value="zh-CN"${normalizedLocale === "zh-CN" ? " selected" : ""}>中文</option>
-              <option value="en"${normalizedLocale === "en" ? " selected" : ""}>English</option>
+              ${languageOptions}
             </select>
           </label>
           <div class="progress" data-upload-progress hidden aria-live="polite">
@@ -397,4 +402,8 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll("'", "&#39;");
 }

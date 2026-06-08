@@ -1,5 +1,5 @@
 import { escapeAttr, escapeHtml } from "./app/html.js";
-import { normalizeLocale, translate } from "./app/i18n.js";
+import { getSupportedLocales, normalizeLocale, translate } from "./app/i18n.js";
 import { clamp } from "./app/math.js";
 import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeImageSrc, stripDataUris } from "./app/format.js";
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
@@ -62,7 +62,7 @@ function t(key, variables = {}) {
 }
 
 applyThemeChoice(state.themeChoice, { persist: false });
-elements.languageSelect.value = state.locale;
+renderLanguageOptions();
 applyLocale();
 renderBrandTitle(elements.brandTitle, t("title"));
 initBrandTitleColorMask(elements.brandTitle);
@@ -90,6 +90,7 @@ function bindEvents() {
 
   elements.languageSelect.addEventListener("change", () => {
     state.locale = normalizeLocale(elements.languageSelect.value);
+    renderLanguageOptions();
     applyLocale();
     updateThemeIndicator();
     updateHistoryCollapse();
@@ -844,7 +845,7 @@ function resolveColorScheme(choice) {
 
 
 function applyLocale() {
-  document.documentElement.lang = state.locale === "en" ? "en" : "zh-CN";
+  document.documentElement.lang = state.locale;
   document.title = t("title");
 
   document.querySelectorAll("[data-i18n]").forEach((node) => {
@@ -860,6 +861,16 @@ function applyLocale() {
   document.querySelectorAll("[data-aria-i18n]").forEach((node) => {
     node.setAttribute("aria-label", t(node.dataset.ariaI18n));
   });
+}
+
+function renderLanguageOptions() {
+  const locales = getSupportedLocales();
+  elements.languageSelect.innerHTML = locales
+    .map((item) => {
+      const selected = item.locale === state.locale ? " selected" : "";
+      return `<option value="${escapeAttr(item.locale)}"${selected}>${escapeHtml(item.nativeName)}</option>`;
+    })
+    .join("");
 }
 
 function setSelectedFile(file) {

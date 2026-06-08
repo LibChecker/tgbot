@@ -1,0 +1,5 @@
+preserve_hierarchy: true
+
+files:
+  - source: /locales/zh-CN.json
+    translation: /locales/%locale%.json

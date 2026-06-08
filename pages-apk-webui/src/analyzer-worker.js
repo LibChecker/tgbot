@@ -1,4 +1,5 @@
 import { readApkInfo } from "./modules/apk.js";
+import { createI18n, normalizeLocale } from "./modules/i18n.js";
 import { annotateSdkMarkers } from "./modules/sdk-markers.js";
 import { LIBCHECKER_RULES } from "./modules/generated/libchecker-rules.js";
 import { LIBCHECKER_SDK_ICON_SVGS } from "./modules/generated/libchecker-sdk-icons.js";
@@ -12,10 +13,11 @@ self.addEventListener("message", (event) => {
   }
 
   analyze(message).catch((error) => {
+    const { t } = createWorkerI18n(message.locale);
     self.postMessage({
       type: "error",
       jobId: message.jobId,
-      error: getErrorMessage(error),
+      error: getErrorMessage(error, t),
     });
   });
 });
@@ -23,17 +25,18 @@ self.addEventListener("message", (event) => {
 async function analyze(message) {
   const startedAt = performance.now();
   const file = message.file;
+  const { t } = createWorkerI18n(message.locale);
 
   if (!file || typeof file.arrayBuffer !== "function") {
-    throw new Error("请选择一个 APK 文件");
+    throw new Error(t("noFile"));
   }
 
   if (!isLikelyApk(file)) {
-    throw new Error("请上传 .apk 文件");
+    throw new Error(t("invalidFile"));
   }
 
   if (typeof DecompressionStream !== "function") {
-    throw new Error("当前浏览器不支持 DecompressionStream，无法在本地解压 APK");
+    throw new Error(t("unsupportedDecompression"));
   }
 
   self.postMessage({
@@ -229,15 +232,14 @@ function countUniqueSdkEntries(sdkSummary = {}) {
   return keys.size;
 }
 
-function normalizeLocale(value) {
-  const locale = String(value || "").toLowerCase();
-  return locale.startsWith("en") ? "en" : "zh-CN";
+function createWorkerI18n(locale) {
+  return createI18n(locale, { scope: "webui" });
 }
 
-function getErrorMessage(error) {
+function getErrorMessage(error, t) {
   if (error instanceof Error) {
     return error.message;
   }
 
-  return "Unknown error";
+  return t("unknownError");
 }

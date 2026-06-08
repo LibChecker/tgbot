@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "npm run i18n:generate",
+    "predeploy": "npm run i18n:generate",
+    "predeploy:setup": "npm run i18n:generate",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "deploy:setup": "wrangler deploy && node scripts/manage-webhook.mjs set && node scripts/manage-webhook.mjs commands:set",
@@ -13,12 +16,14 @@
     "commands:set": "node scripts/manage-webhook.mjs commands:set",
     "commands:info": "node scripts/manage-webhook.mjs commands:info",
     "commands:delete": "node scripts/manage-webhook.mjs commands:delete",
+    "i18n:generate": "node scripts/generate_i18n_catalogs.mjs",
+    "i18n:check": "node scripts/generate_i18n_catalogs.mjs --check",
     "rules:update": "python scripts/generate_libchecker_bundle.py",
     "pages:build": "npm --prefix pages-apk-webui run build",
     "pages:check": "npm --prefix pages-apk-webui run check",
     "pages:dev": "npm --prefix pages-apk-webui run dev",
     "pages:deploy": "npm --prefix pages-apk-webui run deploy",
-    "check": "node --check src/bot/index.js && node --check src/bot/apk-url-preview.js && node --check src/bot/i18n.js && node --check src/bot/icons.js && node --check src/bot/observability.js && node --check src/bot/report-viewer.js && node --check src/bot/telegraph.js && node --check src/bot/upload-view.js && node --check src/shared/apk.js && node --check src/shared/apk-signatures.js && node --check src/shared/sdk-markers.js && node --check src/shared/generated/libchecker-rules.js && node --check src/shared/generated/libchecker-sdk-icons.js && node --check scripts/manage-webhook.mjs && npm run pages:check"
+    "check": "npm run i18n:check && node --check src/bot/index.js && node --check src/bot/apk-url-preview.js && node --check src/bot/i18n.js && node --check src/bot/icons.js && node --check src/bot/observability.js && node --check src/bot/report-viewer.js && node --check src/bot/telegraph.js && node --check src/bot/upload-view.js && node --check src/shared/apk.js && node --check src/shared/apk-signatures.js && node --check src/shared/i18n.js && node --check src/shared/sdk-markers.js && node --check src/shared/generated/i18n-catalogs.js && node --check src/shared/generated/libchecker-rules.js && node --check src/shared/generated/libchecker-sdk-icons.js && node --check scripts/generate_i18n_catalogs.mjs && node --check scripts/manage-webhook.mjs && npm run pages:check"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
