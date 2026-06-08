@@ -1,4 +1,4 @@
-name: Deploy Worker
+name: Deploy Worker and WebUI
 
 on:
   pull_request:
@@ -35,6 +35,7 @@ jobs:
         run: npm run check
 
   deploy:
+    name: Deploy Worker
     needs: check
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -75,3 +76,32 @@ jobs:
 
       - name: Register Telegram webhook
         run: node scripts/manage-webhook.mjs set --direct-telegram
+
+  deploy_pages:
+    name: Deploy WebUI Pages
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Pages deployment secrets
+        run: |
+          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets: ' + missing.join(', ')); process.exit(1); }"
+
+      - name: Deploy WebUI Pages
+        run: npm run pages:deploy
