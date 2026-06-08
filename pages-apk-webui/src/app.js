@@ -414,6 +414,7 @@ function initSdkRulePreview() {
   let preview = null;
   let activeLabel = null;
   let activePinned = false;
+  let hideTimer = null;
   let lastPointerType = "";
 
   const ensurePreview = () => {
@@ -426,6 +427,26 @@ function initSdkRulePreview() {
     preview.setAttribute("role", "tooltip");
     preview.setAttribute("aria-hidden", "true");
     preview.hidden = true;
+    preview.addEventListener("pointerenter", () => {
+      cancelScheduledHide();
+    });
+    preview.addEventListener("mouseenter", () => {
+      cancelScheduledHide();
+    });
+    preview.addEventListener("pointerleave", () => {
+      scheduleHidePreview();
+    });
+    preview.addEventListener("mouseleave", () => {
+      scheduleHidePreview();
+    });
+    preview.addEventListener("focusin", () => {
+      cancelScheduledHide();
+    });
+    preview.addEventListener("focusout", (event) => {
+      if (!event.relatedTarget || !preview.contains(event.relatedTarget)) {
+        scheduleHidePreview();
+      }
+    });
     document.body.append(preview);
     return preview;
   };
@@ -457,6 +478,7 @@ function initSdkRulePreview() {
       return;
     }
 
+    cancelScheduledHide();
     preview.classList.remove("is-visible", "is-pinned");
     preview.setAttribute("aria-hidden", "true");
     activeLabel = null;
@@ -468,7 +490,37 @@ function initSdkRulePreview() {
     }, 140);
   };
 
+  const scheduleHidePreview = () => {
+    if (activePinned) {
+      return;
+    }
+
+    cancelScheduledHide();
+    hideTimer = window.setTimeout(() => {
+      const popup = ensurePreview();
+      const activeElement = document.activeElement;
+      if (
+        activeLabel?.matches(":hover") ||
+        popup.matches(":hover") ||
+        activeElement?.closest?.(".sdk-rule-label.has-rule-detail") ||
+        popup.contains(activeElement)
+      ) {
+        return;
+      }
+
+      hidePreview();
+    }, 90);
+  };
+
+  const cancelScheduledHide = () => {
+    if (hideTimer) {
+      window.clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  };
+
   const showPreview = (label, options = {}) => {
+    cancelScheduledHide();
     const detail = getRegisteredSdkRuleDetail(label.dataset.ruleDetailId);
     const content = buildRulePreviewContent(label, detail);
     if (!content) {
@@ -505,10 +557,15 @@ function initSdkRulePreview() {
       return;
     }
 
+    if (event.target.closest?.(".sdk-rule-preview")) {
+      cancelScheduledHide();
+      return;
+    }
+
     const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
     if (!label) {
       if (activeLabel && !document.activeElement?.closest?.(".sdk-rule-label.has-rule-detail")) {
-        hidePreview();
+        scheduleHidePreview();
       }
       return;
     }
@@ -530,7 +587,12 @@ function initSdkRulePreview() {
       return;
     }
 
-    hidePreview();
+    if (event.relatedTarget && ensurePreview().contains(event.relatedTarget)) {
+      cancelScheduledHide();
+      return;
+    }
+
+    scheduleHidePreview();
   };
 
   document.addEventListener("pointerdown", (event) => {
@@ -562,7 +624,11 @@ function initSdkRulePreview() {
   document.addEventListener("focusout", (event) => {
     const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
     if (label && label === activeLabel) {
-      hidePreview();
+      if (event.relatedTarget && ensurePreview().contains(event.relatedTarget)) {
+        cancelScheduledHide();
+        return;
+      }
+      scheduleHidePreview();
     }
   });
 
@@ -607,16 +673,16 @@ function buildRulePreviewContent(label, detail) {
 
   const metaRows = [];
   if (localized.team) {
-    metaRows.push([t("ruleDevTeam"), localized.team]);
+    metaRows.push([t("ruleDevTeam"), createTextNode(localized.team)]);
   }
   if (localized.contributors?.length) {
-    metaRows.push([t("ruleContributors"), localized.contributors.join(", ")]);
+    metaRows.push([t("ruleContributors"), createContributorLinks(localized.contributors)]);
   }
   if (localized.source) {
-    metaRows.push([t("ruleSource"), localized.source]);
+    metaRows.push([t("ruleSource"), createSourceLink(localized.source)]);
   }
   if (detail?.uuid) {
-    metaRows.push([t("ruleUuid"), detail.uuid]);
+    metaRows.push([t("ruleUuid"), createTextNode(detail.uuid)]);
   }
 
   if (metaRows.length) {
@@ -630,7 +696,7 @@ function buildRulePreviewContent(label, detail) {
       nameNode.textContent = name;
 
       const valueNode = document.createElement("span");
-      valueNode.textContent = value;
+      valueNode.append(value);
 
       row.append(nameNode, valueNode);
       metaNode.append(row);
@@ -639,6 +705,56 @@ function buildRulePreviewContent(label, detail) {
   }
 
   return root;
+}
+
+function createTextNode(value) {
+  return document.createTextNode(String(value || ""));
+}
+
+function createContributorLinks(contributors = []) {
+  const fragment = document.createDocumentFragment();
+  contributors.forEach((contributor, index) => {
+    if (index > 0) {
+      fragment.append(document.createTextNode(", "));
+    }
+
+    const link = createGithubProfileLink(contributor);
+    fragment.append(link || document.createTextNode(String(contributor || "")));
+  });
+  return fragment;
+}
+
+function createGithubProfileLink(contributor) {
+  const username = String(contributor || "").trim();
+  if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/iu.test(username)) {
+    return null;
+  }
+
+  return createExternalLink(`https://github.com/${username}`, username);
+}
+
+function createSourceLink(source) {
+  const value = String(source || "").trim();
+  const safeUrl = normalizeExternalUrl(value);
+  return safeUrl ? createExternalLink(safeUrl, value) : createTextNode(value);
+}
+
+function createExternalLink(href, text) {
+  const link = document.createElement("a");
+  link.href = href;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = text;
+  return link;
+}
+
+function normalizeExternalUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+  } catch {
+    return "";
+  }
 }
 
 function selectRuleDetailLocale(detail) {

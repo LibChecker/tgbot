@@ -1719,11 +1719,8 @@ svg {
 
 .sdk-rule-preview.is-visible {
   opacity: 1;
-  transform: translateY(0) scale(1);
-}
-
-.sdk-rule-preview.is-pinned {
   pointer-events: auto;
+  transform: translateY(0) scale(1);
 }
 
 .sdk-rule-preview-card {
@@ -1770,6 +1767,24 @@ svg {
   min-width: 0;
   color: var(--control-text);
   overflow-wrap: anywhere;
+}
+
+.sdk-rule-preview a {
+  color: var(--accent-strong);
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  text-underline-offset: 3px;
+}
+
+.sdk-rule-preview a:hover {
+  color: var(--heading-text);
+}
+
+.sdk-rule-preview a:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .sdk-row {
