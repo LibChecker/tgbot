@@ -1,6 +1,7 @@
 import { readApkInfo } from "./modules/apk.js";
 import { createI18n, normalizeLocale } from "./modules/i18n.js";
 import { annotateSdkMarkers } from "./modules/sdk-markers.js";
+import { detectTerminalSystemFromNavigator as detectTerminalSystemFromNavigatorValue } from "./modules/terminal-system.js";
 import { LIBCHECKER_RULES } from "./modules/generated/libchecker-rules.js";
 import { LIBCHECKER_SDK_ICON_SVGS } from "./modules/generated/libchecker-sdk-icons.js";
 
@@ -143,79 +144,7 @@ function normalizeTerminalSystem(value) {
 }
 
 function detectTerminalSystemFromNavigator() {
-  const navigatorValue = self.navigator || {};
-  return parseSystemFromUserAgent(
-    String(navigatorValue.userAgent || ""),
-    String(navigatorValue.platform || ""),
-  );
-}
-
-function parseSystemFromUserAgent(userAgent, platform = "") {
-  const userAgentText = String(userAgent || "");
-  const platformText = String(platform || "");
-  const iosVersion = userAgentText.match(/(?:CPU(?: iPhone)? OS|iPhone OS)\s+([0-9_]+)/iu);
-  const androidVersion = userAgentText.match(/Android\s+([0-9][0-9._]*)/iu);
-  const chromeOsVersion = userAgentText.match(/CrOS\s+\S+\s+([0-9.]+)/iu);
-  const macOsVersion = userAgentText.match(/Mac OS X\s+([0-9_]+)/iu);
-  const windowsVersion = userAgentText.match(/Windows NT\s+([0-9.]+)/iu);
-
-  if (/iPad/iu.test(platformText)) {
-    return buildTerminalSystem("iPadOS", iosVersion?.[1]);
-  }
-
-  if (/iPhone|iPod/iu.test(platformText)) {
-    return buildTerminalSystem("iOS", iosVersion?.[1]);
-  }
-
-  if (androidVersion) {
-    return buildTerminalSystem("Android", androidVersion[1]);
-  }
-
-  if (chromeOsVersion) {
-    return buildTerminalSystem("ChromeOS", chromeOsVersion[1]);
-  }
-
-  if (macOsVersion && /Mobile/iu.test(userAgentText)) {
-    return buildTerminalSystem("iPadOS", iosVersion?.[1] || macOsVersion[1]);
-  }
-
-  if (macOsVersion) {
-    return buildTerminalSystem("macOS", macOsVersion[1]);
-  }
-
-  if (windowsVersion) {
-    return buildTerminalSystem("Windows", normalizeWindowsVersion(windowsVersion[1]));
-  }
-
-  if (/Linux/iu.test(userAgentText) || /Linux/iu.test(platformText)) {
-    return buildTerminalSystem("Linux", "");
-  }
-
-  return buildTerminalSystem(platformText || "Unknown", "");
-}
-
-function buildTerminalSystem(name, version) {
-  return {
-    name: String(name || "Unknown").trim(),
-    version: cleanSystemVersion(version),
-    source: "userAgent",
-  };
-}
-
-function cleanSystemVersion(value) {
-  return String(value || "").trim().replaceAll("_", ".");
-}
-
-function normalizeWindowsVersion(value) {
-  const version = cleanSystemVersion(value);
-  const knownVersions = {
-    "10.0": "10",
-    "6.3": "8.1",
-    "6.2": "8",
-    "6.1": "7",
-  };
-
-  return knownVersions[version] || version;
+  return detectTerminalSystemFromNavigatorValue(self.navigator || {});
 }
 
 function countSdkSummaryItems(entries = []) {

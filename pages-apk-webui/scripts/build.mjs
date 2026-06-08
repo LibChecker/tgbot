@@ -34,6 +34,7 @@ const sharedModules = [
   ["src/shared/apk-signatures.js", "modules/apk-signatures.js"],
   ["src/shared/i18n.js", "modules/i18n.js"],
   ["src/shared/sdk-markers.js", "modules/sdk-markers.js"],
+  ["src/shared/terminal-system.js", "modules/terminal-system.js"],
   ["src/shared/generated/i18n-catalogs.js", "modules/generated/i18n-catalogs.js"],
   ["src/shared/generated/libchecker-rules.js", "modules/generated/libchecker-rules.js"],
   ["src/shared/generated/libchecker-sdk-icons.js", "modules/generated/libchecker-sdk-icons.js"],
