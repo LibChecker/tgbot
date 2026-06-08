@@ -9,7 +9,15 @@ const DICTIONARIES = {
     },
     bot: {
       start:
-        "你好，直接发送或转发 APK 文件我就会自动解析；也可以直接发送 APK 下载链接，我会尝试用 HTTP Range 只下载少量元数据来解析。群组和频道里也支持直接发 APK、把 <code>/apkinfo</code> 写在 APK 消息里或 APK 链接旁边，或者回复含 APK 的消息发送 <code>/apkinfo</code>。超过 20MB 的 APK 可以使用 <code>/upload</code> 打开网页上传入口。",
+        "<b>你好，我可以帮你解析 APK。</b>\n\n" +
+        "<b>私聊使用</b>\n" +
+        "直接发送或转发 APK 文件，我会自动解析。\n" +
+        "也可以发送 APK 下载链接，我会尝试用 HTTP Range 只下载少量元数据来解析。\n\n" +
+        "<b>群组和频道</b>\n" +
+        "直接发送 APK，或把 <code>/apkinfo</code> 写在 APK 消息里、APK 链接旁边。\n" +
+        "也可以回复含 APK 的消息，再发送 <code>/apkinfo</code>。\n\n" +
+        "<b>大文件</b>\n" +
+        "超过 20MB 的 APK，可以使用 <code>/upload</code> 打开网页上传入口。",
       apk_not_found:
         "我没有找到可解析的 APK。你可以直接发送或转发 APK 文件、发送 APK 下载链接，或者把 <code>/apkinfo</code> 写在同一条 APK 消息或链接消息里；如果是回复解析，也请确认你回复的那条消息本身就是 APK 文件或 APK 链接。需要注意的是，群组里的转发 APK 有时不会把文件对象完整发给 bot，这种情况下我无法从 Telegram 重新取回它，建议直接在群里发送 APK、发送 APK 下载链接，或私聊 bot 再转发 APK。若群组开启了 Privacy Mode，请优先使用 <code>/apkinfo@bot_username</code>。",
       apk_too_large:
