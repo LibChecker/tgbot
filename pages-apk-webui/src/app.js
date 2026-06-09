@@ -17,6 +17,7 @@ const CONTRIBUTOR_GITHUB_ALIASES = new Map([
   ["absinthe", "zhaobozhen"],
 ]);
 const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
 
 
 const state = {
@@ -193,19 +194,17 @@ function bindEvents() {
     setSelectedFile(elements.fileInput.files?.[0] || null);
   });
 
-  elements.dropZone.addEventListener("pointerenter", (event) => {
-    updateDropZonePointer(event);
-    elements.dropZone.classList.add("is-pointer-active");
-  });
-
-  elements.dropZone.addEventListener("pointermove", (event) => {
-    updateDropZonePointer(event);
-    elements.dropZone.classList.add("is-pointer-active");
-  });
+  elements.dropZone.addEventListener("pointerdown", activateDropZonePointer);
+  elements.dropZone.addEventListener("pointerenter", activateDropZonePointer);
+  elements.dropZone.addEventListener("pointermove", activateDropZonePointer);
 
   elements.dropZone.addEventListener("pointerleave", () => {
     elements.dropZone.classList.remove("is-pointer-active");
   });
+
+  document.addEventListener("pointerup", clearTouchDropZonePointerState);
+  document.addEventListener("pointercancel", clearTouchDropZonePointerState);
+  window.addEventListener("blur", clearDropZonePointerState);
 
   elements.form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -512,6 +511,25 @@ function updateDropZonePointer(event, zone = elements.dropZone) {
   zone.style.setProperty("--drop-y", `${y.toFixed(1)}px`);
 }
 
+function activateDropZonePointer(event) {
+  updateDropZonePointer(event);
+  if (shouldActivatePointerHighlight(event)) {
+    elements.dropZone.classList.add("is-pointer-active");
+  }
+}
+
+function clearDropZonePointerState() {
+  elements.dropZone.classList.remove("is-pointer-active");
+}
+
+function clearTouchDropZonePointerState(event) {
+  if (!shouldClearPointerHighlightOnRelease(event)) {
+    return;
+  }
+
+  clearDropZonePointerState();
+}
+
 function handleHistoryPointerEvent(event) {
   const row = event.target.closest(".history-row");
   if (!row || !elements.historyList.contains(row)) {
@@ -524,6 +542,10 @@ function handleHistoryPointerEvent(event) {
   const y = clamp(event.clientY - rect.top, 0, rect.height);
   row.style.setProperty("--history-row-glass-x", `${x.toFixed(1)}px`);
   row.style.setProperty("--history-row-glass-y", `${y.toFixed(1)}px`);
+
+  if (!shouldActivatePointerHighlight(event)) {
+    return;
+  }
 
   clearActiveHistoryRows(row);
   row.classList.add("is-pointer-active");
@@ -542,11 +564,23 @@ function clearHistoryPointerState() {
 }
 
 function clearTouchHistoryPointerState(event) {
-  if (event.pointerType === "mouse") {
+  if (!shouldClearPointerHighlightOnRelease(event)) {
     return;
   }
 
   clearHistoryPointerState();
+}
+
+function shouldActivatePointerHighlight(event) {
+  return event.type === "pointerdown" || isFineHoverPointer(event);
+}
+
+function shouldClearPointerHighlightOnRelease(event) {
+  return !isFineHoverPointer(event);
+}
+
+function isFineHoverPointer(event) {
+  return event.pointerType === "mouse" && fineHoverMedia.matches;
 }
 
 function initSdkIconPreview() {

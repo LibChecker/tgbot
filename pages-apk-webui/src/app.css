@@ -875,11 +875,11 @@ svg {
   z-index: 1;
   top: var(--history-row-glass-y);
   left: var(--history-row-glass-x);
-  width: min(440px, 58vw);
-  height: min(300px, 46vw);
+  width: min(560px, 76vw);
+  height: min(400px, 62vw);
   background:
-    radial-gradient(ellipse, rgb(255 255 255 / 0.16) 0%, rgb(255 255 255 / 0.075) 22%, var(--drop-glass-core) 44%, var(--drop-glass-sheen) 64%, transparent 84%);
-  filter: blur(22px);
+    radial-gradient(ellipse, rgb(255 255 255 / 0.16) 0%, rgb(255 255 255 / 0.075) 26%, var(--drop-glass-core) 48%, var(--drop-glass-sheen) 70%, transparent 100%);
+  filter: blur(34px);
   opacity: var(--history-row-glass-opacity);
   pointer-events: none;
   transform: translate(-50%, -50%) scale(var(--history-row-glass-scale));
@@ -900,9 +900,9 @@ svg {
 
 :root[data-color-scheme="light"] .history-row::before {
   background:
-    radial-gradient(ellipse, rgb(255 255 255 / 0.78) 0%, rgb(255 255 255 / 0.46) 28%, transparent 60%),
-    radial-gradient(ellipse, rgb(224 218 236 / 0.28) 18%, rgb(166 151 190 / 0.12) 56%, transparent 86%);
-  filter: blur(22px);
+    radial-gradient(ellipse, rgb(255 255 255 / 0.72) 0%, rgb(255 255 255 / 0.42) 32%, transparent 76%),
+    radial-gradient(ellipse, rgb(224 218 236 / 0.24) 18%, rgb(166 151 190 / 0.1) 62%, transparent 100%);
+  filter: blur(34px);
 }
 
 .history-main {
@@ -1017,15 +1017,14 @@ svg {
   z-index: 1;
   top: var(--drop-y);
   left: var(--drop-x);
-  width: min(230px, 72vw);
-  height: min(230px, 72vw);
-  background: radial-gradient(circle, var(--drop-glass-core) 0%, var(--drop-glass-sheen) 42%, var(--drop-glass-glow) 68%, transparent 100%);
-  filter: blur(28px);
+  width: min(340px, 88vw);
+  height: min(300px, 82vw);
+  background: radial-gradient(ellipse, var(--drop-glass-core) 0%, var(--drop-glass-sheen) 46%, var(--drop-glass-glow) 72%, transparent 100%);
+  filter: blur(44px);
   transform: translate(-50%, -50%) scale(var(--drop-highlight-scale));
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.drop-zone:hover,
 .drop-zone.is-pointer-active {
   --drop-highlight-opacity: 1;
   --drop-highlight-scale: 1;
@@ -1034,6 +1033,18 @@ svg {
   box-shadow:
     0 0 0 1px var(--drop-glass-ring) inset,
     0 18px 38px var(--drop-glass-shadow);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .drop-zone:hover {
+    --drop-highlight-opacity: 1;
+    --drop-highlight-scale: 1;
+    border-color: var(--accent-border);
+    background: color-mix(in srgb, var(--surface-soft) 78%, var(--accent-soft));
+    box-shadow:
+      0 0 0 1px var(--drop-glass-ring) inset,
+      0 18px 38px var(--drop-glass-shadow);
+  }
 }
 
 .drop-zone.is-dragging {
@@ -1330,18 +1341,17 @@ svg {
   z-index: 1;
   top: var(--drop-y);
   left: var(--drop-x);
-  width: min(230px, 72vw);
-  height: min(230px, 72vw);
+  width: min(340px, 88vw);
+  height: min(300px, 82vw);
   border-radius: inherit;
-  background: radial-gradient(circle, var(--drop-glass-core) 0%, var(--drop-glass-sheen) 42%, var(--drop-glass-glow) 68%, transparent 100%);
-  filter: blur(28px);
+  background: radial-gradient(ellipse, var(--drop-glass-core) 0%, var(--drop-glass-sheen) 46%, var(--drop-glass-glow) 72%, transparent 100%);
+  filter: blur(44px);
   opacity: var(--drop-highlight-opacity);
   pointer-events: none;
   transform: translate(-50%, -50%) scale(var(--drop-highlight-scale));
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.compare-drop-zone:hover,
 .compare-drop-zone.is-pointer-active,
 .compare-drop-zone.is-dragging {
   --drop-highlight-opacity: 1;
@@ -1351,6 +1361,18 @@ svg {
   box-shadow:
     0 0 0 1px var(--drop-glass-ring) inset,
     0 18px 38px var(--drop-glass-shadow);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .compare-drop-zone:hover {
+    --drop-highlight-opacity: 1;
+    --drop-highlight-scale: 1;
+    border-color: var(--accent-border);
+    background: color-mix(in srgb, var(--surface-soft) 78%, var(--accent-soft));
+    box-shadow:
+      0 0 0 1px var(--drop-glass-ring) inset,
+      0 18px 38px var(--drop-glass-shadow);
+  }
 }
 
 .compare-drop-zone input {

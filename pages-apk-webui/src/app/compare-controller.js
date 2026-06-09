@@ -8,6 +8,7 @@ import { renderSdkInline as renderSdkInlineBase } from "./sdk-icon-renderer.js";
 import { detectTerminalSystem } from "./system.js";
 
 const COMPARE_SLOT_KEYS = ["left", "right"];
+const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
 
 export class CompareController {
   constructor(options) {
@@ -37,15 +38,25 @@ export class CompareController {
       });
     });
 
+    const clearTouchDropZonePointerState = (event) => {
+      if (!shouldClearPointerHighlightOnRelease(event)) {
+        return;
+      }
+
+      clearDropZonePointerState(this.elements.dropZones);
+    };
+
     this.elements.dropZones.forEach((zone) => {
-      zone.addEventListener("pointerenter", (event) => {
+      const activatePointer = (event) => {
         updateDropZonePointer(event, zone);
-        zone.classList.add("is-pointer-active");
-      });
-      zone.addEventListener("pointermove", (event) => {
-        updateDropZonePointer(event, zone);
-        zone.classList.add("is-pointer-active");
-      });
+        if (shouldActivatePointerHighlight(event)) {
+          zone.classList.add("is-pointer-active");
+        }
+      };
+
+      zone.addEventListener("pointerdown", activatePointer);
+      zone.addEventListener("pointerenter", activatePointer);
+      zone.addEventListener("pointermove", activatePointer);
       zone.addEventListener("pointerleave", () => {
         zone.classList.remove("is-pointer-active");
       });
@@ -62,6 +73,12 @@ export class CompareController {
         zone.classList.remove("is-dragging");
         this.analyzeFile(zone.dataset.compareDrop, event.dataTransfer?.files?.[0] || null);
       });
+    });
+
+    document.addEventListener("pointerup", clearTouchDropZonePointerState);
+    document.addEventListener("pointercancel", clearTouchDropZonePointerState);
+    window.addEventListener("blur", () => {
+      clearDropZonePointerState(this.elements.dropZones);
     });
 
     this.elements.historySelects.forEach((select) => {
@@ -795,6 +812,24 @@ function updateDropZonePointer(event, zone) {
   const y = clamp(event.clientY - rect.top, 0, rect.height);
   zone.style.setProperty("--drop-x", `${x.toFixed(1)}px`);
   zone.style.setProperty("--drop-y", `${y.toFixed(1)}px`);
+}
+
+function clearDropZonePointerState(zones) {
+  zones.forEach((zone) => {
+    zone.classList.remove("is-pointer-active");
+  });
+}
+
+function shouldActivatePointerHighlight(event) {
+  return event.type === "pointerdown" || isFineHoverPointer(event);
+}
+
+function shouldClearPointerHighlightOnRelease(event) {
+  return !isFineHoverPointer(event);
+}
+
+function isFineHoverPointer(event) {
+  return event.pointerType === "mouse" && fineHoverMedia.matches;
 }
 
 function compareMiniStat(label, value) {
