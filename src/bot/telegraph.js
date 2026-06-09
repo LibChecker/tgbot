@@ -1,4 +1,5 @@
 import { createI18n } from "./i18n.js";
+import { logErrorEvent, logInfoEvent, logWarnEvent } from "./observability.js";
 
 const TELEGRAPH_API_BASE = "https://api.telegra.ph";
 const COMPACT_LEVELS = [
@@ -62,7 +63,8 @@ export async function createApkTelegraphPage(env, report) {
   }
 }
 
-export async function fetchTelegraphPage(path, locale = undefined) {
+export async function fetchTelegraphPage(path, locale = undefined, env = {}) {
+  const startedAt = Date.now();
   const { t } = createI18n(locale);
   const normalizedPath = normalizeTelegraphPath(path);
   if (!normalizedPath) {
@@ -79,13 +81,48 @@ export async function fetchTelegraphPage(path, locale = undefined) {
   );
 
   if (!response.ok) {
+    logErrorEvent(
+      env,
+      { surface: "worker", route: "telegraph_api" },
+      "telegraph.api.failed",
+      {
+        command: "getPage",
+        result: "error",
+        http_status: response.status,
+        duration_ms: Date.now() - startedAt,
+      },
+    );
     throw new Error(t("errors.telegraph_fetch_failed", { status: response.status }));
   }
 
   const data = await response.json();
   if (!data.ok) {
+    logWarnEvent(
+      env,
+      { surface: "worker", route: "telegraph_api" },
+      "telegraph.api.failed",
+      {
+        command: "getPage",
+        result: "error",
+        http_status: response.status,
+        duration_ms: Date.now() - startedAt,
+        error_name: "TelegraphApiResultError",
+      },
+    );
     throw new Error(data.error || t("errors.telegraph_fetch_failed_generic"));
   }
+
+  logInfoEvent(
+    env,
+    { surface: "worker", route: "telegraph_api" },
+    "telegraph.api.succeeded",
+    {
+      command: "getPage",
+      result: "success",
+      http_status: response.status,
+      duration_ms: Date.now() - startedAt,
+    },
+  );
 
   return data.result;
 }
@@ -100,7 +137,7 @@ async function getTelegraphAccessToken(env) {
     return cachedAccessToken;
   }
 
-  const account = await telegraphApi("createAccount", {
+  const account = await telegraphApi(env, "createAccount", {
     short_name: normalizeShortName(env.TELEGRAPH_SHORT_NAME) || "tgbot",
     author_name: getAuthorName(env),
     author_url: normalizeText(env.TELEGRAPH_AUTHOR_URL) || undefined,
@@ -110,7 +147,8 @@ async function getTelegraphAccessToken(env) {
   return cachedAccessToken;
 }
 
-async function telegraphApi(method, payload, locale = undefined) {
+async function telegraphApi(env, method, payload, locale = undefined) {
+  const startedAt = Date.now();
   const { t } = createI18n(locale);
   const body = new URLSearchParams();
   for (const [key, value] of Object.entries(payload)) {
@@ -130,20 +168,55 @@ async function telegraphApi(method, payload, locale = undefined) {
   });
 
   if (!response.ok) {
+    logErrorEvent(
+      env,
+      { surface: "worker", route: "telegraph_api" },
+      "telegraph.api.failed",
+      {
+        command: method,
+        result: "error",
+        http_status: response.status,
+        duration_ms: Date.now() - startedAt,
+      },
+    );
     throw new Error(t("errors.telegraph_api_failed", { method, status: response.status }));
   }
 
   const data = await response.json();
   if (!data.ok) {
+    logWarnEvent(
+      env,
+      { surface: "worker", route: "telegraph_api" },
+      "telegraph.api.failed",
+      {
+        command: method,
+        result: "error",
+        http_status: response.status,
+        duration_ms: Date.now() - startedAt,
+        error_name: "TelegraphApiResultError",
+      },
+    );
     throw new Error(data.error || t("errors.telegraph_api_result_failed", { method }));
   }
+
+  logInfoEvent(
+    env,
+    { surface: "worker", route: "telegraph_api" },
+    "telegraph.api.succeeded",
+    {
+      command: method,
+      result: "success",
+      http_status: response.status,
+      duration_ms: Date.now() - startedAt,
+    },
+  );
 
   return data.result;
 }
 
 async function createTelegraphPage(env, accessToken, report, t) {
   const content = buildTelegraphContent(report, t);
-  return telegraphApi("createPage", {
+  return telegraphApi(env, "createPage", {
     access_token: accessToken,
     title: buildPageTitle(report, t),
     author_name: getAuthorName(env),

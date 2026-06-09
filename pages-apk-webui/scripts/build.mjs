@@ -16,6 +16,7 @@ const staticFiles = [
   ["app.css", "app.css"],
   ["app.js", "app.js"],
   ["analyzer-worker.js", "analyzer-worker.js"],
+  ["app/analytics.js", "app/analytics.js"],
   ["app/html.js", "app/html.js"],
   ["app/i18n.js", "app/i18n.js"],
   ["app/math.js", "app/math.js"],

@@ -7,6 +7,7 @@ const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoDir = resolve(projectDir, "..");
 const nodeBin = process.execPath;
 const sourceRoots = [
+  resolve(projectDir, "functions"),
   resolve(projectDir, "scripts"),
   resolve(projectDir, "src"),
 ];

@@ -39,6 +39,10 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/") {
+      logInfoEvent(env, telemetry, "worker.status_viewed", {
+        result: "success",
+        http_status: 200,
+      });
       return new Response(
         "Telegram APK info bot is running on Cloudflare Workers. Send Telegram webhook updates to /webhook. Admin endpoints: GET /admin/webhook, POST /admin/webhook/set, POST /admin/webhook/delete.",
         {
@@ -52,7 +56,7 @@ export default {
     if (request.method === "GET" && url.pathname === "/report") {
       const startedAt = Date.now();
       const reportPath = url.searchParams.get("path") || null;
-      const response = await handleReportRequest(url);
+      const response = await handleReportRequest(url, env);
       const logFields = {
         result: response.ok ? "success" : "error",
         http_status: response.status,
@@ -407,6 +411,10 @@ async function handleUploadRequest(request, env, url, telemetry) {
     activeUploadUrl = formUploadUrl;
 
     if (!isUploadFile(apkFile)) {
+      logWarnEvent(env, telemetry, "upload.analysis.rejected", {
+        result: "missing_file",
+        http_status: 400,
+      });
       return htmlResponse(
         renderUploadPage({
           locale: formLocale,
@@ -419,6 +427,12 @@ async function handleUploadRequest(request, env, url, telemetry) {
     }
 
     if (!isUploadedApkFile(apkFile)) {
+      logWarnEvent(env, telemetry, "upload.analysis.rejected", {
+        result: "invalid_file",
+        http_status: 400,
+        file_name: apkFile.name || null,
+        file_size_bytes: apkFile.size || 0,
+      });
       return htmlResponse(
         renderUploadPage({
           locale: formLocale,
@@ -480,6 +494,7 @@ async function handleUploadRequest(request, env, url, telemetry) {
       has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
       app_icon_path: report.apkInfo.icon?.path || null,
       report_path: telegraphPage.path || null,
+      ...getArchiveTelemetryFields(report.apkInfo),
     });
 
     return new Response(null, {
@@ -907,7 +922,11 @@ async function deleteTelegramMessage(env, chatId, messageId) {
       message_id: messageId,
     });
   } catch (error) {
-    console.warn("Failed to delete temporary Telegram message", error);
+    logWarnEvent(env, { surface: "worker", route: "telegram_api" }, "telegram.message_delete.failed", {
+      command: "deleteMessage",
+      result: "error",
+      error_name: getErrorName(error),
+    });
   }
 }
 
@@ -957,7 +976,6 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       file_name: document.file_name || null,
       file_size_bytes: document.file_size || 0,
     },
-    { analytics: false },
   );
 
   try {
@@ -984,6 +1002,7 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       app_icon_path: report.apkInfo.icon?.path || null,
       report_path: telegraphPage.path || null,
       source_label: report.sourceLabel,
+      ...getArchiveTelemetryFields(report.apkInfo),
     });
 
     await sendText(
@@ -1032,7 +1051,6 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       url_host: safeUrlHost(apkUrl),
       url_path: safeUrlPath(apkUrl),
     },
-    { analytics: false },
   );
 
   try {
@@ -1071,6 +1089,7 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       app_icon_path: report.apkInfo.icon?.path || null,
       report_path: telegraphPage.path || null,
       source_label: report.sourceLabel,
+      ...getArchiveTelemetryFields(report.apkInfo),
     });
 
     await sendText(
@@ -1619,6 +1638,7 @@ function formatBytes(bytes) {
 }
 
 async function downloadTelegramFile(env, fileId, locale = undefined) {
+  const startedAt = Date.now();
   const { t } = createI18n(locale);
   const file = await telegramApi(env, "getFile", { file_id: fileId }, locale);
   if (!file?.file_path) {
@@ -1627,18 +1647,22 @@ async function downloadTelegramFile(env, fileId, locale = undefined) {
 
   const response = await fetch(`${TELEGRAM_API_BASE}/file/bot${env.BOT_TOKEN}/${file.file_path}`);
   if (!response.ok) {
-    console.error({
-      level: "error",
-      event: "telegram.file_download_failed",
-      timestamp: new Date().toISOString(),
-      file_id: fileId,
+    logErrorEvent(env, { surface: "worker", route: "telegram_file" }, "telegram.file_download.failed", {
       http_status: response.status,
       result: "error",
+      duration_ms: Date.now() - startedAt,
     });
     throw new Error(t("errors.telegram_file_download_failed", { status: response.status }));
   }
 
-  return response.arrayBuffer();
+  const buffer = await response.arrayBuffer();
+  logInfoEvent(env, { surface: "worker", route: "telegram_file" }, "telegram.file_download.succeeded", {
+    result: "success",
+    duration_ms: Date.now() - startedAt,
+    downloaded_bytes: buffer.byteLength || 0,
+    http_status: response.status,
+  });
+  return buffer;
 }
 
 async function sendText(env, chatId, text, replyToMessageId, replyMarkup = undefined) {
@@ -1660,6 +1684,7 @@ async function sendChatAction(env, chatId, action) {
 }
 
 async function telegramApi(env, method, payload, locale = undefined) {
+  const startedAt = Date.now();
   const { t } = createI18n(locale);
   const response = await fetch(`${TELEGRAM_API_BASE}/bot${env.BOT_TOKEN}/${method}`, {
     method: "POST",
@@ -1670,13 +1695,11 @@ async function telegramApi(env, method, payload, locale = undefined) {
   });
 
   if (!response.ok) {
-    console.error({
-      level: "error",
-      event: "telegram.api_http_error",
-      timestamp: new Date().toISOString(),
+    logErrorEvent(env, { surface: "worker", route: "telegram_api" }, "telegram.api.failed", {
+      command: method,
       telegram_method: method,
       http_status: response.status,
-      chat_id: payload?.chat_id != null ? String(payload.chat_id) : null,
+      duration_ms: Date.now() - startedAt,
       result: "error",
     });
     throw new Error(t("errors.telegram_api_request_failed", { method, status: response.status }));
@@ -1684,19 +1707,25 @@ async function telegramApi(env, method, payload, locale = undefined) {
 
   const data = await response.json();
   if (!data.ok) {
-    console.warn({
-      level: "warn",
-      event: "telegram.api_result_error",
-      timestamp: new Date().toISOString(),
+    logWarnEvent(env, { surface: "worker", route: "telegram_api" }, "telegram.api.failed", {
+      command: method,
       telegram_method: method,
       http_status: response.status,
+      duration_ms: Date.now() - startedAt,
       error_code: data.error_code || null,
-      error_message: data.description || t("errors.telegram_api_result_failed", { method }),
-      chat_id: payload?.chat_id != null ? String(payload.chat_id) : null,
+      error_name: "TelegramApiResultError",
       result: "error",
     });
     throw new Error(data.description || t("errors.telegram_api_result_failed", { method }));
   }
+
+  logInfoEvent(env, { surface: "worker", route: "telegram_api" }, "telegram.api.succeeded", {
+    command: method,
+    telegram_method: method,
+    http_status: response.status,
+    duration_ms: Date.now() - startedAt,
+    result: "success",
+  });
 
   return data.result;
 }
@@ -1820,6 +1849,25 @@ function countComponents(components) {
 
 function countMetaData(metaData) {
   return metaData.application.length;
+}
+
+function getArchiveTelemetryFields(apkInfo = {}) {
+  const archive = apkInfo.archive || null;
+  if (!archive) {
+    return {
+      archive_type: "apk",
+      apk_entry_count: 1,
+    };
+  }
+
+  return {
+    archive_type: archive.type || "package-container",
+    apk_entry_count:
+      archive.apkEntryCount ||
+      archive.apkEntries?.length ||
+      archive.apkEntryDetails?.length ||
+      1,
+  };
 }
 
 function buildMessageTelemetryFields(update, message, command, botMentioned, locale) {

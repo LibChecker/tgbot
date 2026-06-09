@@ -21,6 +21,14 @@ export class CompareController {
     this.deleteJob = options.deleteJob;
     this.hasJob = options.hasJob;
     this.updateClearButton = options.updateClearButton;
+    this.trackEvent = typeof options.trackEvent === "function" ? options.trackEvent : () => {};
+    this.getFileAnalyticsFields = typeof options.getFileAnalyticsFields === "function"
+      ? options.getFileAnalyticsFields
+      : () => ({});
+    this.getReportAnalyticsFields = typeof options.getReportAnalyticsFields === "function"
+      ? options.getReportAnalyticsFields
+      : () => ({});
+    this.lastTrackedPairKey = "";
     this.slots = {
       left: createCompareSlotState(),
       right: createCompareSlotState(),
@@ -169,6 +177,13 @@ export class CompareController {
       jobId: null,
     });
     this.renderPage();
+    this.trackCompareEvent("webui.compare.slot_loaded", {
+      result: "success",
+      input_source: "history",
+      slot: slotKey,
+      ...this.getReportAnalyticsFields(slot.report),
+    });
+    this.trackComparePairReady();
   }
 
   async analyzeFile(slotKey, file) {
@@ -194,6 +209,13 @@ export class CompareController {
         jobId: null,
       });
       this.renderPage();
+      this.trackCompareEvent("webui.compare.analysis.failed", {
+        result: "invalid_file",
+        error_name: "InvalidFile",
+        slot: slotKey,
+        input_source: "upload",
+        ...this.getFileAnalyticsFields(file),
+      });
       return;
     }
 
@@ -211,6 +233,13 @@ export class CompareController {
         jobId: null,
       });
       this.renderPage();
+      this.trackCompareEvent("webui.compare.analysis.failed", {
+        result: "worker_unavailable",
+        error_name: "WorkerUnavailable",
+        slot: slotKey,
+        input_source: "upload",
+        ...this.getFileAnalyticsFields(file),
+      });
       return;
     }
 
@@ -230,6 +259,12 @@ export class CompareController {
       jobId,
     });
     this.renderPage();
+    this.trackCompareEvent("webui.compare.analysis.started", {
+      result: "started",
+      input_source: "upload",
+      slot: slotKey,
+      ...this.getFileAnalyticsFields(file),
+    });
 
     const terminalSystem = await detectTerminalSystem();
     if (slot.jobId !== jobId || !this.hasJob(jobId)) {
@@ -269,6 +304,11 @@ export class CompareController {
         error,
         jobId: null,
       });
+      this.trackCompareEvent("webui.compare.analysis.failed", {
+        result: "error",
+        error_name: "AnalyzerWorkerError",
+        slot: slotKey,
+      });
     } else {
       Object.assign(slot, {
         report,
@@ -279,9 +319,16 @@ export class CompareController {
         fileName: report?.fileName || slot.fileName,
         fileSizeBytes: report?.fileSizeBytes || slot.fileSizeBytes,
       });
+      this.trackCompareEvent("webui.compare.analysis.succeeded", {
+        result: "success",
+        input_source: slot.source || "upload",
+        slot: slotKey,
+        ...this.getReportAnalyticsFields(report),
+      });
     }
 
     this.renderPage();
+    this.trackComparePairReady();
   }
 
   clearSlot(slotKey) {
@@ -295,14 +342,20 @@ export class CompareController {
     }
 
     this.slots[slotKey] = createCompareSlotState();
+    this.lastTrackedPairKey = "";
     const input = this.elements.fileInputs.find((item) => item.dataset.compareFile === slotKey);
     if (input) {
       input.value = "";
     }
     this.renderPage();
+    this.trackCompareEvent("webui.compare.slot_cleared", {
+      result: "success",
+      slot: slotKey,
+    });
   }
 
   reset() {
+    const hadContent = this.hasContent();
     for (const slotKey of COMPARE_SLOT_KEYS) {
       const slot = this.slots[slotKey];
       if (slot.jobId != null) {
@@ -315,6 +368,12 @@ export class CompareController {
       input.value = "";
     });
     this.renderPage();
+    this.lastTrackedPairKey = "";
+    if (hadContent) {
+      this.trackCompareEvent("webui.compare.reset", {
+        result: "success",
+      });
+    }
   }
 
   getSlot(slotKey) {
@@ -789,6 +848,41 @@ export class CompareController {
     }
 
     return `<div class="app-icon-placeholder" aria-hidden="true">${escapeHtml(getInitial(info.appName || info.packageName))}</div>`;
+  }
+
+  trackComparePairReady() {
+    const leftReport = this.slots.left.report;
+    const rightReport = this.slots.right.report;
+    if (!leftReport || !rightReport) {
+      return;
+    }
+
+    const pairKey = [
+      leftReport.analyzedAt || "",
+      rightReport.analyzedAt || "",
+      leftReport.fileSizeBytes || 0,
+      rightReport.fileSizeBytes || 0,
+    ].join(":");
+    if (pairKey === this.lastTrackedPairKey) {
+      return;
+    }
+
+    this.lastTrackedPairKey = pairKey;
+    const sections = this.buildSections(leftReport, rightReport);
+    const totalChanges = sections.reduce((sum, sectionItem) => sum + getSectionChangeCount(sectionItem), 0);
+    this.trackCompareEvent("webui.compare.report.ready", {
+      result: "success",
+      slot_count: 2,
+      total_changes_count: totalChanges,
+      value: totalChanges,
+    });
+  }
+
+  trackCompareEvent(event, fields = {}) {
+    this.trackEvent(event, {
+      ui_mode: "compare",
+      ...fields,
+    });
   }
 }
 

@@ -1,32 +1,29 @@
 const ANALYTICS_BLOB_KEYS = [
   "event",
+  "surface",
   "route",
   "method",
   "path",
   "chat_type",
-  "chat_id",
   "update_type",
   "command",
   "result",
-  "package_name",
-  "file_name",
-  "report_path",
   "source_label",
-  "app_icon_path",
-  "url_host",
-  "url_path",
+  "file_extension",
+  "size_bucket",
   "link_preview_mode",
+  "locale",
+  "archive_type",
   "worker_version_tag",
   "error_name",
-  "error_message",
+  "ui_mode",
+  "operation",
+  "input_source",
 ];
 
 const ANALYTICS_DOUBLE_KEYS = [
   "duration_ms",
   "http_status",
-  "file_size_bytes",
-  "content_length_bytes",
-  "downloaded_bytes",
   "range_request_count",
   "permissions_count",
   "native_library_count",
@@ -34,20 +31,45 @@ const ANALYTICS_DOUBLE_KEYS = [
   "meta_data_count",
   "sdk_native_match_count",
   "sdk_component_match_count",
+  "apk_entry_count",
   "is_forwarded",
-  "is_automatic_forward",
   "bot_mentioned",
   "has_document",
   "has_apk_document",
   "has_url",
   "has_apk_url",
   "has_app_icon",
+  "value",
+  "reserved_1",
+  "reserved_2",
 ];
+
+const PRIVATE_TELEMETRY_KEYS = new Set([
+  "app_icon_path",
+  "candidate_chat_id",
+  "candidate_message_id",
+  "chat_id",
+  "error_message",
+  "error_stack",
+  "content_length_bytes",
+  "downloaded_bytes",
+  "file_name",
+  "file_size_bytes",
+  "from_id",
+  "message_id",
+  "message_thread_id",
+  "package_name",
+  "report_path",
+  "url_host",
+  "url_path",
+  "webhook_url",
+]);
 
 export function createRequestTelemetryContext(request, url, env) {
   const versionMetadata = env.CF_VERSION_METADATA || {};
 
   return compactObject({
+    surface: "worker",
     request_id: request.headers.get("cf-ray") || crypto.randomUUID(),
     ray_id: request.headers.get("cf-ray") || null,
     method: request.method,
@@ -82,7 +104,7 @@ export function logErrorEvent(env, context, event, fields = {}, options = {}) {
 }
 
 function writeTelemetry(level, env, context, event, fields, options) {
-  const normalizedFields = compactObject(fields);
+  const normalizedFields = normalizeTelemetryFields(fields);
   const entry = {
     level,
     event,
@@ -91,7 +113,7 @@ function writeTelemetry(level, env, context, event, fields, options) {
     ...normalizedFields,
   };
 
-  writeConsole(level, entry);
+  writeConsole(level, sanitizeTelemetryEntry(entry));
 
   if (options.analytics === false) {
     return;
@@ -120,11 +142,11 @@ function writeAnalyticsDataPoint(env, context, event, fields) {
     return;
   }
 
-  const merged = {
+  const merged = sanitizeTelemetryEntry({
     ...context,
     ...fields,
     event,
-  };
+  });
 
   try {
     dataset.writeDataPoint({
@@ -140,9 +162,61 @@ function writeAnalyticsDataPoint(env, context, event, fields) {
       request_id: context.request_id || null,
       original_event: event,
       error_name: error instanceof Error ? error.name : "UnknownError",
-      error_message: error instanceof Error ? error.message : "Failed to write analytics datapoint",
     });
   }
+}
+
+function normalizeTelemetryFields(fields) {
+  const normalized = compactObject(fields);
+  const fileExtension = getFileExtension(normalized.file_name);
+  const sizeBucket = formatSizeBucket(
+    normalized.file_size_bytes ||
+      normalized.content_length_bytes ||
+      normalized.downloaded_bytes,
+  );
+
+  return compactObject({
+    ...normalized,
+    file_extension: normalized.file_extension || fileExtension || undefined,
+    size_bucket: normalized.size_bucket || sizeBucket || undefined,
+  });
+}
+
+function sanitizeTelemetryEntry(entry) {
+  return Object.fromEntries(
+    Object.entries(entry).filter(([key]) => !PRIVATE_TELEMETRY_KEYS.has(key)),
+  );
+}
+
+function getFileExtension(fileName) {
+  const value = String(fileName || "").toLowerCase();
+  const match = value.match(/\.([a-z0-9]+)$/u);
+  return match ? match[1] : "";
+}
+
+function formatSizeBucket(value) {
+  const bytes = toAnalyticsNumber(value);
+  if (bytes <= 0) {
+    return "";
+  }
+
+  const mb = bytes / 1024 / 1024;
+  if (mb < 1) {
+    return "<1MB";
+  }
+  if (mb < 5) {
+    return "1-5MB";
+  }
+  if (mb < 20) {
+    return "5-20MB";
+  }
+  if (mb < 50) {
+    return "20-50MB";
+  }
+  if (mb < 100) {
+    return "50-100MB";
+  }
+  return "100MB+";
 }
 
 function toAnalyticsBlob(value) {

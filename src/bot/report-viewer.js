@@ -1,7 +1,7 @@
 import { createI18n, normalizeLocale } from "./i18n.js";
 import { fetchTelegraphPage } from "./telegraph.js";
 
-export async function handleReportRequest(url) {
+export async function handleReportRequest(url, env = {}) {
   const locale = normalizeLocale(url.searchParams.get("lang"));
   const { t } = createI18n(locale);
   const path = url.searchParams.get("path");
@@ -13,7 +13,7 @@ export async function handleReportRequest(url) {
   }
 
   try {
-    const page = await fetchTelegraphPage(path, locale);
+    const page = await fetchTelegraphPage(path, locale, env);
     return htmlResponse(renderReportPage(page, locale), 200);
   } catch (error) {
     return htmlResponse(

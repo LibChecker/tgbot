@@ -5,6 +5,7 @@ import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeIm
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
 import { CompareController } from "./app/compare-controller.js";
+import { getFileAnalyticsFields, getReportAnalyticsFields, initWebAnalytics, trackWebEvent } from "./app/analytics.js";
 import { hydrateReportSdkIcons } from "./app/sdk-icon-cache.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import { detectTerminalSystem } from "./app/system.js";
@@ -133,6 +134,9 @@ const compareController = new CompareController({
   },
   hasJob: (jobId) => state.jobs.has(jobId),
   updateClearButton,
+  trackEvent: trackWebEvent,
+  getFileAnalyticsFields,
+  getReportAnalyticsFields,
 });
 
 function resolveInitialLocale() {
@@ -155,6 +159,15 @@ initColorOrbBackground();
 initSdkIconPreview();
 initSdkRulePreview();
 initArchiveChartPreview();
+initWebAnalytics(() => ({
+  locale: state.locale,
+  ui_mode: state.appMode,
+  theme_choice: state.themeChoice,
+  color_scheme: document.documentElement.dataset.colorScheme || "",
+  history_count: state.history.length,
+  viewport_width: window.innerWidth || 0,
+  viewport_height: window.innerHeight || 0,
+}));
 
 function bindEvents() {
   elements.modeButtons.forEach((button) => {
@@ -203,6 +216,7 @@ function bindEvents() {
   });
 
   elements.languageSelect.addEventListener("change", () => {
+    const previousLocale = state.locale;
     state.locale = normalizeLocale(elements.languageSelect.value);
     renderLanguageOptions();
     applyLocale();
@@ -213,6 +227,12 @@ function bindEvents() {
     renderHistoryList();
     renderReport();
     compareController.renderPage();
+    if (previousLocale !== state.locale) {
+      trackWebEvent("webui.locale.changed", {
+        result: "success",
+        operation: state.locale,
+      });
+    }
   });
 
   elements.fileInput.addEventListener("change", () => {
@@ -317,6 +337,11 @@ function bindEvents() {
     state.activeTab = tab;
     updateTabs();
     renderTabPanel();
+    trackWebEvent("webui.tab.changed", {
+      result: "success",
+      tab,
+      operation: tab,
+    });
   });
 
   elements.tabPanel.addEventListener("click", (event) => {
@@ -335,6 +360,10 @@ function bindEvents() {
 
     state.activeNativeAbi = button.dataset.nativeAbi || "";
     renderTabPanel();
+    trackWebEvent("webui.native_abi.changed", {
+      result: "success",
+      operation: state.activeNativeAbi,
+    });
   });
 
   compareController.bindEvents();
@@ -1400,6 +1429,10 @@ function setAppMode(mode) {
 
   state.appMode = nextMode;
   updateAppMode();
+  trackWebEvent("webui.mode.changed", {
+    result: "success",
+    operation: nextMode,
+  });
 }
 
 function updateAppMode() {
@@ -1468,6 +1501,7 @@ function readThemeChoice() {
 }
 
 function applyThemeChoice(choice, options = {}) {
+  const previousChoice = state.themeChoice;
   const themeChoice = THEME_CHOICES.has(choice) ? choice : "system";
   const shouldPersist = options.persist !== false;
   state.themeChoice = themeChoice;
@@ -1492,6 +1526,13 @@ function applyThemeChoice(choice, options = {}) {
     window.localStorage.setItem(THEME_STORAGE_KEY, themeChoice);
   } catch {
     // Theme persistence is optional; the UI still reflects the current choice.
+  }
+
+  if (previousChoice !== themeChoice) {
+    trackWebEvent("webui.theme.changed", {
+      result: "success",
+      operation: themeChoice,
+    });
   }
 }
 
@@ -1562,6 +1603,15 @@ function setSelectedFile(file) {
   renderSelectedFile();
   elements.analyzeButton.disabled = !file;
   updateClearButton();
+
+  if (file) {
+    const isValid = isLikelyApk(file);
+    trackWebEvent("webui.file.selected", {
+      result: isValid ? "valid" : "invalid",
+      is_valid: isValid,
+      ...getFileAnalyticsFields(file),
+    });
+  }
 }
 
 function renderSelectedFile() {
@@ -1583,17 +1633,31 @@ async function analyzeSelectedFile() {
 
   if (!file) {
     showError(t("noFile"));
+    trackWebEvent("webui.analysis.failed", {
+      result: "missing_file",
+      error_name: "MissingFile",
+    });
     return;
   }
 
   if (!isLikelyApk(file)) {
     showError(t("invalidFile"));
+    trackWebEvent("webui.analysis.failed", {
+      result: "invalid_file",
+      error_name: "InvalidFile",
+      ...getFileAnalyticsFields(file),
+    });
     return;
   }
 
   const worker = ensureWorker();
   if (!worker) {
     showError(t("workerFailed"));
+    trackWebEvent("webui.analysis.failed", {
+      result: "worker_unavailable",
+      error_name: "WorkerUnavailable",
+      ...getFileAnalyticsFields(file),
+    });
     return;
   }
 
@@ -1611,6 +1675,11 @@ async function analyzeSelectedFile() {
   setBusy(true);
   showProgress("progressReading");
   startTimer();
+  trackWebEvent("webui.analysis.started", {
+    result: "started",
+    input_source: "upload",
+    ...getFileAnalyticsFields(file),
+  });
 
   const terminalSystem = await detectTerminalSystem();
 
@@ -1659,6 +1728,10 @@ function failActiveWorkerJobs(message) {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
       showError(message);
+      trackWebEvent("webui.analysis.failed", {
+        result: "worker_error",
+        error_name: "AnalyzerWorkerError",
+      });
     }
   }
 }
@@ -1691,6 +1764,10 @@ function handleWorkerMessage(event) {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
       showError(message.error || t("workerFailed"));
+      trackWebEvent("webui.analysis.failed", {
+        result: "error",
+        error_name: "AnalyzerWorkerError",
+      });
     }
     return;
   }
@@ -1711,6 +1788,11 @@ function handleWorkerMessage(event) {
     updateClearButton();
     showProgress("progressDone");
     renderReport();
+    trackWebEvent("webui.analysis.succeeded", {
+      result: "success",
+      input_source: "upload",
+      ...getReportAnalyticsFields(message.report),
+    });
   }
 }
 
@@ -1749,6 +1831,7 @@ function updateElapsed() {
 }
 
 function resetState() {
+  const hadContent = Boolean(state.selectedFile || state.report || state.activeAnalyzeJobId != null);
   if (state.activeAnalyzeJobId != null) {
     state.jobs.delete(state.activeAnalyzeJobId);
     state.activeAnalyzeJobId = null;
@@ -1768,6 +1851,12 @@ function resetState() {
   renderSelectedFile();
   updateClearButton();
   renderReport();
+
+  if (hadContent) {
+    trackWebEvent("webui.analysis.reset", {
+      result: "success",
+    });
+  }
 }
 
 function showError(message) {
@@ -1808,16 +1897,33 @@ async function openHistoryItem(id) {
   elements.progressLabel.textContent = t("progressReady");
   updateClearButton();
   renderReport();
+  trackWebEvent("webui.history.opened", {
+    result: "success",
+    input_source: "history",
+    ...getReportAnalyticsFields(state.report),
+  });
 }
 
 function deleteHistoryItem(id) {
+  const previousCount = state.history.length;
   state.history = persistHistory(state.history.filter((item) => item.id !== id));
   renderHistoryList();
+  trackWebEvent("webui.history.deleted", {
+    result: "success",
+    history_count: state.history.length,
+    value: Math.max(0, previousCount - state.history.length),
+  });
 }
 
 function clearHistory() {
+  const previousCount = state.history.length;
   state.history = persistHistory([]);
   renderHistoryList();
+  trackWebEvent("webui.history.cleared", {
+    result: "success",
+    history_count: 0,
+    value: previousCount,
+  });
 }
 
 function setHistoryCollapsed(isCollapsed, options = {}) {
@@ -1835,6 +1941,10 @@ function setHistoryCollapsed(isCollapsed, options = {}) {
   }
 
   persistHistoryCollapsed(state.historyCollapsed);
+  trackWebEvent("webui.history.toggled", {
+    result: state.historyCollapsed ? "collapsed" : "expanded",
+    operation: state.historyCollapsed ? "collapse" : "expand",
+  });
 }
 
 function updateHistoryCollapse() {
@@ -2633,6 +2743,12 @@ function isLikelyApk(file) {
 }
 
 function downloadReport(report) {
+  trackWebEvent("webui.report.exported", {
+    result: "success",
+    operation: "json_export",
+    ...getReportAnalyticsFields(report),
+  });
+
   const data = JSON.stringify(buildExportReport(report), null, 2);
   const blob = new Blob([data], { type: "application/json;charset=UTF-8" });
   const url = URL.createObjectURL(blob);
