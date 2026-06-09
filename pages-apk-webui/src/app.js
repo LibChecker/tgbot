@@ -13,6 +13,22 @@ const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissio
 const VALID_APP_MODES = new Set(["analyze", "compare"]);
 const THEME_STORAGE_KEY = "apk-webui-theme";
 const THEME_CHOICES = new Set(["light", "dark", "system"]);
+const ARCHIVE_CHART_CENTER = 60;
+const ARCHIVE_CHART_RADIUS = 52;
+const ARCHIVE_CHART_LABEL_MIN_PERCENT = 6;
+const ARCHIVE_CHART_SEGMENT_LIFT = 5;
+const ARCHIVE_CHART_COLORS = [
+  "#38bdf8",
+  "#22c55e",
+  "#f97316",
+  "#eab308",
+  "#a78bfa",
+  "#f43f5e",
+  "#14b8a6",
+  "#64748b",
+  "#d946ef",
+  "#84cc16",
+];
 const CONTRIBUTOR_GITHUB_ALIASES = new Map([
   ["absinthe", "zhaobozhen"],
 ]);
@@ -76,6 +92,7 @@ const elements = {
   emptyState: document.querySelector("#empty-state"),
   resultView: document.querySelector("#result-view"),
   reportHero: document.querySelector("#report-hero"),
+  archiveDistribution: document.querySelector("#archive-distribution"),
   tabs: document.querySelector("#tabs"),
   tabPanel: document.querySelector("#tab-panel"),
   compareView: document.querySelector("#compare-view"),
@@ -137,6 +154,7 @@ bindEvents();
 initColorOrbBackground();
 initSdkIconPreview();
 initSdkRulePreview();
+initArchiveChartPreview();
 
 function bindEvents() {
   elements.modeButtons.forEach((button) => {
@@ -984,6 +1002,224 @@ function initSdkRulePreview() {
   window.addEventListener("resize", hidePreview);
 }
 
+function initArchiveChartPreview() {
+  let preview = null;
+  let activeSegment = null;
+  let activePinned = false;
+  let hideTimer = null;
+  let lastPointerType = "";
+  let lastPoint = null;
+
+  const ensurePreview = () => {
+    if (preview) {
+      return preview;
+    }
+
+    preview = document.createElement("div");
+    preview.className = "sdk-rule-preview archive-chart-preview";
+    preview.setAttribute("role", "tooltip");
+    preview.setAttribute("aria-hidden", "true");
+    preview.hidden = true;
+    document.body.append(preview);
+    return preview;
+  };
+
+  const positionPreview = (segment, event = null) => {
+    const popup = ensurePreview();
+    const segmentRect = segment.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    const gap = 14;
+    const margin = 8;
+    const popupWidth = popupRect.width || 300;
+    const popupHeight = popupRect.height || 140;
+    const x = Number.isFinite(event?.clientX)
+      ? event.clientX
+      : lastPoint?.x ?? segmentRect.left + segmentRect.width / 2;
+    const y = Number.isFinite(event?.clientY)
+      ? event.clientY
+      : lastPoint?.y ?? segmentRect.top + segmentRect.height / 2;
+
+    let left = x + gap;
+    if (left + popupWidth > window.innerWidth - margin) {
+      left = x - popupWidth - gap;
+    }
+    left = clamp(left, margin, window.innerWidth - popupWidth - margin);
+
+    let top = y + gap;
+    if (top + popupHeight > window.innerHeight - margin) {
+      top = y - popupHeight - gap;
+    }
+    top = clamp(top, margin, window.innerHeight - popupHeight - margin);
+
+    popup.style.setProperty("--rule-preview-x", `${left}px`);
+    popup.style.setProperty("--rule-preview-y", `${top}px`);
+  };
+
+  const hidePreview = () => {
+    if (!preview) {
+      return;
+    }
+
+    cancelScheduledHide();
+    preview.classList.remove("is-visible", "is-pinned");
+    preview.setAttribute("aria-hidden", "true");
+    activeSegment?.classList.remove("is-active");
+    activeSegment = null;
+    activePinned = false;
+    lastPoint = null;
+    window.setTimeout(() => {
+      if (!activeSegment && preview) {
+        preview.hidden = true;
+      }
+    }, 140);
+  };
+
+  const scheduleHidePreview = () => {
+    if (activePinned) {
+      return;
+    }
+
+    cancelScheduledHide();
+    hideTimer = window.setTimeout(() => {
+      const activeElement = document.activeElement;
+      if (
+        activeSegment?.matches(":hover") ||
+        activeElement?.closest?.(".archive-chart-segment")
+      ) {
+        return;
+      }
+
+      hidePreview();
+    }, 80);
+  };
+
+  const cancelScheduledHide = () => {
+    if (hideTimer) {
+      window.clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  };
+
+  const showPreview = (segment, event = null, options = {}) => {
+    cancelScheduledHide();
+    const content = buildArchiveChartPreviewContent(segment);
+    if (!content) {
+      hidePreview();
+      return;
+    }
+
+    if (Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+      lastPoint = { x: event.clientX, y: event.clientY };
+    }
+
+    const popup = ensurePreview();
+    const pinned = Boolean(options.pinned);
+    popup.style.setProperty("--archive-segment-color", segment.dataset.archiveColor || "var(--accent)");
+    if (activeSegment === segment) {
+      activePinned = activePinned || pinned;
+      popup.classList.toggle("is-pinned", activePinned);
+      segment.classList.add("is-active");
+      positionPreview(segment, event);
+      return;
+    }
+
+    activeSegment?.classList.remove("is-active");
+    popup.hidden = false;
+    popup.classList.remove("is-visible", "is-pinned");
+    popup.classList.toggle("is-pinned", pinned);
+    popup.setAttribute("aria-hidden", "false");
+    popup.replaceChildren(content);
+    activeSegment = segment;
+    activeSegment.classList.add("is-active");
+    activePinned = pinned;
+    positionPreview(segment, event);
+    window.requestAnimationFrame(() => {
+      if (activeSegment === segment) {
+        popup.classList.add("is-visible");
+      }
+    });
+  };
+
+  const handleHoverEvent = (event) => {
+    if (shouldUseTapPopups(event.pointerType || lastPointerType) || activePinned) {
+      return;
+    }
+
+    const segment = event.target.closest?.(".archive-chart-segment");
+    if (!segment) {
+      if (activeSegment && !document.activeElement?.closest?.(".archive-chart-segment")) {
+        scheduleHidePreview();
+      }
+      return;
+    }
+
+    showPreview(segment, event);
+  };
+
+  const handleLeaveEvent = (event) => {
+    if (shouldUseTapPopups(event.pointerType || lastPointerType) || activePinned) {
+      return;
+    }
+
+    const segment = event.target.closest?.(".archive-chart-segment");
+    if (!segment || segment !== activeSegment) {
+      return;
+    }
+
+    if (event.relatedTarget && segment.contains(event.relatedTarget)) {
+      return;
+    }
+
+    scheduleHidePreview();
+  };
+
+  document.addEventListener("pointerdown", (event) => {
+    lastPointerType = event.pointerType || "";
+  });
+  document.addEventListener("pointerover", handleHoverEvent);
+  document.addEventListener("pointermove", handleHoverEvent);
+  document.addEventListener("mouseover", handleHoverEvent);
+  document.addEventListener("mousemove", handleHoverEvent);
+  document.addEventListener("pointerout", handleLeaveEvent);
+  document.addEventListener("mouseout", handleLeaveEvent);
+  document.addEventListener("click", (event) => {
+    const segment = event.target.closest?.(".archive-chart-segment");
+    if (segment) {
+      showPreview(segment, event, { pinned: true });
+      return;
+    }
+
+    if (activePinned) {
+      hidePreview();
+    }
+  });
+  document.addEventListener("focusin", (event) => {
+    const segment = event.target.closest?.(".archive-chart-segment");
+    if (segment) {
+      showPreview(segment);
+    }
+  });
+  document.addEventListener("focusout", (event) => {
+    const segment = event.target.closest?.(".archive-chart-segment");
+    if (segment && segment === activeSegment) {
+      scheduleHidePreview();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && activeSegment) {
+      hidePreview();
+    }
+  });
+
+  window.addEventListener("scroll", () => {
+    if (activeSegment) {
+      positionPreview(activeSegment);
+    }
+  }, true);
+
+  window.addEventListener("resize", hidePreview);
+}
+
 function shouldUseTapPopups(pointerType = "") {
   return (
     pointerType === "touch" ||
@@ -1046,6 +1282,40 @@ function buildRulePreviewContent(label, detail) {
     }
     root.append(metaNode);
   }
+
+  return root;
+}
+
+function buildArchiveChartPreviewContent(segment) {
+  const root = document.createElement("div");
+  root.className = "sdk-rule-preview-card";
+
+  const titleNode = document.createElement("div");
+  titleNode.className = "sdk-rule-preview-title";
+  titleNode.textContent = segment.dataset.archiveName || t("unknown");
+  root.append(titleNode);
+
+  const metaNode = document.createElement("div");
+  metaNode.className = "sdk-rule-preview-meta";
+  const metaRows = [
+    [t("size"), segment.dataset.archiveSize || t("unknown")],
+    [t("archiveDistributionPercent"), segment.dataset.archivePercent || t("unknown")],
+  ];
+
+  for (const [name, value] of metaRows) {
+    const row = document.createElement("div");
+    row.className = "sdk-rule-preview-meta-row";
+
+    const nameNode = document.createElement("span");
+    nameNode.textContent = name;
+
+    const valueNode = document.createElement("span");
+    valueNode.append(createTextNode(value));
+
+    row.append(nameNode, valueNode);
+    metaNode.append(row);
+  }
+  root.append(metaNode);
 
   return root;
 }
@@ -1642,6 +1912,9 @@ function renderReport() {
     elements.emptyState.hidden = false;
     elements.resultView.hidden = true;
     elements.reportHero.innerHTML = "";
+    elements.archiveDistribution.innerHTML = "";
+    elements.archiveDistribution.hidden = true;
+    elements.resultView.classList.remove("has-archive-distribution");
     elements.tabPanel.innerHTML = "";
     return;
   }
@@ -1649,6 +1922,10 @@ function renderReport() {
   elements.emptyState.hidden = true;
   elements.resultView.hidden = false;
   elements.reportHero.innerHTML = renderHero(state.report);
+  const archiveDistribution = renderArchiveDistribution(state.report);
+  elements.archiveDistribution.innerHTML = archiveDistribution;
+  elements.archiveDistribution.hidden = !archiveDistribution;
+  elements.resultView.classList.toggle("has-archive-distribution", Boolean(archiveDistribution));
   initAppTitleColorMask(elements.reportHero, state.report.apkInfo);
   updateTabs();
   renderTabPanel();
@@ -1701,6 +1978,179 @@ function renderHero(report) {
     `</div>`,
     `</div>`,
   ].join("");
+}
+
+function renderArchiveDistribution(report) {
+  const entries = getArchiveDistributionEntries(report.apkInfo?.archive);
+  if (entries.length < 2) {
+    return "";
+  }
+
+  const totalSize = entries.reduce((sum, entry) => sum + entry.size, 0);
+  if (totalSize <= 0) {
+    return "";
+  }
+
+  return [
+    `<section class="archive-chart" aria-label="${escapeAttr(t("archiveDistributionTitle"))}">`,
+    `<div class="archive-chart-copy">`,
+    `<h3>${escapeHtml(t("archiveDistributionTitle"))}</h3>`,
+    `<p>${escapeHtml(t("archiveDistributionSummary", { count: entries.length, size: formatBytes(totalSize) }))}</p>`,
+    `</div>`,
+    `<div class="archive-chart-body">`,
+    renderArchivePieChart(entries, totalSize),
+    `</div>`,
+    `</section>`,
+  ].join("");
+}
+
+function getArchiveDistributionEntries(archive) {
+  if (!archive || archive.type !== "package-container" || !Array.isArray(archive.apkEntryDetails)) {
+    return [];
+  }
+
+  return archive.apkEntryDetails
+    .map((entry) => {
+      const path = String(entry.path || "");
+      const name = String(entry.name || getFileNameFromPath(path) || t("unknown"));
+      const size = Number(entry.size ?? entry.uncompressedSize ?? entry.compressedSize) || 0;
+      return {
+        path,
+        name,
+        size,
+        analyzed: Boolean(entry.analyzed) || path === archive.analyzedEntry,
+      };
+    })
+    .filter((entry) => entry.size > 0)
+    .sort((left, right) => right.size - left.size || left.name.localeCompare(right.name));
+}
+
+function renderArchivePieChart(entries, totalSize) {
+  let startAngle = 0;
+  const segments = [];
+
+  entries.forEach((entry, index) => {
+    const percentValue = (entry.size / totalSize) * 100;
+    const endAngle = index === entries.length - 1
+      ? 360
+      : startAngle + (entry.size / totalSize) * 360;
+    const sliceAngle = endAngle - startAngle;
+    const color = getArchiveChartColor(index);
+    const percent = formatPercent(entry.size, totalSize);
+    const size = formatBytes(entry.size);
+    const angle = midAngle(startAngle, endAngle);
+    const lift = getArchiveSegmentLift(angle);
+    const label = renderArchivePieLabel(percent, percentValue, angle);
+    const ariaLabel = `${entry.name}, ${size}, ${percent}`;
+
+    segments.push([
+      `<g class="archive-chart-segment" tabindex="0" aria-label="${escapeAttr(ariaLabel)}" data-archive-name="${escapeAttr(entry.name)}" data-archive-size="${escapeAttr(size)}" data-archive-percent="${escapeAttr(percent)}" data-archive-color="${escapeAttr(color)}" style="--archive-lift-x: ${formatSvgNumber(lift.x)}px; --archive-lift-y: ${formatSvgNumber(lift.y)}px;">`,
+      `<path class="archive-chart-slice" d="${escapeAttr(describePieSlice(startAngle, endAngle))}" fill="${escapeAttr(color)}"></path>`,
+      label,
+      `</g>`,
+    ].join(""));
+
+    startAngle = endAngle;
+  });
+
+  return [
+    `<svg class="archive-chart-pie" viewBox="0 0 120 120" role="img" aria-label="${escapeAttr(t("archiveDistributionTitle"))}">`,
+    `<g class="archive-chart-slices">`,
+    segments.join(""),
+    `</g>`,
+    `</svg>`,
+  ].join("");
+}
+
+function renderArchivePieLabel(percent, percentValue, angle) {
+  const fontSize = getArchiveLabelFontSize(percentValue);
+  const radius = getArchiveLabelRadius(percentValue);
+  if (percentValue < ARCHIVE_CHART_LABEL_MIN_PERCENT) {
+    return "";
+  }
+
+  const labelPoint = polarToCartesian(angle, radius);
+  return `<text class="archive-chart-label" x="${formatSvgNumber(labelPoint.x)}" y="${formatSvgNumber(labelPoint.y)}" font-size="${formatSvgNumber(fontSize)}" aria-hidden="true">${escapeHtml(percent)}</text>`;
+}
+
+function getArchiveLabelFontSize(percentValue) {
+  if (percentValue >= 50) {
+    return 12;
+  }
+  if (percentValue >= 25) {
+    return 9.5;
+  }
+  if (percentValue >= 12) {
+    return 7.2;
+  }
+  return 5.8;
+}
+
+function getArchiveLabelRadius(percentValue) {
+  if (percentValue >= 55) {
+    return 25;
+  }
+  if (percentValue >= 30) {
+    return 34;
+  }
+  if (percentValue >= 12) {
+    return 38;
+  }
+  return 42;
+}
+
+function getArchiveSegmentLift(angleDegrees) {
+  const radians = ((angleDegrees - 90) * Math.PI) / 180;
+  return {
+    x: ARCHIVE_CHART_SEGMENT_LIFT * Math.cos(radians),
+    y: ARCHIVE_CHART_SEGMENT_LIFT * Math.sin(radians),
+  };
+}
+
+function describePieSlice(startAngle, endAngle) {
+  const start = polarToCartesian(startAngle, ARCHIVE_CHART_RADIUS);
+  const end = polarToCartesian(endAngle, ARCHIVE_CHART_RADIUS);
+  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0;
+
+  return [
+    `M ${ARCHIVE_CHART_CENTER} ${ARCHIVE_CHART_CENTER}`,
+    `L ${formatSvgNumber(start.x)} ${formatSvgNumber(start.y)}`,
+    `A ${ARCHIVE_CHART_RADIUS} ${ARCHIVE_CHART_RADIUS} 0 ${largeArcFlag} 1 ${formatSvgNumber(end.x)} ${formatSvgNumber(end.y)}`,
+    "Z",
+  ].join(" ");
+}
+
+function polarToCartesian(angleDegrees, radius) {
+  const radians = ((angleDegrees - 90) * Math.PI) / 180;
+  return {
+    x: ARCHIVE_CHART_CENTER + radius * Math.cos(radians),
+    y: ARCHIVE_CHART_CENTER + radius * Math.sin(radians),
+  };
+}
+
+function midAngle(startAngle, endAngle) {
+  return startAngle + (endAngle - startAngle) / 2;
+}
+
+function getArchiveChartColor(index) {
+  return ARCHIVE_CHART_COLORS[index % ARCHIVE_CHART_COLORS.length];
+}
+
+function getFileNameFromPath(path) {
+  return String(path || "").split(/[\\/]/u).filter(Boolean).at(-1) || "";
+}
+
+function formatPercent(size, totalSize) {
+  if (totalSize <= 0) {
+    return "0%";
+  }
+
+  const percent = (size / totalSize) * 100;
+  return `${percent >= 10 ? percent.toFixed(0) : percent.toFixed(1)}%`;
+}
+
+function formatSvgNumber(value) {
+  return Number(value).toFixed(3).replace(/\.?0+$/u, "");
 }
 
 function renderSummaryTab(report) {

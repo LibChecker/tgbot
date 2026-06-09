@@ -144,17 +144,20 @@
         </section>
 
         <section class="result-view" id="result-view" hidden>
-          <div class="report-hero" id="report-hero"></div>
-          <nav class="tabs" id="tabs" role="tablist" aria-label="Report tabs">
-            <button type="button" class="tab is-active" data-tab="summary" role="tab" aria-selected="true" data-i18n="tabSummary">摘要</button>
-            <button type="button" class="tab" data-tab="sdk" role="tab" aria-selected="false" data-i18n="tabSdk">SDK</button>
-            <button type="button" class="tab" data-tab="native" role="tab" aria-selected="false" data-i18n="tabNative">原生库</button>
-            <button type="button" class="tab" data-tab="components" role="tab" aria-selected="false" data-i18n="tabComponents">组件</button>
-            <button type="button" class="tab" data-tab="permissions" role="tab" aria-selected="false" data-i18n="tabPermissions">权限</button>
-            <button type="button" class="tab" data-tab="signatures" role="tab" aria-selected="false" data-i18n="tabSignatures">签名</button>
-            <button type="button" class="tab" data-tab="metadata" role="tab" aria-selected="false" data-i18n="tabMeta">元数据</button>
-            <button type="button" class="tab" data-tab="raw" role="tab" aria-selected="false" data-i18n="tabRaw">JSON</button>
-          </nav>
+          <div class="result-main">
+            <div class="report-hero" id="report-hero"></div>
+            <nav class="tabs" id="tabs" role="tablist" aria-label="Report tabs">
+              <button type="button" class="tab is-active" data-tab="summary" role="tab" aria-selected="true" data-i18n="tabSummary">摘要</button>
+              <button type="button" class="tab" data-tab="sdk" role="tab" aria-selected="false" data-i18n="tabSdk">SDK</button>
+              <button type="button" class="tab" data-tab="native" role="tab" aria-selected="false" data-i18n="tabNative">原生库</button>
+              <button type="button" class="tab" data-tab="components" role="tab" aria-selected="false" data-i18n="tabComponents">组件</button>
+              <button type="button" class="tab" data-tab="permissions" role="tab" aria-selected="false" data-i18n="tabPermissions">权限</button>
+              <button type="button" class="tab" data-tab="signatures" role="tab" aria-selected="false" data-i18n="tabSignatures">签名</button>
+              <button type="button" class="tab" data-tab="metadata" role="tab" aria-selected="false" data-i18n="tabMeta">元数据</button>
+              <button type="button" class="tab" data-tab="raw" role="tab" aria-selected="false" data-i18n="tabRaw">JSON</button>
+            </nav>
+          </div>
+          <div class="archive-distribution" id="archive-distribution" hidden></div>
           <div class="tab-panel" id="tab-panel" role="tabpanel"></div>
         </section>
 
