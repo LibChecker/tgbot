@@ -590,18 +590,12 @@ async function renderAdaptiveIcon(xmlBytes, source, resources, candidate, seen) 
 
   const backgroundResourceId = getAdaptiveIconLayerResourceId(elements, "background");
   const foregroundResourceId = getAdaptiveIconLayerResourceId(elements, "foreground");
-  const backgroundLayer = await readAdaptiveIconLayer(
-    source,
-    resources,
-    backgroundResourceId,
-    new Set(seen),
-  );
-  const foregroundLayer = await readAdaptiveIconLayer(
-    source,
-    resources,
-    foregroundResourceId,
-    new Set(seen),
-  );
+  const backgroundLayer =
+    (await readAdaptiveIconLayer(source, resources, backgroundResourceId, new Set(seen))) ||
+    readAdaptiveIconInlineColorLayer(elements, "background");
+  const foregroundLayer =
+    (await readAdaptiveIconLayer(source, resources, foregroundResourceId, new Set(seen))) ||
+    readAdaptiveIconInlineColorLayer(elements, "foreground");
 
   if (!backgroundLayer && !foregroundLayer) {
     return null;
@@ -625,6 +619,20 @@ async function renderAdaptiveIcon(xmlBytes, source, resources, candidate, seen) 
 function getAdaptiveIconLayerResourceId(elements, layerName) {
   const element = elements.find((item) => item.name === layerName);
   return getReferenceAttributeResourceId(element, "drawable");
+}
+
+function readAdaptiveIconInlineColorLayer(elements, layerName) {
+  const element = elements.find((item) => item.name === layerName);
+  const color =
+    resolveInlineColorAttribute(element?.attributes.get("drawable")) ||
+    resolveInlineColorAttribute(element?.attributes.get("color"));
+
+  return color
+    ? {
+        kind: "color",
+        color,
+      }
+    : null;
 }
 
 function getReferenceAttributeResourceId(element, preferredName) {
@@ -716,6 +724,14 @@ async function readAdaptiveIconLayerFromXmlCandidates(source, resources, candida
         };
       }
 
+      const shapeLayer = buildShapeDrawableSvgLayer(xmlBytes, resources, candidate);
+      if (shapeLayer) {
+        return {
+          ...shapeLayer,
+          path: candidate.path,
+        };
+      }
+
       const referencedResourceIds = parseIconXmlReferencedResourceIds(xmlBytes);
       for (const referencedResourceId of referencedResourceIds) {
         const referencedLayer = await readAdaptiveIconLayer(
@@ -803,6 +819,13 @@ function renderAdaptiveIconLayer(layer, role, size) {
     return `<g${transform}>${layer.content}</g>`;
   }
 
+  if (layer.kind === "shape") {
+    return [
+      layer.defs,
+      `<rect x="0" y="0" width="${size}" height="${size}" fill="${escapeXmlAttribute(layer.paint)}"/>`,
+    ].join("");
+  }
+
   return "";
 }
 
@@ -865,6 +888,129 @@ async function buildVectorDrawableSvgLayer(xmlBytes, source, resources, candidat
     viewportHeight,
     content: `${defs.length > 0 ? `<defs>${defs.join("")}</defs>` : ""}${paths.join("")}`,
   };
+}
+
+function buildShapeDrawableSvgLayer(xmlBytes, resources, candidate = null) {
+  const elements = parseDrawableXmlElements(xmlBytes);
+  if (!elements.some((element) => element.name === "shape")) {
+    return null;
+  }
+
+  const solidElement = elements.find((element) => element.name === "solid");
+  const solidColor = resolveShapeColorAttribute(solidElement?.attributes.get("color"), resources);
+  if (solidColor) {
+    return {
+      kind: "shape",
+      defs: "",
+      paint: solidColor,
+    };
+  }
+
+  const gradientElement = elements.find((element) => element.name === "gradient");
+  const gradient = buildShapeDrawableGradient(gradientElement, resources, candidate);
+  if (gradient) {
+    return {
+      kind: "shape",
+      defs: `<defs>${gradient.def}</defs>`,
+      paint: `url(#${gradient.id})`,
+    };
+  }
+
+  return null;
+}
+
+function buildShapeDrawableGradient(gradientElement, resources, candidate) {
+  if (!gradientElement) {
+    return null;
+  }
+
+  const stops = getShapeGradientStops(gradientElement, resources);
+  if (stops.length < 2) {
+    return null;
+  }
+
+  const id = `${buildSvgIdPrefix(candidate?.path || "shape")}-gradient`;
+  const type = getXmlAttributeValue(gradientElement, "type");
+  const def =
+    type === "1"
+      ? buildShapeRadialGradient(id, gradientElement, stops)
+      : buildShapeLinearGradient(id, gradientElement, stops);
+
+  return {
+    id,
+    def,
+  };
+}
+
+function getShapeGradientStops(gradientElement, resources) {
+  const startColor = resolveShapeColorAttribute(
+    gradientElement.attributes.get("startColor"),
+    resources,
+  );
+  const centerColor = resolveShapeColorAttribute(
+    gradientElement.attributes.get("centerColor"),
+    resources,
+  );
+  const endColor = resolveShapeColorAttribute(
+    gradientElement.attributes.get("endColor"),
+    resources,
+  );
+  const stops = [];
+
+  if (startColor) {
+    stops.push({ color: startColor, offset: 0 });
+  }
+
+  if (centerColor) {
+    stops.push({ color: centerColor, offset: 0.5 });
+  }
+
+  if (endColor) {
+    stops.push({ color: endColor, offset: 1 });
+  }
+
+  return stops;
+}
+
+function buildShapeLinearGradient(id, gradientElement, stops) {
+  const angle = ((getNumericXmlAttribute(gradientElement, "angle") ?? 0) % 360 + 360) % 360;
+  const radians = (angle * Math.PI) / 180;
+  const dx = Math.cos(radians);
+  const dy = -Math.sin(radians);
+  const x1 = 50 - dx * 50;
+  const y1 = 50 - dy * 50;
+  const x2 = 50 + dx * 50;
+  const y2 = 50 + dy * 50;
+
+  return [
+    `<linearGradient id="${escapeXmlAttribute(id)}"`,
+    ` x1="${formatSvgNumber(x1)}%" y1="${formatSvgNumber(y1)}%"`,
+    ` x2="${formatSvgNumber(x2)}%" y2="${formatSvgNumber(y2)}%">`,
+    renderSvgGradientStops(stops),
+    "</linearGradient>",
+  ].join("");
+}
+
+function buildShapeRadialGradient(id, gradientElement, stops) {
+  const centerX = getNumericXmlAttribute(gradientElement, "centerX");
+  const centerY = getNumericXmlAttribute(gradientElement, "centerY");
+
+  return [
+    `<radialGradient id="${escapeXmlAttribute(id)}"`,
+    ` cx="${formatShapeGradientPercent(centerX, 50)}%"`,
+    ` cy="${formatShapeGradientPercent(centerY, 50)}%" r="50%">`,
+    renderSvgGradientStops(stops),
+    "</radialGradient>",
+  ].join("");
+}
+
+function formatShapeGradientPercent(value, fallback) {
+  const normalized = value == null ? fallback : value;
+  return formatSvgNumber(Math.abs(normalized) <= 1 ? normalized * 100 : normalized);
+}
+
+function resolveShapeColorAttribute(attribute, resources) {
+  return resolveInlineColorAttribute(attribute) || resolveVectorColor(attribute, resources);
 }
 
 function renderStandaloneVectorSvg(layer) {
@@ -2613,6 +2759,8 @@ function getAndroidAttributeName(resourceId) {
       return "startColor";
     case 0x0101019e:
       return "endColor";
+    case 0x010101a0:
+      return "angle";
     case 0x010101a1:
       return "type";
     case 0x010101a2:
