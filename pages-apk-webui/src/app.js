@@ -944,8 +944,9 @@ function updateThemeIndicator(themeChoice = state.themeChoice) {
   window.requestAnimationFrame(() => {
     const groupRect = elements.themeChipGroup.getBoundingClientRect();
     const buttonRect = activeButton.getBoundingClientRect();
-    elements.themeChipGroup.style.setProperty("--theme-indicator-x", `${(buttonRect.left - groupRect.left).toFixed(1)}px`);
-    elements.themeChipGroup.style.setProperty("--theme-indicator-y", `${(buttonRect.top - groupRect.top).toFixed(1)}px`);
+    const groupStyle = getComputedStyle(elements.themeChipGroup);
+    const borderLeft = Number.parseFloat(groupStyle.borderLeftWidth) || 0;
+    elements.themeChipGroup.style.setProperty("--theme-indicator-x", `${(buttonRect.left - groupRect.left - borderLeft).toFixed(1)}px`);
     elements.themeChipGroup.style.setProperty("--theme-indicator-width", `${buttonRect.width.toFixed(1)}px`);
     elements.themeChipGroup.style.setProperty("--theme-indicator-height", `${buttonRect.height.toFixed(1)}px`);
   });

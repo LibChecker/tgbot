@@ -461,12 +461,14 @@ svg {
 }
 
 .theme-chip-group {
+  --theme-chip-group-height: 38px;
+  --theme-chip-inner-height: 30px;
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 38px;
-  padding: 3px;
+  height: var(--theme-chip-group-height);
+  padding: 0 3px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -481,13 +483,13 @@ svg {
   content: "";
   position: absolute;
   left: 0;
-  top: 0;
+  top: 50%;
   z-index: 0;
   width: var(--theme-indicator-width, 46px);
-  height: var(--theme-indicator-height, 30px);
+  height: var(--theme-indicator-height, var(--theme-chip-inner-height));
   border-radius: 10px;
   background: var(--accent-soft);
-  transform: translate3d(var(--theme-indicator-x, 3px), var(--theme-indicator-y, 3px), 0);
+  transform: translate3d(var(--theme-indicator-x, 3px), -50%, 0);
   transition:
     transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
     width 260ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -512,7 +514,8 @@ svg {
   align-items: center;
   justify-content: center;
   min-width: 46px;
-  min-height: 30px;
+  height: var(--theme-chip-inner-height);
+  min-height: 0;
   border: 0;
   border-radius: 10px;
   background: transparent;
