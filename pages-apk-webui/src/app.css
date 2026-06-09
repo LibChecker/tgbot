@@ -1,3 +1,15 @@
+@property --app-title-mask-x {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 50%;
+}
+
+@property --app-title-mask-y {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 50%;
+}
+
 :root {
   color-scheme: light;
   --bg: #f7f3ff;
@@ -369,8 +381,6 @@ svg {
   --title-letter-gap: 3.4px;
   --title-word-gap: 11px;
   --title-letter-scale-x: 0.86;
-  --brand-title-mask-x: 50%;
-  --brand-title-mask-y: 50%;
   --brand-title-mask-radius: 84px;
   margin: 0;
   color: var(--title-dot);
@@ -400,19 +410,18 @@ svg {
   max-width: 100%;
 }
 
-.brand-title__layer--color {
-  color: transparent;
-  opacity: 0;
+.brand-title__color-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  -webkit-mask-image: radial-gradient(circle var(--brand-title-mask-radius) at var(--brand-title-mask-x) var(--brand-title-mask-y), #000 0%, #000 48%, rgb(0 0 0 / 0.34) 72%, transparent 100%);
-  mask-image: radial-gradient(circle var(--brand-title-mask-radius) at var(--brand-title-mask-x) var(--brand-title-mask-y), #000 0%, #000 48%, rgb(0 0 0 / 0.34) 72%, transparent 100%);
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  transition: opacity 140ms ease;
+  visibility: hidden;
 }
 
-.brand-title.is-color-mask-active .brand-title__layer--color {
-  opacity: 1;
+.brand-title.is-color-mask-active .brand-title__color-canvas {
+  visibility: visible;
 }
 
 .brand-title__word {
@@ -441,13 +450,6 @@ svg {
 .brand-title__dot.is-on {
   opacity: 1;
   box-shadow: 0 0 0.35px currentColor;
-}
-
-.brand-title__layer--color .brand-title__dot.is-on {
-  background: hsl(var(--dot-hue, 250) 38% 72%);
-  box-shadow:
-    0 0 0.35px hsl(var(--dot-hue, 250) 34% 78% / 0.72),
-    0 0 7px hsl(var(--dot-hue, 250) 28% 62% / 0.16);
 }
 
 .topbar-actions {
@@ -1152,9 +1154,8 @@ svg {
 
 .app-title-mask {
   --app-title-hue: 265;
-  --app-title-mask-x: 50%;
-  --app-title-mask-y: 50%;
   --app-title-mask-radius: 118px;
+  --app-title-mask-diameter: 236px;
   --app-title-color-one: hsl(var(--app-title-hue) 58% 68%);
   --app-title-color-two: hsl(calc(var(--app-title-hue) + 16) 48% 72%);
   --app-title-color-three: hsl(calc(var(--app-title-hue) - 18) 54% 62%);
@@ -1180,19 +1181,38 @@ svg {
 }
 
 .app-title-mask__color {
+  --app-title-mask-x: 50%;
+  --app-title-mask-y: 50%;
   color: transparent;
   background:
-    radial-gradient(circle at var(--app-title-mask-x) var(--app-title-mask-y), var(--app-title-glow), transparent 58%),
+    radial-gradient(circle closest-side at center, var(--app-title-glow), transparent 58%),
     linear-gradient(105deg, var(--app-title-color-one), var(--app-title-color-two), var(--app-title-color-three));
+  background-position:
+    calc(var(--app-title-mask-x) - var(--app-title-mask-radius))
+    calc(var(--app-title-mask-y) - var(--app-title-mask-radius)),
+    0 0;
+  background-repeat: no-repeat;
+  background-size:
+    var(--app-title-mask-diameter) var(--app-title-mask-diameter),
+    100% 100%;
   background-clip: text;
   opacity: 0;
   pointer-events: none;
   -webkit-background-clip: text;
-  -webkit-mask-image: radial-gradient(circle var(--app-title-mask-radius) at var(--app-title-mask-x) var(--app-title-mask-y), #000 0%, #000 58%, rgb(0 0 0 / 0.46) 78%, transparent 100%);
-  mask-image: radial-gradient(circle var(--app-title-mask-radius) at var(--app-title-mask-x) var(--app-title-mask-y), #000 0%, #000 58%, rgb(0 0 0 / 0.46) 78%, transparent 100%);
+  -webkit-mask-image: radial-gradient(circle closest-side at center, #000 0%, #000 58%, rgb(0 0 0 / 0.46) 78%, transparent 100%);
+  mask-image: radial-gradient(circle closest-side at center, #000 0%, #000 58%, rgb(0 0 0 / 0.46) 78%, transparent 100%);
+  -webkit-mask-size: var(--app-title-mask-diameter) var(--app-title-mask-diameter);
+  mask-size: var(--app-title-mask-diameter) var(--app-title-mask-diameter);
+  -webkit-mask-position:
+    calc(var(--app-title-mask-x) - var(--app-title-mask-radius))
+    calc(var(--app-title-mask-y) - var(--app-title-mask-radius));
+  mask-position:
+    calc(var(--app-title-mask-x) - var(--app-title-mask-radius))
+    calc(var(--app-title-mask-y) - var(--app-title-mask-radius));
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   transition: opacity 140ms ease;
+  will-change: opacity, background-position, -webkit-mask-position, mask-position;
 }
 
 .app-title-mask.is-color-mask-active .app-title-mask__color {
