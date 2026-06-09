@@ -17,6 +17,8 @@ const DOT_TITLE_GLYPHS = {
 
 const BRAND_TITLE_MASK_DEFAULT_RADIUS = 84;
 const BRAND_TITLE_CANVAS_DPR_LIMIT = 2;
+const BRAND_TITLE_MASK_REVEAL_MS = 320;
+const BRAND_TITLE_MASK_REVEAL_FEATHER_SCALE = 0.34;
 const POINTER_MASK_EVENT_OPTIONS = { passive: true };
 
 function rgbToHsl(color) {
@@ -155,6 +157,7 @@ function initBrandTitleCanvasMask(node, canvas, context, baseLayer) {
   let canvasHeight = 0;
   let dpr = 1;
   let maskRadius = BRAND_TITLE_MASK_DEFAULT_RADIUS;
+  let revealStartedAt = 0;
 
   const measure = () => {
     rect = node.getBoundingClientRect();
@@ -193,22 +196,27 @@ function initBrandTitleCanvasMask(node, canvas, context, baseLayer) {
     context.clearRect(0, 0, canvasWidth, canvasHeight);
   };
 
-  const drawMask = () => {
-    frameId = 0;
+  const drawMask = (timestamp = performance.now()) => {
     if (!active || !node.isConnected || !canvas.isConnected) {
+      frameId = 0;
       return;
     }
     if (!rect) {
       measure();
     }
 
+    const revealProgress = getBrandTitleMaskRevealProgress(timestamp - revealStartedAt);
+    const easedRevealProgress = easeInOutCubic(revealProgress);
+    const revealFeather = maskRadius * BRAND_TITLE_MASK_REVEAL_FEATHER_SCALE;
+    const revealRadius = (maskRadius + revealFeather) * easedRevealProgress;
     const x = clamp(pendingClientX - rect.left, 0, rect.width);
     const y = clamp(pendingClientY - rect.top, 0, rect.height);
     clearCanvas();
 
     for (const dot of dots) {
       const distance = Math.hypot(dot.x - x, dot.y - y);
-      const alpha = getBrandTitleMaskAlpha(distance, maskRadius);
+      const alpha = getBrandTitleMaskAlpha(distance, maskRadius) *
+        getBrandTitleRevealAlpha(distance, revealRadius, revealFeather);
       if (alpha <= 0.01) {
         continue;
       }
@@ -220,6 +228,12 @@ function initBrandTitleCanvasMask(node, canvas, context, baseLayer) {
     }
 
     node.classList.add("is-color-mask-active");
+    if (revealProgress < 1) {
+      frameId = requestAnimationFrame(drawMask);
+      return;
+    }
+
+    frameId = 0;
   };
 
   const scheduleMaskDraw = (event) => {
@@ -227,6 +241,7 @@ function initBrandTitleCanvasMask(node, canvas, context, baseLayer) {
     pendingClientY = event.clientY;
     if (!active) {
       active = true;
+      revealStartedAt = performance.now();
       measure();
     }
     node.classList.add("is-color-mask-active");
@@ -270,6 +285,32 @@ function getBrandTitleMaskAlpha(distance, radius) {
 
   const progress = (distance - softEdge) / (radius - softEdge);
   return 0.34 * (1 - progress);
+}
+
+function getBrandTitleMaskRevealProgress(elapsedMs) {
+  return clamp(elapsedMs / BRAND_TITLE_MASK_REVEAL_MS, 0, 1);
+}
+
+function getBrandTitleRevealAlpha(distance, revealRadius, revealFeather) {
+  if (revealRadius <= 0 || distance >= revealRadius) {
+    return 0;
+  }
+
+  const solidEdge = Math.max(0, revealRadius - revealFeather);
+  if (distance <= solidEdge) {
+    return 1;
+  }
+
+  const progress = (distance - solidEdge) / (revealRadius - solidEdge);
+  return 1 - easeInOutCubic(progress);
+}
+
+function easeInOutCubic(progress) {
+  if (progress < 0.5) {
+    return 4 * progress ** 3;
+  }
+
+  return 1 - ((-2 * progress + 2) ** 3) / 2;
 }
 
 function initColorMaskPointerTracking(node, { styleNode, xProperty, yProperty }) {
