@@ -257,6 +257,7 @@ function bindEvents() {
     }
   });
 
+  elements.historyList.addEventListener("pointerdown", handleHistoryPointerEvent);
   elements.historyList.addEventListener("pointerover", handleHistoryPointerEvent);
   elements.historyList.addEventListener("pointermove", handleHistoryPointerEvent);
   elements.historyList.addEventListener("pointerout", (event) => {
@@ -269,6 +270,10 @@ function bindEvents() {
   });
 
   elements.historyList.addEventListener("pointerleave", clearHistoryPointerState);
+
+  document.addEventListener("pointerup", clearTouchHistoryPointerState);
+  document.addEventListener("pointercancel", clearTouchHistoryPointerState);
+  window.addEventListener("blur", clearHistoryPointerState);
 
   document.addEventListener("pointermove", (event) => {
     const row = event.target.closest?.(".history-row");
@@ -534,6 +539,14 @@ function clearActiveHistoryRows(exceptRow = null) {
 
 function clearHistoryPointerState() {
   clearActiveHistoryRows();
+}
+
+function clearTouchHistoryPointerState(event) {
+  if (event.pointerType === "mouse") {
+    return;
+  }
+
+  clearHistoryPointerState();
 }
 
 function initSdkIconPreview() {
