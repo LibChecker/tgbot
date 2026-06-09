@@ -42,9 +42,16 @@ const themeDrag = {
   pendingChoice: "",
   suppressClick: false,
 };
+const modeDrag = {
+  active: false,
+  pointerId: null,
+  pendingMode: "",
+  suppressClick: false,
+};
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
+  modeChipGroup: document.querySelector("#mode-chip-group"),
   themeButtons: [...document.querySelectorAll(".theme-chip[data-theme-choice]")],
   themeChipGroup: document.querySelector("#theme-chip-group"),
   languageSelect: document.querySelector("#language-select"),
@@ -125,10 +132,21 @@ initSdkRulePreview();
 
 function bindEvents() {
   elements.modeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      if (modeDrag.suppressClick) {
+        event.preventDefault();
+        modeDrag.suppressClick = false;
+        return;
+      }
+
       setAppMode(button.dataset.appMode);
     });
   });
+  elements.modeChipGroup.addEventListener("pointerdown", beginModeDrag);
+  elements.modeChipGroup.addEventListener("pointermove", updateModeDrag);
+  elements.modeChipGroup.addEventListener("pointerup", endModeDrag);
+  elements.modeChipGroup.addEventListener("pointercancel", cancelModeDrag);
+  elements.modeChipGroup.addEventListener("lostpointercapture", cancelModeDrag);
 
   elements.themeButtons.forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -153,12 +171,16 @@ function bindEvents() {
     }
   });
 
-  window.addEventListener("resize", updateThemeIndicator);
+  window.addEventListener("resize", () => {
+    updateModeIndicator();
+    updateThemeIndicator();
+  });
 
   elements.languageSelect.addEventListener("change", () => {
     state.locale = normalizeLocale(elements.languageSelect.value);
     renderLanguageOptions();
     applyLocale();
+    updateModeIndicator();
     updateThemeIndicator();
     updateHistoryCollapse();
     renderSelectedFile();
@@ -287,6 +309,100 @@ function bindEvents() {
   });
 
   compareController.bindEvents();
+}
+
+function beginModeDrag(event) {
+  if (event.button !== 0) {
+    return;
+  }
+
+  modeDrag.active = true;
+  modeDrag.pointerId = event.pointerId;
+  modeDrag.suppressClick = true;
+  elements.modeChipGroup.classList.add("is-dragging");
+  try {
+    elements.modeChipGroup.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Pointer capture is an enhancement; nearest-mode dragging still works without it.
+  }
+  previewModeFromPointer(event);
+}
+
+function updateModeDrag(event) {
+  if (!modeDrag.active || event.pointerId !== modeDrag.pointerId) {
+    return;
+  }
+
+  previewModeFromPointer(event);
+}
+
+function endModeDrag(event) {
+  if (!modeDrag.active || event.pointerId !== modeDrag.pointerId) {
+    return;
+  }
+
+  previewModeFromPointer(event);
+  if (modeDrag.pendingMode) {
+    setAppMode(modeDrag.pendingMode);
+  }
+  finishModeDrag(event.pointerId);
+}
+
+function cancelModeDrag(event) {
+  if (!modeDrag.active || event.pointerId !== modeDrag.pointerId) {
+    return;
+  }
+
+  finishModeDrag(event.pointerId);
+}
+
+function finishModeDrag(pointerId) {
+  elements.modeChipGroup.classList.remove("is-dragging");
+  modeDrag.active = false;
+  modeDrag.pointerId = null;
+  modeDrag.pendingMode = "";
+  clearModePendingButtons();
+  updateModeIndicator();
+  try {
+    if (elements.modeChipGroup.hasPointerCapture?.(pointerId)) {
+      elements.modeChipGroup.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // The pointer may already have been released by the browser.
+  }
+  window.setTimeout(() => {
+    modeDrag.suppressClick = false;
+  }, 0);
+}
+
+function previewModeFromPointer(event) {
+  const appMode = getAppModeAtClientX(event.clientX);
+  if (!appMode || appMode === modeDrag.pendingMode) {
+    return;
+  }
+
+  modeDrag.pendingMode = appMode;
+  elements.modeButtons.forEach((button) => {
+    button.classList.toggle("is-pending", button.dataset.appMode === appMode);
+  });
+  updateModeIndicator(appMode);
+}
+
+function getAppModeAtClientX(clientX) {
+  let nearestMode = "";
+  let nearestDistance = Infinity;
+
+  for (const button of elements.modeButtons) {
+    const rect = button.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const distance = Math.abs(clientX - centerX);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestMode = button.dataset.appMode;
+    }
+  }
+
+  return nearestMode;
 }
 
 function beginThemeDrag(event) {
@@ -966,8 +1082,10 @@ function updateAppMode() {
   elements.modeButtons.forEach((button) => {
     const isActive = button.dataset.appMode === state.appMode;
     button.classList.toggle("is-active", isActive);
+    button.classList.remove("is-pending");
     button.setAttribute("aria-checked", isActive ? "true" : "false");
   });
+  updateModeIndicator();
 
   elements.form.hidden = isCompare;
   elements.historyPanel.hidden = isCompare;
@@ -989,6 +1107,29 @@ function updateClearButton() {
   }
 
   elements.clearButton.disabled = !state.selectedFile && !state.report;
+}
+
+function updateModeIndicator(appMode = state.appMode) {
+  const activeButton = elements.modeButtons.find((button) => button.dataset.appMode === appMode);
+  if (!activeButton || !elements.modeChipGroup) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    const groupRect = elements.modeChipGroup.getBoundingClientRect();
+    const buttonRect = activeButton.getBoundingClientRect();
+    const groupStyle = getComputedStyle(elements.modeChipGroup);
+    const borderLeft = Number.parseFloat(groupStyle.borderLeftWidth) || 0;
+    elements.modeChipGroup.style.setProperty("--mode-indicator-x", `${(buttonRect.left - groupRect.left - borderLeft).toFixed(1)}px`);
+    elements.modeChipGroup.style.setProperty("--mode-indicator-width", `${buttonRect.width.toFixed(1)}px`);
+    elements.modeChipGroup.style.setProperty("--mode-indicator-height", `${buttonRect.height.toFixed(1)}px`);
+  });
+}
+
+function clearModePendingButtons() {
+  elements.modeButtons.forEach((button) => {
+    button.classList.remove("is-pending");
+  });
 }
 
 

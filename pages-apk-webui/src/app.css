@@ -485,22 +485,61 @@ svg {
 }
 
 .mode-chip-group {
+  --mode-chip-group-height: 38px;
+  --mode-chip-inner-height: 30px;
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  height: 38px;
-  padding: 3px;
+  gap: 2px;
+  height: var(--mode-chip-group-height);
+  padding: 0 3px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+  cursor: grab;
+  isolation: isolate;
+  overflow: hidden;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.mode-chip-group::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  z-index: 0;
+  width: var(--mode-indicator-width, 54px);
+  height: var(--mode-indicator-height, var(--mode-chip-inner-height));
+  border-radius: 10px;
+  background: var(--accent-soft);
+  transform: translate3d(var(--mode-indicator-x, 3px), -50%, 0);
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mode-chip-group.is-dragging {
+  cursor: grabbing;
+}
+
+.mode-chip-group.is-dragging::before {
+  transition:
+    transform 170ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 170ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 170ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .mode-chip {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 54px;
-  height: 30px;
+  height: var(--mode-chip-inner-height);
+  min-height: 0;
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -509,6 +548,8 @@ svg {
   font-size: 0.86rem;
   font-weight: 900;
   line-height: 1;
+  cursor: inherit;
+  transition: color 180ms ease;
 }
 
 .mode-chip:hover {
@@ -521,7 +562,10 @@ svg {
 }
 
 .mode-chip.is-active {
-  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.mode-chip.is-pending {
   color: var(--accent-strong);
 }
 
@@ -622,6 +666,9 @@ svg {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mode-chip-group::before,
+  .mode-chip-group.is-dragging::before,
+  .theme-chip-group.is-dragging::before,
   .theme-chip-group::before {
     transition: none;
   }
