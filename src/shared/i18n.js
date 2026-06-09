@@ -2,6 +2,17 @@ import { DEFAULT_LOCALE, I18N_CATALOGS, SUPPORTED_LOCALES } from "./generated/i1
 
 export { DEFAULT_LOCALE, SUPPORTED_LOCALES };
 
+const LOCALE_ALIASES = new Map([
+  ["zh", "zh-Hans"],
+  ["zh-cn", "zh-Hans"],
+  ["zh-sg", "zh-Hans"],
+  ["zh-my", "zh-Hans"],
+  ["zh-hans", "zh-Hans"],
+  ["zh-hans-cn", "zh-Hans"],
+  ["zh-hans-sg", "zh-Hans"],
+  ["zh-hans-my", "zh-Hans"],
+]);
+
 export function createI18n(localeInput, options = {}) {
   const locale = normalizeLocale(localeInput);
   const dictionary = I18N_CATALOGS[locale] || I18N_CATALOGS[DEFAULT_LOCALE];
@@ -22,9 +33,30 @@ export function createI18n(localeInput, options = {}) {
 }
 
 export function normalizeLocale(value) {
+  return resolveSupportedLocale(value) || DEFAULT_LOCALE;
+}
+
+export function resolvePreferredLocale(values, fallbackLocale = DEFAULT_LOCALE) {
+  const candidates = Array.isArray(values) ? values : [values];
+  for (const candidate of candidates) {
+    const locale = resolveSupportedLocale(candidate);
+    if (locale) {
+      return locale;
+    }
+  }
+
+  return resolveSupportedLocale(fallbackLocale) || DEFAULT_LOCALE;
+}
+
+function resolveSupportedLocale(value) {
   const normalized = normalizeLocaleText(value);
   if (!normalized) {
-    return DEFAULT_LOCALE;
+    return null;
+  }
+
+  const alias = LOCALE_ALIASES.get(normalized);
+  if (alias && SUPPORTED_LOCALES.includes(alias)) {
+    return alias;
   }
 
   const exact = SUPPORTED_LOCALES.find((locale) => normalizeLocaleText(locale) === normalized);
@@ -38,7 +70,7 @@ export function normalizeLocale(value) {
     return languageMatch;
   }
 
-  return DEFAULT_LOCALE;
+  return null;
 }
 
 export function getSupportedLocales() {
@@ -61,8 +93,9 @@ export function resolveTelegramLocale(message) {
   ];
 
   for (const candidate of candidates) {
-    if (candidate) {
-      return normalizeLocale(candidate);
+    const locale = resolveSupportedLocale(candidate);
+    if (locale) {
+      return locale;
     }
   }
 

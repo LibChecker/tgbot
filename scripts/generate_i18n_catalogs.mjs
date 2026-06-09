@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const localesDir = resolve(repoDir, "locales");
 const outputFile = resolve(repoDir, "src/shared/generated/i18n-catalogs.js");
-const DEFAULT_LOCALE = "zh-CN";
+const DEFAULT_LOCALE = "en";
 const checkOnly = process.argv.includes("--check");
 
 const catalogs = await readCatalogs();

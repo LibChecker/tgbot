@@ -1,5 +1,5 @@
 import { escapeAttr, escapeHtml } from "./app/html.js";
-import { getSupportedLocales, normalizeLocale, translate } from "./app/i18n.js";
+import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate } from "./app/i18n.js";
 import { clamp } from "./app/math.js";
 import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeImageSrc, stripDataUris } from "./app/format.js";
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
@@ -22,7 +22,7 @@ const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
 
 const state = {
   appMode: "analyze",
-  locale: normalizeLocale(navigator.language),
+  locale: resolveInitialLocale(),
   themeChoice: readThemeChoice(),
   selectedFile: null,
   report: null,
@@ -117,6 +117,13 @@ const compareController = new CompareController({
   hasJob: (jobId) => state.jobs.has(jobId),
   updateClearButton,
 });
+
+function resolveInitialLocale() {
+  const browserLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
+    ? navigator.languages
+    : [navigator.language];
+  return resolvePreferredLocale(browserLocales, "en");
+}
 
 applyThemeChoice(state.themeChoice, { persist: false });
 renderLanguageOptions();
@@ -1102,6 +1109,7 @@ function selectRuleDetailLocale(detail) {
 
   return (
     locales[state.locale] ||
+    locales["zh-Hans"] ||
     locales["zh-CN"] ||
     locales.en ||
     Object.values(locales).find((item) => item && typeof item === "object") ||
@@ -1996,7 +2004,7 @@ function renderMetaDataValue(item) {
     return value;
   }
 
-  return `${escapeHtml(t("value"))}${state.locale === "zh-CN" ? "：" : ": "}${value}`;
+  return `${escapeHtml(t("value"))}${state.locale.startsWith("zh") ? "：" : ": "}${value}`;
 }
 
 function renderRawTab(report) {

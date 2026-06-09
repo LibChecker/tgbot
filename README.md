@@ -115,12 +115,12 @@ npm run pages:deploy
 
 User-facing copy lives in `locales/*.json`. These files are the translation source of truth for both the Telegram bot and the Web UI.
 
-- `locales/zh-CN.json` is the default source catalog.
-- `locales/en.json` is the English translation catalog.
+- `locales/en.json` is the default runtime catalog.
+- `locales/zh-Hans.json` is the Simplified Chinese catalog.
 - `crowdin.yml` maps Crowdin translations to `locales/%locale%.json`.
 - Runtime modules import the generated `src/shared/generated/i18n-catalogs.js`; do not edit that generated file by hand.
 
-When contributing through GitHub PRs or Crowdin, edit or add locale JSON files only. Keep the same key tree as `locales/zh-CN.json`, and keep placeholders such as `{count}` or `{appName}` unchanged.
+When contributing through GitHub PRs or Crowdin, edit or add locale JSON files only. Keep the same key tree as `locales/en.json`, and keep placeholders such as `{count}` or `{appName}` unchanged.
 
 After changing translations, run:
 
