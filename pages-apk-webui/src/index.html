@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light dark">
-    <title>APK 本地分析</title>
+    <title>Android 包本地分析</title>
     <link rel="icon" type="image/svg+xml" href="./assets/icon_round.svg">
     <script>
       (() => {
@@ -82,14 +82,14 @@
       <main class="workspace">
         <form class="tool-panel" id="analyze-form">
           <label class="drop-zone" id="drop-zone">
-            <input id="file-input" name="apk" type="file">
+            <input id="file-input" name="apk" type="file" accept=".apk,.apks,.apkm,.xapk,application/vnd.android.package-archive">
             <span class="drop-zone-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M12 3a5 5 0 0 1 4.9 4h.1a4 4 0 0 1 0 8h-3a1 1 0 1 1 0-2h3a2 2 0 1 0 0-4h-.9a1 1 0 0 1-1-.86A3 3 0 0 0 9.2 7.1a1 1 0 0 1-.9.56H8a3 3 0 1 0 0 6h2a1 1 0 1 1 0 2H8A5 5 0 0 1 7.4 5.7 5 5 0 0 1 12 3Zm0 8a1 1 0 0 1 1 1v5.59l1.3-1.29a1 1 0 0 1 1.4 1.42l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.42l1.3 1.3V12a1 1 0 0 1 1-1Z"></path>
               </svg>
             </span>
             <span>
-              <span class="drop-zone-title" data-i18n="filePrompt">选择或拖入 APK</span>
+              <span class="drop-zone-title" data-i18n="filePrompt">选择或拖入 APK/APKS/APKM/XAPK</span>
               <span class="drop-zone-meta" id="file-meta" data-i18n="fileIdle">未选择文件</span>
             </span>
           </label>
@@ -138,7 +138,7 @@
             </svg>
           </div>
           <div class="empty-state-copy">
-            <h2 data-i18n="emptyTitle">等待 APK</h2>
+            <h2 data-i18n="emptyTitle">等待文件</h2>
             <p data-i18n="emptyBody">分析完成后会在这里展示摘要、SDK 标记、组件、权限、签名和元数据</p>
           </div>
         </section>
@@ -163,7 +163,7 @@
             <article class="compare-slot" data-compare-slot="left">
               <div class="compare-slot-header">
                 <div>
-                  <h2 data-i18n="compareSlotLeft">左侧 APK</h2>
+                  <h2 data-i18n="compareSlotLeft">左侧文件</h2>
                   <p data-i18n="compareSlotNote">拖入文件，或从历史记录选择</p>
                 </div>
                 <button class="icon-button compare-slot-clear" type="button" data-compare-clear="left" aria-label="清空左侧" data-title-i18n="compareClearLeft">
@@ -173,15 +173,15 @@
                 </button>
               </div>
               <label class="compare-drop-zone" data-compare-drop="left">
-                <input class="compare-file-input" data-compare-file="left" type="file" accept=".apk,application/vnd.android.package-archive">
+                <input class="compare-file-input" data-compare-file="left" type="file" accept=".apk,.apks,.apkm,.xapk,application/vnd.android.package-archive">
                 <span class="drop-zone-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24">
                     <path d="M12 3a5 5 0 0 1 4.9 4h.1a4 4 0 0 1 0 8h-3a1 1 0 1 1 0-2h3a2 2 0 1 0 0-4h-.9a1 1 0 0 1-1-.86A3 3 0 0 0 9.2 7.1a1 1 0 0 1-.9.56H8a3 3 0 1 0 0 6h2a1 1 0 1 1 0 2H8A5 5 0 0 1 7.4 5.7 5 5 0 0 1 12 3Zm0 8a1 1 0 0 1 1 1v5.59l1.3-1.29a1 1 0 0 1 1.4 1.42l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.42l1.3 1.3V12a1 1 0 0 1 1-1Z"></path>
                   </svg>
                 </span>
                 <span>
-                  <span class="drop-zone-title" data-i18n="compareDropPrompt">点击上传或拖入 APK</span>
-                  <span class="drop-zone-meta" data-compare-file-meta="left" data-i18n="compareSlotEmpty">未选择 APK</span>
+                  <span class="drop-zone-title" data-i18n="compareDropPrompt">点击上传或拖入文件</span>
+                  <span class="drop-zone-meta" data-compare-file-meta="left" data-i18n="compareSlotEmpty">未选择文件</span>
                 </span>
               </label>
               <label class="compare-history-control">
@@ -194,7 +194,7 @@
             <article class="compare-slot" data-compare-slot="right">
               <div class="compare-slot-header">
                 <div>
-                  <h2 data-i18n="compareSlotRight">右侧 APK</h2>
+                  <h2 data-i18n="compareSlotRight">右侧文件</h2>
                   <p data-i18n="compareSlotNote">拖入文件，或从历史记录选择</p>
                 </div>
                 <button class="icon-button compare-slot-clear" type="button" data-compare-clear="right" aria-label="清空右侧" data-title-i18n="compareClearRight">
@@ -204,15 +204,15 @@
                 </button>
               </div>
               <label class="compare-drop-zone" data-compare-drop="right">
-                <input class="compare-file-input" data-compare-file="right" type="file" accept=".apk,application/vnd.android.package-archive">
+                <input class="compare-file-input" data-compare-file="right" type="file" accept=".apk,.apks,.apkm,.xapk,application/vnd.android.package-archive">
                 <span class="drop-zone-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24">
                     <path d="M12 3a5 5 0 0 1 4.9 4h.1a4 4 0 0 1 0 8h-3a1 1 0 1 1 0-2h3a2 2 0 1 0 0-4h-.9a1 1 0 0 1-1-.86A3 3 0 0 0 9.2 7.1a1 1 0 0 1-.9.56H8a3 3 0 1 0 0 6h2a1 1 0 1 1 0 2H8A5 5 0 0 1 7.4 5.7 5 5 0 0 1 12 3Zm0 8a1 1 0 0 1 1 1v5.59l1.3-1.29a1 1 0 0 1 1.4 1.42l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.42l1.3 1.3V12a1 1 0 0 1 1-1Z"></path>
                   </svg>
                 </span>
                 <span>
-                  <span class="drop-zone-title" data-i18n="compareDropPrompt">点击上传或拖入 APK</span>
-                  <span class="drop-zone-meta" data-compare-file-meta="right" data-i18n="compareSlotEmpty">未选择 APK</span>
+                  <span class="drop-zone-title" data-i18n="compareDropPrompt">点击上传或拖入文件</span>
+                  <span class="drop-zone-meta" data-compare-file-meta="right" data-i18n="compareSlotEmpty">未选择文件</span>
                 </span>
               </label>
               <label class="compare-history-control">

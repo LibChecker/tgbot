@@ -1,4 +1,4 @@
-import { readApkInfo } from "./modules/apk.js";
+import { readAndroidPackageInfo } from "./modules/apk.js";
 import { createI18n, normalizeLocale } from "./modules/i18n.js";
 import { annotateSdkMarkers } from "./modules/sdk-markers.js";
 import { detectTerminalSystemFromNavigator as detectTerminalSystemFromNavigatorValue } from "./modules/terminal-system.js";
@@ -6,6 +6,7 @@ import { LIBCHECKER_RULES } from "./modules/generated/libchecker-rules.js";
 import { LIBCHECKER_SDK_ICON_SVGS } from "./modules/generated/libchecker-sdk-icons.js";
 
 const APK_MIME_TYPE = "application/vnd.android.package-archive";
+const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
 
 self.addEventListener("message", (event) => {
   const message = event.data || {};
@@ -54,7 +55,7 @@ async function analyze(message) {
     stage: "parsing",
   });
 
-  const apkInfo = await readApkInfo(buffer);
+  const apkInfo = await readAndroidPackageInfo(buffer);
   const annotated = annotateSdkMarkers(apkInfo, resolveSdkIconDataUri);
   const mergedApkInfo = {
     ...apkInfo,
@@ -82,7 +83,11 @@ async function analyze(message) {
 function isLikelyApk(file) {
   const name = String(file.name || "").toLowerCase();
   const type = String(file.type || "").toLowerCase();
-  return name.endsWith(".apk") || type === APK_MIME_TYPE || type.includes("android.package-archive");
+  return (
+    ANDROID_PACKAGE_EXTENSIONS.some((extension) => name.endsWith(extension)) ||
+    type === APK_MIME_TYPE ||
+    type.includes("android.package-archive")
+  );
 }
 
 function resolveSdkIconDataUri(iconName) {

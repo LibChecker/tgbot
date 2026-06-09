@@ -242,7 +242,7 @@ export function renderUploadPage({
         <form method="post" action="${escapedUploadUrl}" enctype="multipart/form-data" data-busy="${escapeHtml(t("upload.busy"))}">
           <label>
             ${escapeHtml(t("upload.file_label"))}
-            <input name="apk" type="file" required>
+            <input name="apk" type="file" accept=".apk,.apks,.apkm,.xapk,application/vnd.android.package-archive" required>
           </label>
           <label>
             ${escapeHtml(t("upload.language_label"))}

@@ -52,10 +52,41 @@ const ADAPTIVE_ICON_VIEW_PORT_SCALE = 1 / (1 + 2 * ADAPTIVE_ICON_EXTRA_INSET_PER
 const ADAPTIVE_ICON_EDGE_INSET = 0.5;
 const ADAPTIVE_ICON_EDGE_FEATHER = 1;
 
+export async function readAndroidPackageInfo(packageBuffer) {
+  const packageBytes = toUint8Array(packageBuffer);
+  const zipEntries = parseZipEntries(packageBytes);
+
+  if (isDirectApkZip(zipEntries)) {
+    return readApkInfoFromParsedZip(packageBytes, zipEntries);
+  }
+
+  const apkEntries = collectContainedApkEntries(zipEntries);
+  const selectedEntry = apkEntries[0];
+  if (!selectedEntry) {
+    throw new Error("Android 包中未找到可解析的 APK 文件");
+  }
+
+  const apkBytes = await extractZipEntry(packageBytes, selectedEntry.entry);
+  const apkInfo = await readApkInfo(apkBytes);
+
+  return {
+    ...apkInfo,
+    archive: {
+      type: "package-container",
+      analyzedEntry: selectedEntry.path,
+      apkEntryCount: apkEntries.length,
+      apkEntries: apkEntries.map((item) => item.path),
+    },
+  };
+}
 
 export async function readApkInfo(apkBuffer) {
   const apkBytes = toUint8Array(apkBuffer);
   const zipEntries = parseZipEntries(apkBytes);
+  return readApkInfoFromParsedZip(apkBytes, zipEntries);
+}
+
+function readApkInfoFromParsedZip(apkBytes, zipEntries) {
   return readApkInfoFromZipSource(
     {
       zipEntries,
@@ -66,6 +97,56 @@ export async function readApkInfo(apkBuffer) {
       scanDex: true,
     },
   );
+}
+
+function isDirectApkZip(zipEntries) {
+  return zipEntries.has("AndroidManifest.xml");
+}
+
+function collectContainedApkEntries(zipEntries) {
+  return [...zipEntries.entries()]
+    .filter(([path]) => isContainedApkPath(path))
+    .map(([path, entry]) => ({
+      path,
+      entry,
+      score: scoreContainedApkPath(path),
+    }))
+    .sort((left, right) => (
+      left.score - right.score ||
+      left.path.localeCompare(right.path)
+    ));
+}
+
+function isContainedApkPath(path) {
+  const normalized = String(path || "").toLowerCase();
+  return normalized.endsWith(".apk") && !normalized.startsWith("__macosx/");
+}
+
+function scoreContainedApkPath(path) {
+  const normalized = String(path || "").toLowerCase();
+  const fileName = normalized.split("/").filter(Boolean).at(-1) || normalized;
+
+  if (fileName === "base.apk") {
+    return 0;
+  }
+
+  if (fileName === "base-master.apk") {
+    return 1;
+  }
+
+  if (/^base[-_.].+\.apk$/u.test(fileName)) {
+    return 2;
+  }
+
+  if (fileName === "standalone.apk" || fileName.endsWith("-standalone.apk")) {
+    return 3;
+  }
+
+  if (!/(?:^|[-_.])(?:split|config|dpi|lang|armeabi|arm64|x86)(?:[-_.]|$)/u.test(fileName)) {
+    return 4;
+  }
+
+  return 5;
 }
 
 export async function readApkInfoFromZipSource(source, options = {}) {

@@ -873,7 +873,10 @@ function buildFeatureLabel(name, version) {
 function isLikelyApk(file) {
   const name = String(file.name || "").toLowerCase();
   const type = String(file.type || "").toLowerCase();
-  return name.endsWith(".apk") || type.includes("android.package-archive");
+  return (
+    [".apk", ".apks", ".apkm", ".xapk"].some((extension) => name.endsWith(extension)) ||
+    type.includes("android.package-archive")
+  );
 }
 
 function countSdkMarkers(sdkSummary = {}) {

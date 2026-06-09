@@ -1,4 +1,4 @@
-import { readApkInfo } from "../shared/apk.js";
+import { readAndroidPackageInfo } from "../shared/apk.js";
 import { readApkInfoFromUrl } from "./apk-url-preview.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
@@ -17,6 +17,7 @@ import { htmlResponse, renderUploadPage } from "./upload-view.js";
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_TELEGRAM_APK_BYTES = 20 * 1024 * 1024;
 const DEFAULT_DIRECT_UPLOAD_BYTES = 90 * 1024 * 1024;
+const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
 const TELEGRAM_ALLOWED_UPDATES = [
   "message",
   "edited_message",
@@ -453,7 +454,7 @@ async function handleUploadRequest(request, env, url, telemetry) {
     });
 
     const apkBuffer = await apkFile.arrayBuffer();
-    const apkInfo = await readApkInfo(apkBuffer);
+    const apkInfo = await readAndroidPackageInfo(apkBuffer);
     const report = buildApkReport(
       buildWebUploadMessage(formLocale),
       buildUploadDocument(apkFile),
@@ -961,7 +962,7 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
 
   try {
     const apkBuffer = await downloadTelegramFile(env, document.file_id, locale);
-    const apkInfo = await readApkInfo(apkBuffer);
+    const apkInfo = await readAndroidPackageInfo(apkBuffer);
     const report = buildApkReport(message, document, apkInfo, publicBaseUrl, locale);
     const telegraphPage = await createApkTelegraphPage(env, report);
     const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
@@ -1398,7 +1399,7 @@ function messageContainsBotMention(text, entities, expectedMention) {
 function isApkDocument(document) {
   const fileName = document.file_name?.toLowerCase() || "";
   const mimeType = document.mime_type?.toLowerCase() || "";
-  return fileName.endsWith(".apk") || mimeType.includes("android.package-archive");
+  return hasAndroidPackageExtension(fileName) || mimeType.includes("android.package-archive");
 }
 
 function isPrivateChat(chat) {
@@ -1465,7 +1466,11 @@ function isUploadFile(value) {
 function isUploadedApkFile(file) {
   const fileName = file.name?.toLowerCase() || "";
   const mimeType = file.type?.toLowerCase() || "";
-  return fileName.endsWith(".apk") || mimeType.includes("android.package-archive");
+  return hasAndroidPackageExtension(fileName) || mimeType.includes("android.package-archive");
+}
+
+function hasAndroidPackageExtension(fileName) {
+  return ANDROID_PACKAGE_EXTENSIONS.some((extension) => fileName.endsWith(extension));
 }
 
 function buildWebUploadMessage(locale) {
