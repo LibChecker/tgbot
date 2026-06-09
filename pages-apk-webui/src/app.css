@@ -525,6 +525,16 @@ svg {
   color: var(--accent-strong);
 }
 
+.topbar-github-link {
+  flex: 0 0 auto;
+  color: var(--heading-text);
+  text-decoration: none;
+}
+
+.topbar-github-link:hover {
+  color: var(--accent-strong);
+}
+
 .theme-chip-group {
   --theme-chip-group-height: 38px;
   --theme-chip-inner-height: 30px;
@@ -681,6 +691,11 @@ svg {
 .icon-button:hover:not(:disabled) {
   border-color: var(--line-strong);
   background: var(--surface-soft);
+}
+
+.icon-button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent-border);
 }
 
 .icon-button svg {
@@ -2659,7 +2674,8 @@ svg {
   }
 
   .mode-chip-group {
-    width: 100%;
+    flex: 1 1 calc(100% - 48px);
+    width: auto;
   }
 
   .mode-chip {
