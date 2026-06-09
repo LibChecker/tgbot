@@ -4,11 +4,13 @@ import { clamp } from "./app/math.js";
 import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeImageSrc, stripDataUris } from "./app/format.js";
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
+import { CompareController } from "./app/compare-controller.js";
 import { hydrateReportSdkIcons } from "./app/sdk-icon-cache.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import { detectTerminalSystem } from "./app/system.js";
 import { initAppTitleColorMask, initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
+const VALID_APP_MODES = new Set(["analyze", "compare"]);
 const THEME_STORAGE_KEY = "apk-webui-theme";
 const THEME_CHOICES = new Set(["light", "dark", "system"]);
 const CONTRIBUTOR_GITHUB_ALIASES = new Map([
@@ -18,6 +20,7 @@ const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 
 
 const state = {
+  appMode: "analyze",
   locale: normalizeLocale(navigator.language),
   themeChoice: readThemeChoice(),
   selectedFile: null,
@@ -27,7 +30,9 @@ const state = {
   activeTab: "summary",
   activeNativeAbi: "",
   worker: null,
+  jobs: new Map(),
   jobId: 0,
+  activeAnalyzeJobId: null,
   startedAt: 0,
   timer: null,
 };
@@ -39,6 +44,7 @@ const themeDrag = {
 };
 
 const elements = {
+  modeButtons: [...document.querySelectorAll("[data-app-mode]")],
   themeButtons: [...document.querySelectorAll(".theme-chip[data-theme-choice]")],
   themeChipGroup: document.querySelector("#theme-chip-group"),
   languageSelect: document.querySelector("#language-select"),
@@ -64,11 +70,45 @@ const elements = {
   reportHero: document.querySelector("#report-hero"),
   tabs: document.querySelector("#tabs"),
   tabPanel: document.querySelector("#tab-panel"),
+  compareView: document.querySelector("#compare-view"),
+  compareSlots: document.querySelector("#compare-slots"),
+  compareWarning: document.querySelector("#compare-warning"),
+  compareResult: document.querySelector("#compare-result"),
+  compareFileInputs: [...document.querySelectorAll("[data-compare-file]")],
+  compareDropZones: [...document.querySelectorAll("[data-compare-drop]")],
+  compareHistorySelects: [...document.querySelectorAll("[data-compare-history]")],
+  compareClearButtons: [...document.querySelectorAll("[data-compare-clear]")],
 };
 
 function t(key, variables = {}) {
   return translate(state.locale, key, variables);
 }
+
+const compareController = new CompareController({
+  elements: {
+    view: elements.compareView,
+    warning: elements.compareWarning,
+    result: elements.compareResult,
+    fileInputs: elements.compareFileInputs,
+    dropZones: elements.compareDropZones,
+    historySelects: elements.compareHistorySelects,
+    clearButtons: elements.compareClearButtons,
+  },
+  t,
+  getLocale: () => state.locale,
+  getHistory: () => state.history,
+  ensureWorker,
+  createJob: (job) => {
+    state.jobId += 1;
+    state.jobs.set(state.jobId, job);
+    return state.jobId;
+  },
+  deleteJob: (jobId) => {
+    state.jobs.delete(jobId);
+  },
+  hasJob: (jobId) => state.jobs.has(jobId),
+  updateClearButton,
+});
 
 applyThemeChoice(state.themeChoice, { persist: false });
 renderLanguageOptions();
@@ -77,12 +117,19 @@ renderBrandTitle(elements.brandTitle, t("title"));
 initBrandTitleColorMask(elements.brandTitle);
 renderHistoryList();
 updateHistoryCollapse();
+updateAppMode();
 bindEvents();
 initColorOrbBackground();
 initSdkIconPreview();
 initSdkRulePreview();
 
 function bindEvents() {
+  elements.modeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setAppMode(button.dataset.appMode);
+    });
+  });
+
   elements.themeButtons.forEach((button) => {
     button.addEventListener("click", (event) => {
       if (themeDrag.suppressClick) {
@@ -117,6 +164,7 @@ function bindEvents() {
     renderSelectedFile();
     renderHistoryList();
     renderReport();
+    compareController.renderPage();
   });
 
   elements.fileInput.addEventListener("change", () => {
@@ -158,7 +206,11 @@ function bindEvents() {
   });
 
   elements.clearButton.addEventListener("click", () => {
-    resetState();
+    if (state.appMode === "compare") {
+      compareController.reset();
+    } else {
+      resetState();
+    }
   });
 
   elements.historyToggleButton.addEventListener("click", () => {
@@ -233,6 +285,8 @@ function bindEvents() {
     state.activeNativeAbi = button.dataset.nativeAbi || "";
     renderTabPanel();
   });
+
+  compareController.bindEvents();
 }
 
 function beginThemeDrag(event) {
@@ -329,12 +383,12 @@ function getThemeChoiceAtClientX(clientX) {
   return nearestChoice;
 }
 
-function updateDropZonePointer(event) {
-  const rect = elements.dropZone.getBoundingClientRect();
+function updateDropZonePointer(event, zone = elements.dropZone) {
+  const rect = zone.getBoundingClientRect();
   const x = clamp(event.clientX - rect.left, 0, rect.width);
   const y = clamp(event.clientY - rect.top, 0, rect.height);
-  elements.dropZone.style.setProperty("--drop-x", `${x.toFixed(1)}px`);
-  elements.dropZone.style.setProperty("--drop-y", `${y.toFixed(1)}px`);
+  zone.style.setProperty("--drop-x", `${x.toFixed(1)}px`);
+  zone.style.setProperty("--drop-y", `${y.toFixed(1)}px`);
 }
 
 function handleHistoryPointerEvent(event) {
@@ -897,6 +951,46 @@ function initColorOrbBackground() {
   elements.backgroundCanvas?.setAttribute("data-renderer", "css-mesh");
 }
 
+function setAppMode(mode) {
+  const nextMode = VALID_APP_MODES.has(mode) ? mode : "analyze";
+  if (state.appMode === nextMode) {
+    return;
+  }
+
+  state.appMode = nextMode;
+  updateAppMode();
+}
+
+function updateAppMode() {
+  const isCompare = state.appMode === "compare";
+  elements.modeButtons.forEach((button) => {
+    const isActive = button.dataset.appMode === state.appMode;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-checked", isActive ? "true" : "false");
+  });
+
+  elements.form.hidden = isCompare;
+  elements.historyPanel.hidden = isCompare;
+  compareController.setVisible(isCompare);
+
+  if (isCompare) {
+    elements.emptyState.hidden = true;
+    elements.resultView.hidden = true;
+  } else {
+    renderReport();
+  }
+  updateClearButton();
+}
+
+function updateClearButton() {
+  if (state.appMode === "compare") {
+    elements.clearButton.disabled = !compareController.hasContent();
+    return;
+  }
+
+  elements.clearButton.disabled = !state.selectedFile && !state.report;
+}
+
 
 function readThemeChoice() {
   try {
@@ -1001,6 +1095,7 @@ function setSelectedFile(file) {
   state.selectedFile = file;
   renderSelectedFile();
   elements.analyzeButton.disabled = !file;
+  updateClearButton();
 }
 
 function renderSelectedFile() {
@@ -1037,19 +1132,23 @@ async function analyzeSelectedFile() {
   }
 
   state.jobId += 1;
+  const jobId = state.jobId;
   state.startedAt = performance.now();
   state.report = null;
   state.activeTab = "summary";
   state.activeNativeAbi = "";
+  state.activeAnalyzeJobId = jobId;
+  state.jobs.set(jobId, {
+    type: "analyze",
+  });
 
   setBusy(true);
   showProgress("progressReading");
   startTimer();
 
-  const jobId = state.jobId;
   const terminalSystem = await detectTerminalSystem();
 
-  if (jobId !== state.jobId) {
+  if (!state.jobs.has(jobId)) {
     return;
   }
 
@@ -1073,8 +1172,7 @@ function ensureWorker() {
     });
     worker.addEventListener("message", handleWorkerMessage);
     worker.addEventListener("error", (event) => {
-      finishAnalysis();
-      showError(event.message || t("workerFailed"));
+      failActiveWorkerJobs(event.message || t("workerFailed"));
     });
     state.worker = worker;
     return worker;
@@ -1083,29 +1181,68 @@ function ensureWorker() {
   }
 }
 
+function failActiveWorkerJobs(message) {
+  const jobs = [...state.jobs.entries()];
+  state.jobs.clear();
+  state.worker = null;
+
+  for (const [, job] of jobs) {
+    if (job.type === "compare") {
+      compareController.finishJob(job.slotKey, null, message);
+    } else {
+      finishAnalysis();
+      state.activeAnalyzeJobId = null;
+      showError(message);
+    }
+  }
+}
+
 function handleWorkerMessage(event) {
   const message = event.data || {};
-  if (message.jobId !== state.jobId) {
+  const job = state.jobs.get(message.jobId);
+  if (!job) {
     return;
   }
 
   if (message.type === "progress") {
-    showProgress(message.stage === "parsing" ? "progressParsing" : "progressReading");
+    if (job.type === "compare") {
+      compareController.handleProgress(
+        job.slotKey,
+        message.jobId,
+        message.stage === "parsing" ? "progressParsing" : "progressReading",
+      );
+    } else {
+      showProgress(message.stage === "parsing" ? "progressParsing" : "progressReading");
+    }
     return;
   }
 
   if (message.type === "error") {
-    finishAnalysis();
-    showError(message.error || t("workerFailed"));
+    state.jobs.delete(message.jobId);
+    if (job.type === "compare") {
+      compareController.finishJob(job.slotKey, null, message.error || t("workerFailed"));
+    } else {
+      finishAnalysis();
+      state.activeAnalyzeJobId = null;
+      showError(message.error || t("workerFailed"));
+    }
     return;
   }
 
   if (message.type === "result") {
+    state.jobs.delete(message.jobId);
+    if (job.type === "compare") {
+      compareController.finishJob(job.slotKey, message.report, "");
+      saveHistoryReport(message.report);
+      return;
+    }
+
     finishAnalysis();
+    state.activeAnalyzeJobId = null;
     state.report = message.report;
     state.activeNativeAbi = "";
     saveHistoryReport(message.report);
-    elements.clearButton.disabled = false;
+    updateClearButton();
     showProgress("progressDone");
     renderReport();
   }
@@ -1146,6 +1283,10 @@ function updateElapsed() {
 }
 
 function resetState() {
+  if (state.activeAnalyzeJobId != null) {
+    state.jobs.delete(state.activeAnalyzeJobId);
+    state.activeAnalyzeJobId = null;
+  }
   stopTimer();
   hideError();
   state.selectedFile = null;
@@ -1157,9 +1298,9 @@ function resetState() {
   elements.progress.classList.remove("is-complete");
   elements.progressTime.textContent = "0.0s";
   elements.progressLabel.textContent = t("progressReady");
-  elements.clearButton.disabled = true;
   elements.analyzeButton.disabled = true;
   renderSelectedFile();
+  updateClearButton();
   renderReport();
 }
 
@@ -1199,7 +1340,7 @@ async function openHistoryItem(id) {
   elements.progress.classList.remove("is-complete");
   elements.progressTime.textContent = "0.0s";
   elements.progressLabel.textContent = t("progressReady");
-  elements.clearButton.disabled = false;
+  updateClearButton();
   renderReport();
 }
 
@@ -1239,10 +1380,12 @@ function renderHistoryList() {
 
   if (state.history.length === 0) {
     elements.historyList.innerHTML = emptyList(t("historyEmpty"));
+    compareController.renderHistoryOptions();
     return;
   }
 
   elements.historyList.innerHTML = state.history.map(renderHistoryItem).join("");
+  compareController.renderHistoryOptions();
 }
 
 function renderHistoryItem(entry) {
@@ -1293,6 +1436,12 @@ function renderHistoryIcon(summary) {
 }
 
 function renderReport() {
+  if (state.appMode !== "analyze") {
+    elements.emptyState.hidden = true;
+    elements.resultView.hidden = true;
+    return;
+  }
+
   if (!state.report) {
     elements.emptyState.hidden = false;
     elements.resultView.hidden = true;

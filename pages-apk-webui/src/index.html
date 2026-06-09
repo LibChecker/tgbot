@@ -47,6 +47,10 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <div class="mode-chip-group" id="mode-chip-group" role="radiogroup" aria-label="模式" data-aria-i18n="modeLabel">
+            <button class="mode-chip is-active" type="button" role="radio" aria-checked="true" data-app-mode="analyze" data-i18n="modeAnalyze">分析</button>
+            <button class="mode-chip" type="button" role="radio" aria-checked="false" data-app-mode="compare" data-i18n="modeCompare">对比</button>
+          </div>
           <div class="theme-chip-group" id="theme-chip-group" role="radiogroup" aria-label="主题" data-aria-i18n="themeLabel">
             <button class="theme-chip" type="button" role="radio" aria-checked="false" data-theme-choice="dark" data-i18n="themeDark">深色</button>
             <button class="theme-chip" type="button" role="radio" aria-checked="false" data-theme-choice="light" data-i18n="themeLight">浅色</button>
@@ -147,6 +151,74 @@
             <button type="button" class="tab" data-tab="raw" role="tab" aria-selected="false" data-i18n="tabRaw">JSON</button>
           </nav>
           <div class="tab-panel" id="tab-panel" role="tabpanel"></div>
+        </section>
+
+        <section class="compare-view" id="compare-view" hidden>
+          <div class="compare-slots" id="compare-slots">
+            <article class="compare-slot" data-compare-slot="left">
+              <div class="compare-slot-header">
+                <div>
+                  <h2 data-i18n="compareSlotLeft">左侧 APK</h2>
+                  <p data-i18n="compareSlotNote">拖入文件，或从历史记录选择</p>
+                </div>
+                <button class="icon-button compare-slot-clear" type="button" data-compare-clear="left" aria-label="清空左侧" data-title-i18n="compareClearLeft">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8.7 7.3a1 1 0 0 0-1.4 1.4l3.29 3.3-3.3 3.3a1 1 0 1 0 1.42 1.4l3.29-3.29 3.3 3.3a1 1 0 0 0 1.4-1.42L13.42 12l3.3-3.3a1 1 0 1 0-1.42-1.4L12 10.58 8.7 7.3Z"></path>
+                  </svg>
+                </button>
+              </div>
+              <label class="compare-drop-zone" data-compare-drop="left">
+                <input class="compare-file-input" data-compare-file="left" type="file" accept=".apk,application/vnd.android.package-archive">
+                <span class="drop-zone-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 3a5 5 0 0 1 4.9 4h.1a4 4 0 0 1 0 8h-3a1 1 0 1 1 0-2h3a2 2 0 1 0 0-4h-.9a1 1 0 0 1-1-.86A3 3 0 0 0 9.2 7.1a1 1 0 0 1-.9.56H8a3 3 0 1 0 0 6h2a1 1 0 1 1 0 2H8A5 5 0 0 1 7.4 5.7 5 5 0 0 1 12 3Zm0 8a1 1 0 0 1 1 1v5.59l1.3-1.29a1 1 0 0 1 1.4 1.42l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.42l1.3 1.3V12a1 1 0 0 1 1-1Z"></path>
+                  </svg>
+                </span>
+                <span>
+                  <span class="drop-zone-title" data-i18n="compareDropPrompt">点击上传或拖入 APK</span>
+                  <span class="drop-zone-meta" data-compare-file-meta="left" data-i18n="compareSlotEmpty">未选择 APK</span>
+                </span>
+              </label>
+              <label class="compare-history-control">
+                <span data-i18n="compareHistoryLabel">历史记录</span>
+                <select data-compare-history="left"></select>
+              </label>
+              <div class="compare-slot-report" data-compare-slot-report="left"></div>
+            </article>
+
+            <article class="compare-slot" data-compare-slot="right">
+              <div class="compare-slot-header">
+                <div>
+                  <h2 data-i18n="compareSlotRight">右侧 APK</h2>
+                  <p data-i18n="compareSlotNote">拖入文件，或从历史记录选择</p>
+                </div>
+                <button class="icon-button compare-slot-clear" type="button" data-compare-clear="right" aria-label="清空右侧" data-title-i18n="compareClearRight">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8.7 7.3a1 1 0 0 0-1.4 1.4l3.29 3.3-3.3 3.3a1 1 0 1 0 1.42 1.4l3.29-3.29 3.3 3.3a1 1 0 0 0 1.4-1.42L13.42 12l3.3-3.3a1 1 0 1 0-1.42-1.4L12 10.58 8.7 7.3Z"></path>
+                  </svg>
+                </button>
+              </div>
+              <label class="compare-drop-zone" data-compare-drop="right">
+                <input class="compare-file-input" data-compare-file="right" type="file" accept=".apk,application/vnd.android.package-archive">
+                <span class="drop-zone-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M12 3a5 5 0 0 1 4.9 4h.1a4 4 0 0 1 0 8h-3a1 1 0 1 1 0-2h3a2 2 0 1 0 0-4h-.9a1 1 0 0 1-1-.86A3 3 0 0 0 9.2 7.1a1 1 0 0 1-.9.56H8a3 3 0 1 0 0 6h2a1 1 0 1 1 0 2H8A5 5 0 0 1 7.4 5.7 5 5 0 0 1 12 3Zm0 8a1 1 0 0 1 1 1v5.59l1.3-1.29a1 1 0 0 1 1.4 1.42l-3 3a1 1 0 0 1-1.4 0l-3-3a1 1 0 1 1 1.4-1.42l1.3 1.3V12a1 1 0 0 1 1-1Z"></path>
+                  </svg>
+                </span>
+                <span>
+                  <span class="drop-zone-title" data-i18n="compareDropPrompt">点击上传或拖入 APK</span>
+                  <span class="drop-zone-meta" data-compare-file-meta="right" data-i18n="compareSlotEmpty">未选择 APK</span>
+                </span>
+              </label>
+              <label class="compare-history-control">
+                <span data-i18n="compareHistoryLabel">历史记录</span>
+                <select data-compare-history="right"></select>
+              </label>
+              <div class="compare-slot-report" data-compare-slot-report="right"></div>
+            </article>
+          </div>
+          <div class="warning-note compare-warning" id="compare-warning" hidden></div>
+          <div class="compare-result" id="compare-result"></div>
         </section>
       </main>
     </div>

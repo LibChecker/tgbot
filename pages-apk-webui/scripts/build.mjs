@@ -22,6 +22,7 @@ const staticFiles = [
   ["app/format.js", "app/format.js"],
   ["app/report-model.js", "app/report-model.js"],
   ["app/history.js", "app/history.js"],
+  ["app/compare-controller.js", "app/compare-controller.js"],
   ["app/sdk-icon-cache.js", "app/sdk-icon-cache.js"],
   ["app/sdk-icon-renderer.js", "app/sdk-icon-renderer.js"],
   ["app/system.js", "app/system.js"],
