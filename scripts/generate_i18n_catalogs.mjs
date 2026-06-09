@@ -20,8 +20,8 @@ const output = [
 ].join("\n");
 
 if (checkOnly) {
-  const current = await readFile(outputFile, "utf8").catch(() => "");
-  if (current !== output) {
+  const current = await readFile(outputFile, "utf8").catch(() => null);
+  if (current != null && current !== output) {
     throw new Error("Generated i18n catalog is out of date. Run `npm run i18n:generate`.");
   }
 } else {

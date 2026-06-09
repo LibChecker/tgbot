@@ -6,7 +6,7 @@ This repository contains two deployable parts:
 | --- | --- | --- | --- |
 | tgbot | `src/bot/` | Cloudflare Workers | Telegram bot, APK link preview, upload page, report rendering, webhook/admin APIs. |
 | Web UI | `pages-apk-webui/` | Cloudflare Pages | Standalone browser APK analyzer powered by the same parser and LibChecker rules. |
-| Shared analyzer | `src/shared/` | Worker and Pages | APK parser, signature parser, SDK marker rules, and generated LibChecker bundles. |
+| Shared analyzer | `src/shared/` | Worker and Pages | APK parser, signature parser, SDK marker runtime, and generated local bundles. |
 
 ## tgbot
 
@@ -28,7 +28,7 @@ The Pages app is a separate browser-first APK analyzer. It runs the analysis loc
 Key capabilities:
 
 - Local APK analysis in the browser.
-- Shared parser and generated LibChecker rule bundles.
+- Shared parser and generated local LibChecker rule bundles.
 - Static Cloudflare Pages deployment.
 - Independent development and deployment commands.
 
@@ -103,8 +103,10 @@ npm run pages:deploy
 | `npm run webhook:set` | tgbot | Register the Telegram webhook. |
 | `npm run webhook:delete` | tgbot | Delete the Telegram webhook. |
 | `npm run commands:set` | tgbot | Sync Telegram bot commands. |
+| `npm run generated:generate` | shared | Generate ignored runtime bundles under `src/shared/generated/`. |
+| `npm run generated:refresh` | shared | Regenerate all ignored runtime bundles, including LibChecker rules and icons. |
 | `npm run i18n:generate` | shared | Generate runtime i18n catalogs from `locales/*.json`. |
-| `npm run i18n:check` | shared | Verify the generated i18n catalog is up to date. |
+| `npm run i18n:check` | shared | Validate locale catalogs and any existing generated i18n catalog. |
 | `npm run rules:update` | shared | Refresh generated LibChecker rules. |
 | `npm run pages:dev` | Web UI | Run the Pages app locally. |
 | `npm run pages:build` | Web UI | Build the Pages app. |
@@ -118,7 +120,7 @@ User-facing copy lives in `locales/*.json`. These files are the translation sour
 - `locales/en.json` is the default runtime catalog.
 - `locales/zh-Hans.json` is the Simplified Chinese catalog.
 - `crowdin.yml` maps Crowdin translations to `locales/%locale%.json`.
-- Runtime modules import the generated `src/shared/generated/i18n-catalogs.js`; do not edit that generated file by hand.
+- Runtime modules import ignored files under `src/shared/generated/`; do not edit generated files by hand.
 
 When contributing through GitHub PRs or Crowdin, edit or add locale JSON files only. Keep the same key tree as `locales/en.json`, and keep placeholders such as `{count}` or `{appName}` unchanged.
 
@@ -128,6 +130,8 @@ After changing translations, run:
 npm run i18n:generate
 npm run check
 ```
+
+`src/shared/generated/` is ignored by git. The dev, build, deploy, and check scripts generate the runtime bundles before they are needed.
 
 ## Admin API
 
@@ -174,7 +178,7 @@ src/
     apk-signatures.js APK signing block, X.509, and digest parser
     i18n.js          Shared localization runtime
     sdk-markers.js   LibChecker SDK marker annotator
-    generated/       Generated i18n, LibChecker rule, and icon bundles
+    generated/       Ignored generated i18n, LibChecker rule, and icon bundles
 locales/             Translation JSON catalogs
 pages-apk-webui/     Web UI Pages app
 scripts/             Shared maintenance and webhook scripts

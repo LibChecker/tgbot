@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node ../scripts/generate_i18n_catalogs.mjs && node scripts/build.mjs",
-    "check": "node scripts/check.mjs",
+    "build": "node ../scripts/generate_shared_assets.mjs && node scripts/build.mjs",
+    "check": "node ../scripts/generate_shared_assets.mjs && node scripts/check.mjs",
     "dev": "npm run build && npx wrangler pages dev dist",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=tgbot-apk-webui"
   }

@@ -18,7 +18,7 @@ pages-apk-webui/
   dist/                 Generated build output
 ```
 
-The build script copies shared analyzer files into `dist/modules/`:
+The build script generates ignored shared runtime bundles, then copies shared analyzer files into `dist/modules/`:
 
 - `src/shared/apk.js`
 - `src/shared/apk-signatures.js`
@@ -28,7 +28,7 @@ The build script copies shared analyzer files into `dist/modules/`:
 - `src/shared/generated/libchecker-rules.js`
 - `src/shared/generated/libchecker-sdk-icons.js`
 
-UI translations are sourced from the repository-level `locales/*.json` files. The Pages build runs `scripts/generate_i18n_catalogs.mjs` before copying modules, so Crowdin or GitHub PR translation updates only need to touch the locale JSON files.
+UI translations are sourced from the repository-level `locales/*.json` files. LibChecker rules and icons are generated from the upstream bundle script. These generated files live under `src/shared/generated/` locally and are not tracked by git.
 
 ## Local Development
 

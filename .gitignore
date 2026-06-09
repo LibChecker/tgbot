@@ -1,5 +1,15 @@
+.DS_Store
 node_modules/
 .wrangler/
+dist/
+build/
+coverage/
+.cache/
+*.log
+*.tmp
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
@@ -7,3 +17,5 @@ node_modules/
 .env.*
 .cloudflare-secrets.json
 
+# Generated runtime bundles.
+/src/shared/generated/
