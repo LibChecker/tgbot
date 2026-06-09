@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node ../scripts/generate_i18n_catalogs.mjs && node scripts/build.mjs",
-    "check": "node ../scripts/generate_i18n_catalogs.mjs --check && node --check scripts/build.mjs && node --check src/app.js && node --check src/app/html.js && node --check src/app/i18n.js && node --check src/app/math.js && node --check src/app/format.js && node --check src/app/report-model.js && node --check src/app/history.js && node --check src/app/compare-controller.js && node --check src/app/sdk-icon-cache.js && node --check src/app/sdk-icon-renderer.js && node --check src/app/system.js && node --check src/app/title-effects.js && node --check src/analyzer-worker.js",
+    "check": "node scripts/check.mjs",
     "dev": "npm run build && npx wrangler pages dev dist",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=tgbot-apk-webui"
   }
