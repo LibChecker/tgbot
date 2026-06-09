@@ -146,6 +146,7 @@
     "historyNote": "保存在当前浏览器中，点击记录可重新打开结果",
     "historyEmpty": "还没有历史记录",
     "historyOpen": "打开历史记录",
+    "historyOpening": "正在打开报告...",
     "historyDelete": "删除",
     "historyExpand": "展开历史",
     "historyCollapse": "收起历史",

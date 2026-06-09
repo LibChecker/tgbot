@@ -47,6 +47,7 @@ const state = {
   historyCollapsed: readHistoryCollapsed(),
   activeTab: "summary",
   activeNativeAbi: "",
+  loadingHistoryId: "",
   worker: null,
   jobs: new Map(),
   jobId: 0,
@@ -66,6 +67,7 @@ const modeDrag = {
   pendingMode: "",
   suppressClick: false,
 };
+let historyOpenToken = 0;
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
@@ -290,6 +292,11 @@ function bindEvents() {
   elements.historyList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-history-action]");
     if (!button) {
+      return;
+    }
+
+    if (state.loadingHistoryId) {
+      event.preventDefault();
       return;
     }
 
@@ -1869,6 +1876,14 @@ function hideError() {
   elements.errorBox.textContent = "";
 }
 
+function getErrorMessage(error) {
+  return error instanceof Error ? error.message : "";
+}
+
+function getErrorName(error) {
+  return error instanceof Error ? (error.name || "Error") : "UnknownError";
+}
+
 function saveHistoryReport(report) {
   const entry = createHistoryEntry(report);
   const nextHistory = [
@@ -1881,30 +1896,64 @@ function saveHistoryReport(report) {
 }
 
 async function openHistoryItem(id) {
+  if (state.loadingHistoryId) {
+    return;
+  }
+
   const entry = state.history.find((item) => item.id === id);
   if (!entry?.report) {
     return;
   }
 
+  const token = historyOpenToken + 1;
+  historyOpenToken = token;
+  setHistoryLoadingId(id);
   hideError();
   stopTimer();
-  state.report = await hydrateReportSdkIcons(entry.report);
-  state.activeTab = "summary";
-  state.activeNativeAbi = "";
-  elements.progress.hidden = true;
-  elements.progress.classList.remove("is-complete");
-  elements.progressTime.textContent = "0.0s";
-  elements.progressLabel.textContent = t("progressReady");
-  updateClearButton();
-  renderReport();
-  trackWebEvent("webui.history.opened", {
-    result: "success",
-    input_source: "history",
-    ...getReportAnalyticsFields(state.report),
-  });
+
+  try {
+    const report = await hydrateReportSdkIcons(entry.report);
+    if (token !== historyOpenToken) {
+      return;
+    }
+
+    state.report = report;
+    state.activeTab = "summary";
+    state.activeNativeAbi = "";
+    elements.progress.hidden = true;
+    elements.progress.classList.remove("is-complete");
+    elements.progressTime.textContent = "0.0s";
+    elements.progressLabel.textContent = t("progressReady");
+    updateClearButton();
+    renderReport();
+    trackWebEvent("webui.history.opened", {
+      result: "success",
+      input_source: "history",
+      ...getReportAnalyticsFields(state.report),
+    });
+  } catch (error) {
+    if (token !== historyOpenToken) {
+      return;
+    }
+
+    showError(getErrorMessage(error) || t("unknownError"));
+    trackWebEvent("webui.history.open_failed", {
+      result: "error",
+      error_name: getErrorName(error),
+      input_source: "history",
+    });
+  } finally {
+    if (token === historyOpenToken) {
+      setHistoryLoadingId("");
+    }
+  }
 }
 
 function deleteHistoryItem(id) {
+  if (state.loadingHistoryId) {
+    return;
+  }
+
   const previousCount = state.history.length;
   state.history = persistHistory(state.history.filter((item) => item.id !== id));
   renderHistoryList();
@@ -1916,6 +1965,10 @@ function deleteHistoryItem(id) {
 }
 
 function clearHistory() {
+  if (state.loadingHistoryId) {
+    return;
+  }
+
   const previousCount = state.history.length;
   state.history = persistHistory([]);
   renderHistoryList();
@@ -1951,8 +2004,17 @@ function updateHistoryCollapse() {
   setHistoryCollapsed(state.historyCollapsed, { persist: false });
 }
 
+function setHistoryLoadingId(id) {
+  state.loadingHistoryId = id || "";
+  const isLoading = Boolean(state.loadingHistoryId);
+  document.documentElement.classList.toggle("is-history-loading", isLoading);
+  elements.historyList.classList.toggle("is-loading", isLoading);
+  renderHistoryList();
+}
+
 function renderHistoryList() {
-  elements.clearHistoryButton.disabled = state.history.length === 0;
+  const isHistoryLoading = Boolean(state.loadingHistoryId);
+  elements.clearHistoryButton.disabled = state.history.length === 0 || isHistoryLoading;
 
   if (state.history.length === 0) {
     elements.historyList.innerHTML = emptyList(t("historyEmpty"));
@@ -1965,6 +2027,8 @@ function renderHistoryList() {
 }
 
 function renderHistoryItem(entry) {
+  const isLoading = entry.id === state.loadingHistoryId;
+  const isHistoryLoading = Boolean(state.loadingHistoryId);
   const summary = entry.summary || buildHistorySummary(entry.report);
   const title = summary.appName || summary.packageName || t("unknown");
   const icon = renderHistoryIcon(summary);
@@ -1982,8 +2046,8 @@ function renderHistoryItem(entry) {
   ].join(" · ");
 
   return [
-    `<article class="history-row">`,
-    `<button class="history-main" type="button" data-history-action="open" data-history-id="${escapeAttr(entry.id)}" aria-label="${escapeAttr(t("historyOpen"))}">`,
+    `<article class="history-row${isLoading ? " is-loading" : ""}" aria-busy="${isLoading ? "true" : "false"}">`,
+    `<button class="history-main" type="button" data-history-action="open" data-history-id="${escapeAttr(entry.id)}" aria-label="${escapeAttr(t("historyOpen"))}" aria-disabled="${isHistoryLoading ? "true" : "false"}">`,
     icon,
     `<span class="history-copy">`,
     `<span class="history-title">${escapeHtml(title)}</span>`,
@@ -1991,9 +2055,13 @@ function renderHistoryItem(entry) {
     `<span class="history-meta">${escapeHtml(t("historyItemMeta", { version, targetSdk }))}</span>`,
     `<span class="history-meta">${escapeHtml(t("historyFileMeta", { file, size, date }))}</span>`,
     `<span class="history-meta">${escapeHtml(statText)}</span>`,
+    `<span class="history-loading" aria-live="polite">`,
+    `<span class="history-loading-spinner" aria-hidden="true"></span>`,
+    `<span>${escapeHtml(t("historyOpening"))}</span>`,
+    `</span>`,
     `</span>`,
     `</button>`,
-    `<button class="icon-button history-delete" type="button" data-history-action="delete" data-history-id="${escapeAttr(entry.id)}" aria-label="${escapeAttr(t("historyDelete"))}" title="${escapeAttr(t("historyDelete"))}">`,
+    `<button class="icon-button history-delete" type="button" data-history-action="delete" data-history-id="${escapeAttr(entry.id)}" aria-label="${escapeAttr(t("historyDelete"))}" title="${escapeAttr(t("historyDelete"))}" aria-disabled="${isHistoryLoading ? "true" : "false"}">`,
     `<svg viewBox="0 0 24 24" aria-hidden="true">`,
     `<path d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1Zm1 2h4V5h-4Zm-3 2v12h10V7H7Zm3 3a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0v-4a1 1 0 0 1 1-1Zm4 0a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0v-4a1 1 0 0 1 1-1Z"></path>`,
     `</svg>`,

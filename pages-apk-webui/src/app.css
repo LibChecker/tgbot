@@ -852,6 +852,14 @@ svg {
   gap: 10px;
 }
 
+:root.is-history-loading,
+:root.is-history-loading .history-main,
+:root.is-history-loading .history-delete,
+.history-list.is-loading .history-main,
+.history-list.is-loading .history-delete {
+  cursor: wait;
+}
+
 .history-row {
   --history-row-glass-x: 50%;
   --history-row-glass-y: 50%;
@@ -887,6 +895,17 @@ svg {
     opacity var(--history-row-glass-opacity-duration) var(--history-row-glass-opacity-easing),
     transform var(--history-row-glass-transform-duration) var(--history-row-glass-transform-easing);
   will-change: opacity, transform, top, left;
+}
+
+.history-row.is-loading {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-soft) 82%, var(--accent-soft) 18%),
+      color-mix(in srgb, var(--surface) 86%, var(--accent-soft) 14%)
+    );
+  box-shadow: 0 16px 38px rgb(0 0 0 / 0.16);
 }
 
 .history-row.is-pointer-active {
@@ -975,6 +994,33 @@ svg {
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.45;
+}
+
+.history-loading {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 3px;
+  color: var(--accent-strong);
+  font-size: 0.86rem;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.history-row.is-loading .history-loading {
+  display: inline-flex;
+}
+
+.history-loading-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, currentColor 26%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: compare-spin 760ms linear infinite;
 }
 
 .history-delete {
@@ -3007,7 +3053,8 @@ svg {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .compare-spinner {
+  .compare-spinner,
+  .history-loading-spinner {
     animation: none;
   }
 }

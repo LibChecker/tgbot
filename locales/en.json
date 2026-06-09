@@ -146,6 +146,7 @@
     "historyNote": "Saved in this browser. Click an item to reopen the report.",
     "historyEmpty": "No history yet.",
     "historyOpen": "Open history item",
+    "historyOpening": "Opening report...",
     "historyDelete": "Delete",
     "historyExpand": "Expand History",
     "historyCollapse": "Collapse History",
