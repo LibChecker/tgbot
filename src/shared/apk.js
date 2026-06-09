@@ -61,23 +61,7 @@ export async function readAndroidPackageInfo(packageBuffer) {
   }
 
   const apkEntries = collectContainedApkEntries(zipEntries);
-  const selectedEntry = apkEntries[0];
-  if (!selectedEntry) {
-    throw new Error("Android 包中未找到可解析的 APK 文件");
-  }
-
-  const apkBytes = await extractZipEntry(packageBytes, selectedEntry.entry);
-  const apkInfo = await readApkInfo(apkBytes);
-
-  return {
-    ...apkInfo,
-    archive: {
-      type: "package-container",
-      analyzedEntry: selectedEntry.path,
-      apkEntryCount: apkEntries.length,
-      apkEntries: apkEntries.map((item) => item.path),
-    },
-  };
+  return readPackageContainerInfo(packageBytes, apkEntries);
 }
 
 export async function readApkInfo(apkBuffer) {
@@ -99,6 +83,210 @@ function readApkInfoFromParsedZip(apkBytes, zipEntries) {
   );
 }
 
+async function readPackageContainerInfo(packageBytes, apkEntries) {
+  const apkSources = await extractContainedApkSources(packageBytes, apkEntries);
+  const selectedSource = selectContainedApkSource(apkSources);
+  if (!selectedSource) {
+    throw new Error("Android 包中未找到可解析的 APK 文件");
+  }
+
+  const apkInfo = await readApkInfoFromZipSource(selectedSource, {
+    scanDex: true,
+    iconSource: buildContainedIconSource(apkSources, selectedSource),
+    iconResources: await readContainedIconResources(apkSources, selectedSource),
+  });
+  const nativeLibraries = collectContainedNativeLibraries(apkSources);
+
+  return {
+    ...apkInfo,
+    nativeLibraries,
+    archive: {
+      type: "package-container",
+      analyzedEntry: selectedSource.path,
+      apkEntryCount: apkEntries.length,
+      apkEntries: apkEntries.map((item) => item.path),
+      apkEntryDetails: apkEntries.map((item) => buildArchiveApkEntryDetail(item, selectedSource.path)),
+    },
+  };
+}
+
+function buildArchiveApkEntryDetail(apkEntry, analyzedPath) {
+  const size = apkEntry.entry.uncompressedSize || apkEntry.entry.compressedSize || 0;
+  return {
+    path: apkEntry.path,
+    name: getContainedApkFileName(apkEntry.path),
+    size,
+    compressedSize: apkEntry.entry.compressedSize || 0,
+    uncompressedSize: apkEntry.entry.uncompressedSize || 0,
+    analyzed: apkEntry.path === analyzedPath,
+  };
+}
+
+async function extractContainedApkSources(packageBytes, apkEntries) {
+  const sources = [];
+  for (const apkEntry of apkEntries) {
+    try {
+      sources.push(await extractContainedApkSource(packageBytes, apkEntry));
+    } catch {
+      // Keep parsing other entries in APKS/APKM/XAPK containers when one split is unusable.
+    }
+  }
+  return sources;
+}
+
+async function extractContainedApkSource(packageBytes, apkEntry) {
+  const apkBytes = await extractZipEntry(packageBytes, apkEntry.entry);
+  const zipEntries = parseZipEntries(apkBytes);
+  return {
+    path: apkEntry.path,
+    apkBytes,
+    zipEntries,
+    extractEntry: (entry) => extractZipEntry(apkBytes, entry),
+  };
+}
+
+async function readContainedIconResources(apkSources, selectedSource) {
+  const resources = [];
+  const orderedSources = [
+    selectedSource,
+    ...apkSources.filter((source) => source !== selectedSource),
+  ];
+
+  for (const source of orderedSources) {
+    const parsed = await readApkResources(source);
+    if (parsed) {
+      resources.push(parsed);
+    }
+  }
+
+  return combineResourceResolvers(resources);
+}
+
+function combineResourceResolvers(resources) {
+  const resolvers = resources.filter(Boolean);
+  if (resolvers.length <= 1) {
+    return resolvers[0] || null;
+  }
+
+  return {
+    resolveString(resourceId) {
+      for (const resolver of resolvers) {
+        const value = resolver.resolveString(resourceId);
+        if (value) {
+          return value;
+        }
+      }
+      return null;
+    },
+    resolveFiles(resourceId) {
+      const files = [];
+      const seen = new Set();
+      for (const resolver of resolvers) {
+        for (const file of resolver.resolveFiles(resourceId)) {
+          const key = `${file.path}\u0000${file.typeName}\u0000${file.density}\u0000${file.isDefaultConfig}`;
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          files.push(file);
+        }
+      }
+      return files;
+    },
+    resolveColor(resourceId) {
+      for (const resolver of resolvers) {
+        const value = resolver.resolveColor(resourceId);
+        if (value) {
+          return value;
+        }
+      }
+      return null;
+    },
+  };
+}
+
+function buildContainedIconSource(apkSources, selectedSource) {
+  const sourcesByPath = new Map(apkSources.map((source) => [source.path, source]));
+  const zipEntries = new Map();
+  const orderedSources = [
+    selectedSource,
+    ...apkSources.filter((source) => source !== selectedSource),
+  ];
+
+  for (const source of orderedSources) {
+    for (const [path, entry] of source.zipEntries.entries()) {
+      if (zipEntries.has(path)) {
+        continue;
+      }
+
+      zipEntries.set(path, {
+        ...entry,
+        sourceEntry: source.path,
+      });
+    }
+  }
+
+  return {
+    zipEntries,
+    extractEntry(entry) {
+      const source = sourcesByPath.get(entry.sourceEntry) || selectedSource;
+      return extractZipEntry(source.apkBytes, entry);
+    },
+  };
+}
+
+function selectContainedApkSource(apkSources) {
+  return [...apkSources]
+    .sort((left, right) => (
+      scoreContainedApkSource(left) - scoreContainedApkSource(right) ||
+      left.path.localeCompare(right.path)
+    ))[0] || null;
+}
+
+function scoreContainedApkSource(source) {
+  let score = scoreContainedApkPath(source.path) * 100;
+
+  if (!source.zipEntries.has("AndroidManifest.xml")) {
+    score += 1000;
+  }
+
+  if (hasRootDexEntries(source.zipEntries)) {
+    score -= 30;
+  }
+
+  if (source.zipEntries.has("resources.arsc")) {
+    score -= 10;
+  }
+
+  return score;
+}
+
+function hasRootDexEntries(zipEntries) {
+  for (const path of zipEntries.keys()) {
+    if (/^classes\d*\.dex$/u.test(path)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collectContainedNativeLibraries(apkSources) {
+  const librariesByKey = new Map();
+
+  for (const source of apkSources) {
+    for (const library of collectNativeLibraries(source.zipEntries)) {
+      const item = {
+        ...library,
+        sourceEntry: source.path,
+      };
+      const key = `${item.sourceEntry}\u0000${item.path}\u0000${item.abi}\u0000${item.name}`;
+      librariesByKey.set(key, item);
+    }
+  }
+
+  return [...librariesByKey.values()].sort(compareNativeLibraries);
+}
+
 function isDirectApkZip(zipEntries) {
   return zipEntries.has("AndroidManifest.xml");
 }
@@ -118,13 +306,12 @@ function collectContainedApkEntries(zipEntries) {
 }
 
 function isContainedApkPath(path) {
-  const normalized = String(path || "").toLowerCase();
+  const normalized = String(path || "").toLowerCase().replaceAll("\\", "/");
   return normalized.endsWith(".apk") && !normalized.startsWith("__macosx/");
 }
 
 function scoreContainedApkPath(path) {
-  const normalized = String(path || "").toLowerCase();
-  const fileName = normalized.split("/").filter(Boolean).at(-1) || normalized;
+  const fileName = getContainedApkFileName(path);
 
   if (fileName === "base.apk") {
     return 0;
@@ -142,11 +329,27 @@ function scoreContainedApkPath(path) {
     return 3;
   }
 
-  if (!/(?:^|[-_.])(?:split|config|dpi|lang|armeabi|arm64|x86)(?:[-_.]|$)/u.test(fileName)) {
+  if (!isLikelySplitApkFileName(fileName)) {
     return 4;
   }
 
   return 5;
+}
+
+function getContainedApkFileName(path) {
+  const normalized = String(path || "").toLowerCase();
+  return normalized.split(/[\\/]/u).filter(Boolean).at(-1) || normalized;
+}
+
+function isLikelySplitApkFileName(fileName) {
+  const stem = fileName.replace(/\.apk$/u, "");
+
+  return (
+    /(?:^|[-_.])(?:split|config|dpi|lang|armeabi|arm64|x86|mips|ldpi|mdpi|tvdpi|hdpi|xhdpi|xxhdpi|xxxhdpi|nodpi|anydpi)(?:[-_.]|$)/u.test(fileName) ||
+    /^(?:armeabi|armeabi-v7a|arm64-v8a|x86|x86_64|mips|mips64)$/u.test(stem) ||
+    /^(?:ldpi|mdpi|tvdpi|hdpi|xhdpi|xxhdpi|xxxhdpi|nodpi|anydpi)$/u.test(stem) ||
+    /^[a-z]{2}(?:[-_][a-z0-9]{2,8})?$/u.test(stem)
+  );
 }
 
 export async function readApkInfoFromZipSource(source, options = {}) {
@@ -177,7 +380,11 @@ export async function readApkInfoFromZipSource(source, options = {}) {
     appName = formatResourceReference(manifest.applicationLabelRef);
   }
 
-  const icon = await resolveApplicationIcon(source, manifest, resources);
+  const icon = await resolveApplicationIcon(
+    options.iconSource || source,
+    manifest,
+    options.iconResources || resources,
+  );
 
   const metaData = {
     application: resolveApplicationMetaData(manifest.metaData.application, resources),
@@ -627,7 +834,7 @@ function parseIconXmlReferencedResourceIds(xmlBytes) {
 
 function collectIconElementReferenceItems(element) {
   const references = [];
-  const preferredNames = ["foreground", "monochrome", "background", "drawable", "icon"];
+  const preferredNames = ["foreground", "background", "drawable", "icon", "monochrome"];
   const elementPriority = preferredNames.indexOf(element.name);
 
   for (const [name, attribute] of element.attributes.entries()) {
@@ -1902,17 +2109,28 @@ function collectNativeLibraries(zipEntries) {
     });
   }
 
-  libraries.sort((left, right) => {
-    if (left.abi !== right.abi) {
-      return left.abi.localeCompare(right.abi);
-    }
-
-    return left.name.localeCompare(right.name);
-  });
+  libraries.sort(compareNativeLibraries);
 
   return libraries;
 }
 
+function compareNativeLibraries(left, right) {
+  if (left.abi !== right.abi) {
+    return left.abi.localeCompare(right.abi);
+  }
+
+  if (left.name !== right.name) {
+    return left.name.localeCompare(right.name);
+  }
+
+  const leftSource = left.sourceEntry || "";
+  const rightSource = right.sourceEntry || "";
+  if (leftSource !== rightSource) {
+    return leftSource.localeCompare(rightSource);
+  }
+
+  return left.path.localeCompare(right.path);
+}
 
 function parseZipEntries(bytes) {
   const entries = new Map();
