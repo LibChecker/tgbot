@@ -1,4 +1,4 @@
-import { createI18n, getSupportedLocales, normalizeLocale, resolvePreferredLocale } from "../modules/i18n.js";
+import { createI18n, getSupportedLocales, normalizeLocale, resolvePreferredLocale } from "@shared/i18n.js";
 
 export { getSupportedLocales, normalizeLocale, resolvePreferredLocale };
 

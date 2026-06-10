@@ -1,5 +1,3 @@
-import { LIBCHECKER_RULES } from "./generated/libchecker-rules.js";
-
 const RULE_TYPE_NATIVE = 0;
 const RULE_TYPE_SERVICE = 1;
 const RULE_TYPE_ACTIVITY = 2;
@@ -29,13 +27,22 @@ const SECNEO_NATIVE_LIBS = new Set([
 
 const FLUTTER_VALIDATION_LIBS = new Set(["libapp.so"]);
 const UNITY_VALIDATION_LIBS = new Set(["libmain.so"]);
+const compiledRuleIndexes = new WeakMap();
+const EMPTY_RULE_INDEX = new Map();
 
-const COMPILED_RULE_INDEX = compileRuleIndex(LIBCHECKER_RULES);
+export function annotateSdkMarkers(apkInfo, resolveIconUrl, rules = []) {
+  return annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, getCompiledRuleIndex(rules));
+}
 
-export function annotateSdkMarkers(apkInfo, resolveIconUrl) {
+export function createSdkMarkerAnnotator(rules = []) {
+  const ruleIndex = getCompiledRuleIndex(rules);
+  return (apkInfo, resolveIconUrl) => annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, ruleIndex);
+}
+
+function annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, ruleIndex) {
   const nativeLibraries = apkInfo.nativeLibraries.map((library) => ({
     ...library,
-    sdk: matchNativeLibraryRule(library, apkInfo, resolveIconUrl),
+    sdk: matchNativeLibraryRule(library, apkInfo, resolveIconUrl, ruleIndex),
   }));
 
   const components = {
@@ -43,21 +50,25 @@ export function annotateSdkMarkers(apkInfo, resolveIconUrl) {
       apkInfo.components.activities,
       RULE_TYPE_ACTIVITY,
       resolveIconUrl,
+      ruleIndex,
     ),
     services: annotateComponentList(
       apkInfo.components.services,
       RULE_TYPE_SERVICE,
       resolveIconUrl,
+      ruleIndex,
     ),
     receivers: annotateComponentList(
       apkInfo.components.receivers,
       RULE_TYPE_RECEIVER,
       resolveIconUrl,
+      ruleIndex,
     ),
     providers: annotateComponentList(
       apkInfo.components.providers,
       RULE_TYPE_PROVIDER,
       resolveIconUrl,
+      ruleIndex,
     ),
   };
 
@@ -71,15 +82,15 @@ export function annotateSdkMarkers(apkInfo, resolveIconUrl) {
   };
 }
 
-function annotateComponentList(components, ruleType, resolveIconUrl) {
+function annotateComponentList(components, ruleType, resolveIconUrl, ruleIndex) {
   return components.map((component) => ({
     ...component,
-    sdk: matchComponentRule(component, ruleType, resolveIconUrl),
+    sdk: matchComponentRule(component, ruleType, resolveIconUrl, ruleIndex),
   }));
 }
 
-function matchNativeLibraryRule(library, apkInfo, resolveIconUrl) {
-  const rule = findRule(library.name, RULE_TYPE_NATIVE, true);
+function matchNativeLibraryRule(library, apkInfo, resolveIconUrl, ruleIndex) {
+  const rule = findRule(ruleIndex, library.name, RULE_TYPE_NATIVE, true);
   if (!rule) {
     return null;
   }
@@ -91,8 +102,8 @@ function matchNativeLibraryRule(library, apkInfo, resolveIconUrl) {
   return materializeRule(rule, resolveIconUrl, rule.isRegexRule ? "regex" : "exact");
 }
 
-function matchComponentRule(component, ruleType, resolveIconUrl) {
-  const directRule = findRule(component.name, ruleType, true);
+function matchComponentRule(component, ruleType, resolveIconUrl, ruleIndex) {
+  const directRule = findRule(ruleIndex, component.name, ruleType, true);
   if (directRule) {
     return materializeRule(
       directRule,
@@ -102,7 +113,7 @@ function matchComponentRule(component, ruleType, resolveIconUrl) {
   }
 
   for (const action of component.actions || []) {
-    const actionRule = findRule(action, RULE_TYPE_ACTION, false);
+    const actionRule = findRule(ruleIndex, action, RULE_TYPE_ACTION, false);
     if (actionRule) {
       return materializeRule(actionRule, resolveIconUrl, "action");
     }
@@ -111,8 +122,8 @@ function matchComponentRule(component, ruleType, resolveIconUrl) {
   return null;
 }
 
-function findRule(name, type, useRegex) {
-  const group = COMPILED_RULE_INDEX.get(type);
+function findRule(ruleIndex, name, type, useRegex) {
+  const group = ruleIndex.get(type);
   if (!group) {
     return null;
   }
@@ -305,6 +316,21 @@ function compareSummaryEntries(left, right) {
   }
 
   return left.label.localeCompare(right.label);
+}
+
+function getCompiledRuleIndex(rules) {
+  if (!Array.isArray(rules) || rules.length === 0) {
+    return EMPTY_RULE_INDEX;
+  }
+
+  const cached = compiledRuleIndexes.get(rules);
+  if (cached) {
+    return cached;
+  }
+
+  const index = compileRuleIndex(rules);
+  compiledRuleIndexes.set(rules, index);
+  return index;
 }
 
 function compileRuleIndex(rules) {

@@ -1,4 +1,4 @@
-import { detectTerminalSystemFromNavigator, normalizeSystemPlatform } from "../modules/terminal-system.js";
+import { detectTerminalSystemFromNavigator, normalizeSystemPlatform } from "@shared/terminal-system.js";
 
 export async function detectTerminalSystem() {
   const navigatorValue = window.navigator || {};

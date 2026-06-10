@@ -11,10 +11,14 @@ const sourceRoots = [
   resolve(projectDir, "scripts"),
   resolve(projectDir, "src"),
 ];
+const extraSyntaxFiles = [
+  resolve(projectDir, "vite.config.mjs"),
+];
 
 await run(nodeBin, [resolve(repoDir, "scripts/generate_i18n_catalogs.mjs"), "--check"], repoDir);
 
 const syntaxFiles = (await collectSyntaxFiles(sourceRoots))
+  .concat(extraSyntaxFiles)
   .map((file) => relative(projectDir, file))
   .sort((a, b) => a.localeCompare(b));
 

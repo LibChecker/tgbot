@@ -14,11 +14,13 @@ pages-apk-webui/
     app.js              Main UI controller
     index.html          Static entry HTML
   scripts/
-    build.mjs           Pages build script
+    build.mjs           Vite Pages build wrapper
+    benchmark.mjs       Local Chrome/CDP performance benchmark
+  vite.config.mjs       Vite build config and shared-module aliases
   dist/                 Generated build output
 ```
 
-The build script generates ignored shared runtime bundles, then copies shared analyzer files into `dist/modules/`:
+The build script generates ignored shared runtime bundles, then Vite bundles the WebUI, worker, and shared analyzer files into hashed `dist/assets/` files:
 
 - `src/shared/apk.js`
 - `src/shared/apk-signatures.js`
@@ -38,7 +40,7 @@ Install dependencies from the repository root first:
 npm install
 ```
 
-Run the Pages app locally:
+Run the Vite dev server locally:
 
 ```bash
 npm run pages:dev
@@ -54,6 +56,12 @@ Run WebUI syntax checks:
 
 ```bash
 npm run pages:check
+```
+
+Run a local Chrome/CDP performance benchmark against the built `dist/` output:
+
+```bash
+node pages-apk-webui/scripts/benchmark.mjs --label vite --sample /path/to/app.apk
 ```
 
 ## Deployment

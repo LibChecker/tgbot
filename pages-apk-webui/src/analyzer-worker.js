@@ -1,6 +1,8 @@
-import { readAndroidPackageInfo } from "./modules/apk.js";
-import { createI18n, normalizeLocale } from "./modules/i18n.js";
-import { detectTerminalSystemFromNavigator as detectTerminalSystemFromNavigatorValue } from "./modules/terminal-system.js";
+import { readAndroidPackageInfo } from "@shared/apk.js";
+import { createI18n, normalizeLocale } from "@shared/i18n.js";
+import { detectTerminalSystemFromNavigator as detectTerminalSystemFromNavigatorValue } from "@shared/terminal-system.js";
+import libcheckerRulesUrl from "@shared/generated/libchecker-rules.js?url";
+import libcheckerSdkIconsUrl from "@shared/generated/libchecker-sdk-icons.js?url";
 
 const APK_MIME_TYPE = "application/vnd.android.package-archive";
 const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
@@ -57,7 +59,10 @@ async function analyze(message) {
 
   const apkInfo = await readAndroidPackageInfo(buffer);
   const sdkModules = await sdkModulesTask;
-  const annotated = sdkModules.annotateSdkMarkers(apkInfo, sdkModules.resolveSdkIconDataUri);
+  const annotated = sdkModules.annotateSdkMarkers(
+    apkInfo,
+    sdkModules.resolveSdkIconDataUri,
+  );
   const mergedApkInfo = {
     ...apkInfo,
     ...annotated,
@@ -94,14 +99,15 @@ function isLikelyApk(file) {
 function loadSdkModules() {
   if (!sdkModulesPromise) {
     sdkModulesPromise = Promise.all([
-      import("./modules/sdk-markers.js"),
-      import("./modules/generated/libchecker-rules.js"),
-      import("./modules/generated/libchecker-sdk-icons.js"),
+      import("@shared/sdk-markers.js"),
+      import(/* @vite-ignore */ libcheckerRulesUrl),
+      import(/* @vite-ignore */ libcheckerSdkIconsUrl),
     ]).then(([sdkMarkersModule, rulesModule, iconsModule]) => {
       const sdkIconSvgs = iconsModule.LIBCHECKER_SDK_ICON_SVGS || {};
+      const rules = rulesModule.LIBCHECKER_RULES || [];
       return {
-        annotateSdkMarkers: sdkMarkersModule.annotateSdkMarkers,
-        ruleCount: (rulesModule.LIBCHECKER_RULES || []).length,
+        annotateSdkMarkers: sdkMarkersModule.createSdkMarkerAnnotator(rules),
+        ruleCount: rules.length,
         iconCount: Object.keys(sdkIconSvgs).length,
         resolveSdkIconDataUri: (iconName) => resolveSdkIconDataUri(iconName, sdkIconSvgs),
       };

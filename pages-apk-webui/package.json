@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node ../scripts/generate_shared_assets.mjs && node scripts/build.mjs",
     "check": "node ../scripts/generate_shared_assets.mjs && node scripts/check.mjs",
-    "dev": "npm run build && npx wrangler pages dev dist",
+    "dev": "node ../scripts/generate_shared_assets.mjs && node ../node_modules/vite/bin/vite.js --config vite.config.mjs",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=tgbot-apk-webui"
   }
 }

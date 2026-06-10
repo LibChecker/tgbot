@@ -1,0 +1,102 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig, minify } from "vite";
+
+const projectDir = dirname(fileURLToPath(import.meta.url));
+const repoDir = resolve(projectDir, "..");
+const srcDir = resolve(projectDir, "src");
+
+function manualChunks(id) {
+  if (id.includes("/src/shared/generated/libchecker-sdk-icons.js")) {
+    return "libchecker-sdk-icons";
+  }
+  if (id.includes("/src/shared/generated/libchecker-rules.js")) {
+    return "libchecker-rules";
+  }
+  if (id.includes("/src/shared/apk")) {
+    return "apk-analyzer";
+  }
+  return null;
+}
+
+export default defineConfig({
+  root: srcDir,
+  base: "./",
+  publicDir: false,
+  plugins: [
+    minifyGeneratedJsAssets(),
+  ],
+  resolve: {
+    alias: {
+      "@shared": resolve(repoDir, "src/shared"),
+    },
+  },
+  server: {
+    host: "127.0.0.1",
+  },
+  build: {
+    outDir: resolve(projectDir, "dist"),
+    emptyOutDir: true,
+    target: "es2022",
+    assetsInlineLimit: 0,
+    modulePreload: {
+      polyfill: false,
+    },
+    rolldownOptions: {
+      input: resolve(srcDir, "index.html"),
+      output: {
+        entryFileNames: "assets/[name]-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash][extname]",
+        codeSplitting: true,
+        manualChunks,
+      },
+    },
+  },
+  worker: {
+    format: "es",
+    rolldownOptions: {
+      output: {
+        entryFileNames: "assets/[name]-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash][extname]",
+        codeSplitting: true,
+        manualChunks,
+      },
+    },
+  },
+});
+
+function minifyGeneratedJsAssets() {
+  return {
+    name: "minify-generated-js-assets",
+    apply: "build",
+    async generateBundle(_options, bundle) {
+      for (const asset of Object.values(bundle)) {
+        if (
+          asset.type !== "asset" ||
+          !/^assets\/libchecker-(?:rules|sdk-icons)-.+\.js$/u.test(asset.fileName)
+        ) {
+          continue;
+        }
+
+        const source = typeof asset.source === "string"
+          ? asset.source
+          : Buffer.from(asset.source).toString("utf8");
+        if (!source.includes("Generated from LibChecker-Rules-Bundle")) {
+          continue;
+        }
+
+        const result = await minify(asset.fileName, source, {
+          module: true,
+          compress: true,
+          mangle: true,
+        });
+        if (result.errors.length) {
+          throw new Error(`Failed to minify ${asset.fileName}: ${result.errors[0].message}`);
+        }
+        asset.source = result.code;
+      }
+    },
+  };
+}

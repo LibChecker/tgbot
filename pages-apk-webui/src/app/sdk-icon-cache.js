@@ -1,5 +1,7 @@
 import { sanitizeImageSrc } from "./format.js";
 import { COMPONENT_SECTIONS } from "./report-model.js";
+import libcheckerRulesUrl from "@shared/generated/libchecker-rules.js?url";
+import libcheckerSdkIconsUrl from "@shared/generated/libchecker-sdk-icons.js?url";
 
 let sdkIconSvgMap = null;
 let sdkIconSvgMapPromise = null;
@@ -42,7 +44,7 @@ async function loadSdkIconSvgMap() {
   }
 
   if (!sdkIconSvgMapPromise) {
-    sdkIconSvgMapPromise = import("../modules/generated/libchecker-sdk-icons.js")
+    sdkIconSvgMapPromise = import(/* @vite-ignore */ libcheckerSdkIconsUrl)
       .then((module) => module.LIBCHECKER_SDK_ICON_SVGS || {})
       .catch(() => ({}));
   }
@@ -57,7 +59,7 @@ async function loadSdkSingleColorIconNames() {
   }
 
   if (!sdkSingleColorIconNamesPromise) {
-    sdkSingleColorIconNamesPromise = import("../modules/generated/libchecker-rules.js")
+    sdkSingleColorIconNamesPromise = import(/* @vite-ignore */ libcheckerRulesUrl)
       .then((module) => buildSdkSingleColorIconNameSet(module.LIBCHECKER_RULES || []))
       .catch(() => new Set());
   }
@@ -82,7 +84,7 @@ async function loadSdkRuleDetailMap() {
   }
 
   if (!sdkRuleDetailMapPromise) {
-    sdkRuleDetailMapPromise = import("../modules/generated/libchecker-rules.js")
+    sdkRuleDetailMapPromise = import(/* @vite-ignore */ libcheckerRulesUrl)
       .then((module) => buildSdkRuleDetailMap(module.LIBCHECKER_RULES || []))
       .catch(() => ({ byKey: new Map(), byLabel: new Map(), byTypedKey: new Map() }));
   }

@@ -11,6 +11,7 @@ import {
 } from "./observability.js";
 import { handleReportRequest } from "./report-viewer.js";
 import { annotateSdkMarkers } from "../shared/sdk-markers.js";
+import { LIBCHECKER_RULES } from "../shared/generated/libchecker-rules.js";
 import { createApkTelegraphPage } from "./telegraph.js";
 import { htmlResponse, renderUploadPage } from "./upload-view.js";
 
@@ -1531,7 +1532,7 @@ function buildUrlPreviewDocument(preview) {
 
 function buildApkReport(message, document, apkInfo, publicBaseUrl, locale) {
   const resolveSdkIconUrl = (iconName) => buildSdkIconUrl(publicBaseUrl, iconName);
-  const sdkAnnotated = annotateSdkMarkers(apkInfo, resolveSdkIconUrl);
+  const sdkAnnotated = annotateSdkMarkers(apkInfo, resolveSdkIconUrl, LIBCHECKER_RULES);
 
   return {
     locale,
