@@ -9,7 +9,8 @@ const repoDir = resolve(packageDir, "../..");
 const refresh = process.argv.includes("--refresh");
 const generatedDir = resolve(packageDir, "src/generated");
 const libcheckerOutputs = [
-  resolve(generatedDir, "libchecker-rules.js"),
+  resolve(generatedDir, "libchecker-rules-core.js"),
+  resolve(generatedDir, "libchecker-rules-detail.js"),
   resolve(generatedDir, "libchecker-sdk-icons.js"),
 ];
 

@@ -1,4 +1,5 @@
 import { readAndroidPackageInfo } from "../../shared/src/apk.js";
+import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { readApkInfoFromUrl } from "./apk-url-preview.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
@@ -11,7 +12,8 @@ import {
 } from "./observability.js";
 import { handleReportRequest } from "./report-viewer.js";
 import { annotateSdkMarkers } from "../../shared/src/sdk-markers.js";
-import { LIBCHECKER_RULES } from "../../shared/src/generated/libchecker-rules.js";
+import { LIBCHECKER_RULES_CORE } from "../../shared/src/generated/libchecker-rules-core.js";
+import { LIBCHECKER_RULE_DETAILS } from "../../shared/src/generated/libchecker-rules-detail.js";
 import { createApkTelegraphPage } from "./telegraph.js";
 import { htmlResponse, renderUploadPage } from "./upload-view.js";
 
@@ -1532,9 +1534,14 @@ function buildUrlPreviewDocument(preview) {
 
 function buildApkReport(message, document, apkInfo, publicBaseUrl, locale) {
   const resolveSdkIconUrl = (iconName) => buildSdkIconUrl(publicBaseUrl, iconName);
-  const sdkAnnotated = annotateSdkMarkers(apkInfo, resolveSdkIconUrl, LIBCHECKER_RULES);
+  const sdkAnnotated = annotateSdkMarkers(
+    apkInfo,
+    resolveSdkIconUrl,
+    LIBCHECKER_RULES_CORE,
+    LIBCHECKER_RULE_DETAILS,
+  );
 
-  return {
+  return assertTelegramApkReport({
     locale,
     apkInfo: {
       ...apkInfo,
@@ -1549,7 +1556,7 @@ function buildApkReport(message, document, apkInfo, publicBaseUrl, locale) {
       gradle: buildFeatureIconUrl(publicBaseUrl, "gradle"),
       compose: buildFeatureIconUrl(publicBaseUrl, "compose"),
     },
-  };
+  });
 }
 
 function buildReportViewerUrl(publicBaseUrl, path, locale) {

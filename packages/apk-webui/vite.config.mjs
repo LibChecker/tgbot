@@ -10,8 +10,11 @@ function manualChunks(id) {
   if (id.includes("/packages/shared/src/generated/libchecker-sdk-icons.js")) {
     return "libchecker-sdk-icons";
   }
-  if (id.includes("/packages/shared/src/generated/libchecker-rules.js")) {
-    return "libchecker-rules";
+  if (id.includes("/packages/shared/src/generated/libchecker-rules-core.js")) {
+    return "libchecker-rules-core";
+  }
+  if (id.includes("/packages/shared/src/generated/libchecker-rules-detail.js")) {
+    return "libchecker-rules-detail";
   }
   if (id.includes("/packages/shared/src/apk")) {
     return "apk-analyzer";
@@ -75,7 +78,7 @@ function minifyGeneratedJsAssets() {
       for (const asset of Object.values(bundle)) {
         if (
           asset.type !== "asset" ||
-          !/^assets\/libchecker-(?:rules|sdk-icons)-.+\.js$/u.test(asset.fileName)
+          !/^assets\/libchecker-(?:rules-core|rules-detail|sdk-icons)-.+\.js$/u.test(asset.fileName)
         ) {
           continue;
         }

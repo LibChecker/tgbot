@@ -1,5 +1,7 @@
 import { readApkSignatures } from "./apk-signatures.js";
 
+/** @typedef {import("./contracts.js").ApkInfo} ApkInfo */
+
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
@@ -84,6 +86,10 @@ const ADAPTIVE_ICON_VIEW_PORT_SCALE = 1 / (1 + 2 * ADAPTIVE_ICON_EXTRA_INSET_PER
 const ADAPTIVE_ICON_EDGE_INSET = 0.5;
 const ADAPTIVE_ICON_EDGE_FEATHER = 1;
 
+/**
+ * @param {ArrayBuffer | Uint8Array} packageBuffer
+ * @returns {Promise<ApkInfo>}
+ */
 export async function readAndroidPackageInfo(packageBuffer) {
   const packageBytes = toUint8Array(packageBuffer);
   const zipEntries = parseZipEntries(packageBytes);
@@ -96,6 +102,10 @@ export async function readAndroidPackageInfo(packageBuffer) {
   return readPackageContainerInfo(packageBytes, apkEntries);
 }
 
+/**
+ * @param {ArrayBuffer | Uint8Array} apkBuffer
+ * @returns {Promise<ApkInfo>}
+ */
 export async function readApkInfo(apkBuffer) {
   const apkBytes = toUint8Array(apkBuffer);
   const zipEntries = parseZipEntries(apkBytes);
@@ -452,6 +462,11 @@ function isLikelySplitApkFileName(fileName) {
   );
 }
 
+/**
+ * @param {{ zipEntries: Map<string, object>, extractEntry: (entry: object) => Promise<Uint8Array>, apkBytes?: Uint8Array, path?: string }} source
+ * @param {{ scanDex?: boolean, nativeLibraries?: import("./contracts.js").ApkNativeLibrary[], iconSource?: object, iconResources?: object, maxSignatureEntryBytes?: number, maxResourceBytes?: number }} [options]
+ * @returns {Promise<ApkInfo>}
+ */
 export async function readApkInfoFromZipSource(source, options = {}) {
   const zipEntries = source.zipEntries;
   const nativeLibraries = collectNativeLibraries(zipEntries);

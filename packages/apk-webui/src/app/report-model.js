@@ -1,5 +1,9 @@
+/** @typedef {import("@shared/contracts.js").ApkComponentGroups} ApkComponentGroups */
+/** @typedef {import("@shared/contracts.js").ApkInfo} ApkInfo */
+
 export const COMPONENT_SECTIONS = ["activities", "services", "receivers", "providers"];
 
+/** @param {Partial<ApkInfo>} info */
 export function getStats(info) {
   return {
     permissions: info.permissions?.length || 0,
@@ -10,10 +14,17 @@ export function getStats(info) {
   };
 }
 
+/** @param {Partial<ApkComponentGroups>} [components] */
 export function countComponents(components = {}) {
   return COMPONENT_SECTIONS.reduce((sum, key) => sum + (components[key]?.length || 0), 0);
 }
 
+/**
+ * @template T
+ * @param {Iterable<T>} items
+ * @param {(item: T) => string} getKey
+ * @returns {Map<string, T[]>}
+ */
 export function groupBy(items, getKey) {
   const groups = new Map();
   for (const item of items) {

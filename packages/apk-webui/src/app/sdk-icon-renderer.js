@@ -1,6 +1,9 @@
 import { sanitizeImageSrc } from "./format.js";
 import { escapeAttr, escapeHtml } from "./html.js";
 
+/** @typedef {import("@shared/contracts.js").LibCheckerRuleDetail} LibCheckerRuleDetail */
+/** @typedef {import("@shared/contracts.js").SdkMarker} SdkMarker */
+
 const ruleDetailsById = new Map();
 const ruleDetailIdsByPayload = new Map();
 const ruleDetailIdsByRuleKey = new Map();
@@ -8,14 +11,26 @@ const ruleDetailIdsByObject = new WeakMap();
 const themedSvgBySrc = new Map();
 let ruleDetailIdSeed = 0;
 
+/**
+ * @param {SdkMarker} sdk
+ * @param {string} [unknownLabel]
+ */
 export function renderSdkChip(sdk, unknownLabel = "Unknown") {
   return `<span class="chip">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}${renderSdkRuleLabel(sdk, unknownLabel)}</span>`;
 }
 
+/**
+ * @param {SdkMarker} sdk
+ * @param {string} [unknownLabel]
+ */
 export function renderSdkInline(sdk, unknownLabel = "Unknown") {
   return `<span class="sdk-inline">${renderSdkIcon(sdk.iconUrl, sdk.label, sdk.singleColorIcon)}${renderSdkRuleLabel(sdk, unknownLabel)}</span>`;
 }
 
+/**
+ * @param {SdkMarker | null | undefined} sdk
+ * @param {string} [unknownLabel]
+ */
 export function renderSdkRuleLabel(sdk, unknownLabel = "Unknown") {
   const label = sdk?.label || unknownLabel;
   const detailId = registerRuleDetail(sdk?.ruleDetail, sdk);
@@ -26,6 +41,10 @@ export function renderSdkRuleLabel(sdk, unknownLabel = "Unknown") {
   return `<span class="sdk-rule-label${detailClass}"${detailAttrs}>${escapeHtml(label)}</span>`;
 }
 
+/**
+ * @param {string} detailId
+ * @returns {LibCheckerRuleDetail | null}
+ */
 export function getRegisteredSdkRuleDetail(detailId) {
   return ruleDetailsById.get(String(detailId || "")) || null;
 }

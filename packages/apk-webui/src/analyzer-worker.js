@@ -1,7 +1,8 @@
 import { readAndroidPackageInfo } from "@shared/apk.js";
+import { assertAnalyzerWorkerRequest, assertApkReport } from "@shared/contracts.js";
 import { createI18n, normalizeLocale } from "@shared/i18n.js";
 import { detectTerminalSystemFromNavigator as detectTerminalSystemFromNavigatorValue } from "@shared/terminal-system.js";
-import libcheckerRulesUrl from "@shared/generated/libchecker-rules.js?url";
+import libcheckerRulesCoreUrl from "@shared/generated/libchecker-rules-core.js?url";
 import libcheckerSdkIconsUrl from "@shared/generated/libchecker-sdk-icons.js?url";
 
 const APK_MIME_TYPE = "application/vnd.android.package-archive";
@@ -10,19 +11,21 @@ const sdkIconDataUriCache = new Map();
 let sdkModulesPromise = null;
 
 self.addEventListener("message", (event) => {
-  const message = event.data || {};
-  if (message.type !== "analyze") {
+  const rawMessage = event.data || {};
+  if (rawMessage.type !== "analyze") {
     return;
   }
 
-  analyze(message).catch((error) => {
-    const { t } = createWorkerI18n(message.locale);
-    self.postMessage({
-      type: "error",
-      jobId: message.jobId,
-      error: getErrorMessage(error, t),
+  Promise.resolve()
+    .then(() => analyze(assertAnalyzerWorkerRequest(rawMessage)))
+    .catch((error) => {
+      const { t } = createWorkerI18n(rawMessage.locale);
+      self.postMessage({
+        type: "error",
+        jobId: Number(rawMessage.jobId) || 0,
+        error: getErrorMessage(error, t),
+      });
     });
-  });
 });
 
 async function analyze(message) {
@@ -69,20 +72,21 @@ async function analyze(message) {
   };
   const terminalSystem = normalizeTerminalSystem(message.terminalSystem);
   const analysisProfile = buildAnalysisProfile(mergedApkInfo, terminalSystem, sdkModules);
+  const report = assertApkReport({
+    locale: normalizeLocale(message.locale),
+    terminalSystem,
+    analysisProfile,
+    durationMs: Math.round(performance.now() - startedAt),
+    fileName: file.name || "local.apk",
+    fileSizeBytes: file.size || buffer.byteLength || 0,
+    analyzedAt: new Date().toISOString(),
+    apkInfo: mergedApkInfo,
+  });
 
   self.postMessage({
     type: "result",
     jobId: message.jobId,
-    report: {
-      locale: normalizeLocale(message.locale),
-      terminalSystem,
-      analysisProfile,
-      durationMs: Math.round(performance.now() - startedAt),
-      fileName: file.name || "local.apk",
-      fileSizeBytes: file.size || buffer.byteLength || 0,
-      analyzedAt: new Date().toISOString(),
-      apkInfo: mergedApkInfo,
-    },
+    report,
   });
 }
 
@@ -100,11 +104,11 @@ function loadSdkModules() {
   if (!sdkModulesPromise) {
     sdkModulesPromise = Promise.all([
       import("@shared/sdk-markers.js"),
-      import(/* @vite-ignore */ libcheckerRulesUrl),
+      import(/* @vite-ignore */ libcheckerRulesCoreUrl),
       import(/* @vite-ignore */ libcheckerSdkIconsUrl),
     ]).then(([sdkMarkersModule, rulesModule, iconsModule]) => {
       const sdkIconSvgs = iconsModule.LIBCHECKER_SDK_ICON_SVGS || {};
-      const rules = rulesModule.LIBCHECKER_RULES || [];
+      const rules = rulesModule.LIBCHECKER_RULES_CORE || [];
       return {
         annotateSdkMarkers: sdkMarkersModule.createSdkMarkerAnnotator(rules),
         ruleCount: rules.length,

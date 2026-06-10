@@ -1,3 +1,5 @@
+/** @typedef {import("../../shared/src/contracts.js").AnalyticsEventPayload} AnalyticsEventPayload */
+
 const MAX_ANALYTICS_BODY_BYTES = 8 * 1024;
 
 const ANALYTICS_BLOB_KEYS = [
@@ -101,7 +103,7 @@ async function handlePost({ request, env }) {
   }
 
   const event = normalizeText(payload?.event, 80);
-  if (!event) {
+  if (!isAnalyticsEventName(event)) {
     return new Response(null, { status: 400 });
   }
 
@@ -122,6 +124,7 @@ async function handlePost({ request, env }) {
   });
 }
 
+/** @param {AnalyticsEventPayload} payload */
 function writeAnalyticsDataPoint(env, request, payload) {
   const dataset = env.WEBUI_ANALYTICS || env.USAGE_ANALYTICS;
   if (!dataset?.writeDataPoint) {
@@ -265,4 +268,8 @@ function compactObject(value) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && entry !== ""),
   );
+}
+
+function isAnalyticsEventName(value) {
+  return typeof value === "string" && value.trim().length > 0;
 }

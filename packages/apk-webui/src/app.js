@@ -6,17 +6,40 @@ import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/re
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
 import { getFileAnalyticsFields, getReportAnalyticsFields } from "./app/analytics-fields.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
+import {
+  ANALYTICS_EVENT_QUEUE_LIMIT,
+  THEME_CHOICES,
+  THEME_STORAGE_KEY,
+  VALID_APP_MODES,
+  VALID_TABS,
+  WORKER_IDLE_TERMINATE_MS,
+  createAppState,
+  createModeDragState,
+  createRuntimeState,
+  createThemeDragState,
+  dateTimeFormatters,
+  exportJsonCache,
+  pendingAnalyticsEvents,
+  pointerCoordinateUpdaters,
+} from "./app/state.js";
 import { renderBrandTitle } from "./app/title-effects.js";
-const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
-const VALID_APP_MODES = new Set(["analyze", "compare"]);
-const THEME_STORAGE_KEY = "apk-webui-theme";
-const THEME_CHOICES = new Set(["light", "dark", "system"]);
-const WORKER_IDLE_TERMINATE_MS = 60_000;
+import {
+  collectAppElements,
+  hideAnalyzeReportViews,
+  setTabPanelHtml,
+  showEmptyReportState,
+  showReportState,
+  updateTabButtons as updateTabButtonsView,
+} from "./app/view.js";
+import { isAnalyzerWorkerMessage } from "@shared/contracts.js";
+
+/** @typedef {import("@shared/contracts.js").AnalyticsEventFields} AnalyticsEventFields */
+/** @typedef {import("@shared/contracts.js").AnalyzerWorkerResponse} AnalyzerWorkerResponse */
+
 const ARCHIVE_CHART_CENTER = 60;
 const ARCHIVE_CHART_RADIUS = 52;
 const ARCHIVE_CHART_LABEL_MIN_PERCENT = 6;
 const ARCHIVE_CHART_SEGMENT_LIFT = 5;
-const ANALYTICS_EVENT_QUEUE_LIMIT = 32;
 const ARCHIVE_CHART_COLORS = [
   "#38bdf8",
   "#22c55e",
@@ -38,103 +61,16 @@ const tapPopupMedia = window.matchMedia("(hover: none), (pointer: coarse)");
 const supportsPointerEvents = typeof window.PointerEvent === "function";
 
 
-const state = {
-  appMode: "analyze",
+const state = createAppState({
   locale: resolveInitialLocale(),
   themeChoice: readThemeChoice(),
-  selectedFile: null,
-  report: null,
   history: readHistory(),
   historyCollapsed: readHistoryCollapsed(),
-  activeTab: "summary",
-  activeNativeAbi: "",
-  loadingHistoryId: "",
-  worker: null,
-  workerIdleTimer: null,
-  jobs: new Map(),
-  jobId: 0,
-  activeAnalyzeJobId: null,
-  startedAt: 0,
-  timer: null,
-};
-const themeDrag = {
-  active: false,
-  pointerId: null,
-  pendingChoice: "",
-  suppressClick: false,
-  buttonCenters: [],
-};
-const modeDrag = {
-  active: false,
-  pointerId: null,
-  pendingMode: "",
-  suppressClick: false,
-  buttonCenters: [],
-};
-let historyOpenToken = 0;
-let modeIndicatorFrame = 0;
-let pendingModeIndicatorAppMode = "";
-let themeIndicatorFrame = 0;
-let pendingThemeIndicatorChoice = "";
-const pointerCoordinateUpdaters = new WeakMap();
-const dateTimeFormatters = new Map();
-const exportJsonCache = new WeakMap();
-let compareController = null;
-let compareControllerPromise = null;
-let terminalSystemDetectorPromise = null;
-let brandTitleColorMaskPromise = null;
-let appTitleColorMaskPromise = null;
-let reportSdkIconHydratorPromise = null;
-let analyticsModule = null;
-let analyticsModulePromise = null;
-let analyticsContextProvider = () => ({});
-let analyticsInitialized = false;
-let analyticsLoadScheduled = false;
-const pendingAnalyticsEvents = [];
-
-const elements = {
-  modeButtons: [...document.querySelectorAll("[data-app-mode]")],
-  modeChipGroup: document.querySelector("#mode-chip-group"),
-  themeButtons: [...document.querySelectorAll(".theme-chip[data-theme-choice]")],
-  themeChipGroup: document.querySelector("#theme-chip-group"),
-  languageSelect: document.querySelector("#language-select"),
-  clearButton: document.querySelector("#clear-button"),
-  backgroundCanvas: document.querySelector("#color-orb-background"),
-  brandTitle: document.querySelector(".brand-title"),
-  form: document.querySelector("#analyze-form"),
-  fileInput: document.querySelector("#file-input"),
-  fileMeta: document.querySelector("#file-meta"),
-  dropZone: document.querySelector("#drop-zone"),
-  analyzeButton: document.querySelector("#analyze-button"),
-  analyzeButtonLabel: document.querySelector("#analyze-button span"),
-  progress: document.querySelector("#progress"),
-  progressLabel: document.querySelector("#progress-label"),
-  progressTime: document.querySelector("#progress-time"),
-  errorBox: document.querySelector("#error-box"),
-  historyPanel: document.querySelector("#history-panel"),
-  historyToggleButton: document.querySelector("#history-toggle-button"),
-  historyContent: document.querySelector("#history-content"),
-  historyList: document.querySelector("#history-list"),
-  clearHistoryButton: document.querySelector("#clear-history-button"),
-  emptyState: document.querySelector("#empty-state"),
-  resultView: document.querySelector("#result-view"),
-  reportHero: document.querySelector("#report-hero"),
-  archiveDistribution: document.querySelector("#archive-distribution"),
-  tabs: document.querySelector("#tabs"),
-  tabButtons: [...document.querySelectorAll("#tabs [data-tab]")],
-  tabPanel: document.querySelector("#tab-panel"),
-  compareView: document.querySelector("#compare-view"),
-  compareSlots: document.querySelector("#compare-slots"),
-  compareWarning: document.querySelector("#compare-warning"),
-  compareResult: document.querySelector("#compare-result"),
-  compareFileInputs: [...document.querySelectorAll("[data-compare-file]")],
-  compareDropZones: [...document.querySelectorAll("[data-compare-drop]")],
-  compareHistorySelects: [...document.querySelectorAll("[data-compare-history]")],
-  compareClearButtons: [...document.querySelectorAll("[data-compare-clear]")],
-  i18nNodes: [...document.querySelectorAll("[data-i18n]")],
-  titleI18nNodes: [...document.querySelectorAll("[data-title-i18n]")],
-  ariaI18nNodes: [...document.querySelectorAll("[data-aria-i18n]")],
-};
+});
+const themeDrag = createThemeDragState();
+const modeDrag = createModeDragState();
+const runtime = createRuntimeState();
+const elements = collectAppElements();
 
 function t(key, variables = {}) {
   return translate(state.locale, key, variables);
@@ -142,18 +78,22 @@ function t(key, variables = {}) {
 
 function initWebAnalytics(contextProvider) {
   if (typeof contextProvider === "function") {
-    analyticsContextProvider = contextProvider;
+    runtime.analyticsContextProvider = contextProvider;
   }
   scheduleAnalyticsLoad();
 }
 
+/**
+ * @param {string} event
+ * @param {AnalyticsEventFields} [fields]
+ */
 function trackWebEvent(event, fields = {}) {
   if (!event) {
     return;
   }
 
-  if (analyticsModule && analyticsInitialized) {
-    analyticsModule.trackWebEvent(event, fields);
+  if (runtime.analyticsModule && runtime.analyticsInitialized) {
+    runtime.analyticsModule.trackWebEvent(event, fields);
     return;
   }
 
@@ -165,13 +105,13 @@ function trackWebEvent(event, fields = {}) {
 }
 
 function scheduleAnalyticsLoad() {
-  if (analyticsModule || analyticsModulePromise || analyticsLoadScheduled) {
+  if (runtime.analyticsModule || runtime.analyticsModulePromise || runtime.analyticsLoadScheduled) {
     return;
   }
 
-  analyticsLoadScheduled = true;
+  runtime.analyticsLoadScheduled = true;
   const load = () => {
-    analyticsLoadScheduled = false;
+    runtime.analyticsLoadScheduled = false;
     void loadWebAnalyticsModule().then(initializeAnalyticsModule).catch(() => {});
   };
 
@@ -183,23 +123,23 @@ function scheduleAnalyticsLoad() {
 }
 
 function loadWebAnalyticsModule() {
-  if (analyticsModule) {
-    return Promise.resolve(analyticsModule);
+  if (runtime.analyticsModule) {
+    return Promise.resolve(runtime.analyticsModule);
   }
 
-  if (!analyticsModulePromise) {
-    analyticsModulePromise = import("./app/analytics.js")
+  if (!runtime.analyticsModulePromise) {
+    runtime.analyticsModulePromise = import("./app/analytics.js")
       .then((module) => {
-        analyticsModule = module;
+        runtime.analyticsModule = module;
         return module;
       })
       .catch((error) => {
-        analyticsModulePromise = null;
+        runtime.analyticsModulePromise = null;
         throw error;
       });
   }
 
-  return analyticsModulePromise;
+  return runtime.analyticsModulePromise;
 }
 
 function initBrandTitleColorMaskWhenIdle(node) {
@@ -223,22 +163,22 @@ function initBrandTitleColorMaskWhenIdle(node) {
 }
 
 function loadBrandTitleColorMask() {
-  if (!brandTitleColorMaskPromise) {
-    brandTitleColorMaskPromise = import("./app/brand-title-mask.js")
+  if (!runtime.brandTitleColorMaskPromise) {
+    runtime.brandTitleColorMaskPromise = import("./app/brand-title-mask.js")
       .then(({ initBrandTitleColorMask }) => initBrandTitleColorMask)
       .catch((error) => {
-        brandTitleColorMaskPromise = null;
+        runtime.brandTitleColorMaskPromise = null;
         throw error;
       });
   }
 
-  return brandTitleColorMaskPromise;
+  return runtime.brandTitleColorMaskPromise;
 }
 
 function initializeAnalyticsModule(module) {
-  if (!analyticsInitialized) {
-    module.initWebAnalytics(analyticsContextProvider);
-    analyticsInitialized = true;
+  if (!runtime.analyticsInitialized) {
+    module.initWebAnalytics(runtime.analyticsContextProvider);
+    runtime.analyticsInitialized = true;
   }
 
   flushPendingAnalyticsEvents(module);
@@ -284,27 +224,27 @@ function createCompareController(CompareController) {
 }
 
 function ensureCompareController() {
-  if (compareController) {
-    return Promise.resolve(compareController);
+  if (runtime.compareController) {
+    return Promise.resolve(runtime.compareController);
   }
 
-  if (!compareControllerPromise) {
-    compareControllerPromise = import("./app/compare-controller.js")
+  if (!runtime.compareControllerPromise) {
+    runtime.compareControllerPromise = import("./app/compare-controller.js")
       .then(({ CompareController }) => {
-        compareController = createCompareController(CompareController);
-        compareController.bindEvents();
-        compareController.setVisible(state.appMode === "compare");
+        runtime.compareController = createCompareController(CompareController);
+        runtime.compareController.bindEvents();
+        runtime.compareController.setVisible(state.appMode === "compare");
         updateClearButton();
-        return compareController;
+        return runtime.compareController;
       })
       .catch((error) => {
-        compareControllerPromise = null;
+        runtime.compareControllerPromise = null;
         handleCompareControllerLoadError(error);
         return null;
       });
   }
 
-  return compareControllerPromise;
+  return runtime.compareControllerPromise;
 }
 
 function loadCompareControllerForCurrentMode() {
@@ -335,28 +275,28 @@ function handleCompareControllerLoadError(error) {
 }
 
 function renderComparePageIfLoaded() {
-  if (compareController) {
-    compareController.renderPage();
+  if (runtime.compareController) {
+    runtime.compareController.renderPage();
   } else if (state.appMode === "compare") {
     loadCompareControllerForCurrentMode();
   }
 }
 
 function renderCompareHistoryOptionsIfLoaded() {
-  compareController?.renderHistoryOptions();
+  runtime.compareController?.renderHistoryOptions();
 }
 
 async function detectCurrentTerminalSystem() {
-  if (!terminalSystemDetectorPromise) {
-    terminalSystemDetectorPromise = import("./app/system.js")
+  if (!runtime.terminalSystemDetectorPromise) {
+    runtime.terminalSystemDetectorPromise = import("./app/system.js")
       .then(({ detectTerminalSystem }) => detectTerminalSystem)
       .catch((error) => {
-        terminalSystemDetectorPromise = null;
+        runtime.terminalSystemDetectorPromise = null;
         throw error;
       });
   }
 
-  const detectTerminalSystem = await terminalSystemDetectorPromise;
+  const detectTerminalSystem = await runtime.terminalSystemDetectorPromise;
   return detectTerminalSystem();
 }
 
@@ -375,34 +315,62 @@ function initReportTitleColorMask(root, info) {
 }
 
 function loadAppTitleColorMask() {
-  if (!appTitleColorMaskPromise) {
-    appTitleColorMaskPromise = import("./app/app-title-effects.js")
+  if (!runtime.appTitleColorMaskPromise) {
+    runtime.appTitleColorMaskPromise = import("./app/app-title-effects.js")
       .then(({ initAppTitleColorMask }) => initAppTitleColorMask)
       .catch((error) => {
-        appTitleColorMaskPromise = null;
+        runtime.appTitleColorMaskPromise = null;
         throw error;
       });
   }
 
-  return appTitleColorMaskPromise;
+  return runtime.appTitleColorMaskPromise;
 }
 
 async function hydrateReportSdkIconsForHistory(report) {
-  const hydrateReportSdkIcons = await loadReportSdkIconHydrator();
+  const { hydrateReportSdkIcons } = await loadReportSdkMetadataModule();
   return hydrateReportSdkIcons(report);
 }
 
-function loadReportSdkIconHydrator() {
-  if (!reportSdkIconHydratorPromise) {
-    reportSdkIconHydratorPromise = import("./app/sdk-icon-cache.js")
-      .then(({ hydrateReportSdkIcons }) => hydrateReportSdkIcons)
+function loadReportSdkMetadataModule() {
+  if (!runtime.reportSdkMetadataModulePromise) {
+    runtime.reportSdkMetadataModulePromise = import("./app/sdk-icon-cache.js")
+      .then((module) => module)
       .catch((error) => {
-        reportSdkIconHydratorPromise = null;
+        runtime.reportSdkMetadataModulePromise = null;
         throw error;
       });
   }
 
-  return reportSdkIconHydratorPromise;
+  return runtime.reportSdkMetadataModulePromise;
+}
+
+function scheduleReportSdkRuleDetailHydration(report) {
+  if (!report || typeof report !== "object") {
+    return;
+  }
+
+  const token = runtime.reportSdkMetadataHydrationToken + 1;
+  runtime.reportSdkMetadataHydrationToken = token;
+  const hydrate = () => {
+    void loadReportSdkMetadataModule()
+      .then(({ hydrateReportSdkRuleDetails }) => hydrateReportSdkRuleDetails(report))
+      .then(() => {
+        if (runtime.reportSdkMetadataHydrationToken !== token || state.report !== report) {
+          return;
+        }
+        renderReport();
+      })
+      .catch(() => {
+        // Rule details are hover-only metadata; the analyzed report remains usable without them.
+      });
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(hydrate, { timeout: 1800 });
+  } else {
+    window.setTimeout(hydrate, 0);
+  }
 }
 
 function resolveInitialLocale() {
@@ -537,8 +505,8 @@ function bindEvents() {
 
   elements.clearButton.addEventListener("click", () => {
     if (state.appMode === "compare") {
-      if (compareController) {
-        compareController.reset();
+      if (runtime.compareController) {
+        runtime.compareController.reset();
       } else {
         loadCompareControllerForCurrentMode();
       }
@@ -1851,8 +1819,8 @@ function updateAppMode() {
 
   elements.form.hidden = isCompare;
   elements.historyPanel.hidden = isCompare;
-  if (compareController) {
-    compareController.setVisible(isCompare);
+  if (runtime.compareController) {
+    runtime.compareController.setVisible(isCompare);
   } else {
     elements.compareView.hidden = true;
     if (isCompare) {
@@ -1871,7 +1839,7 @@ function updateAppMode() {
 
 function updateClearButton() {
   if (state.appMode === "compare") {
-    elements.clearButton.disabled = !compareController?.hasContent();
+    elements.clearButton.disabled = !runtime.compareController?.hasContent();
     return;
   }
 
@@ -1879,14 +1847,14 @@ function updateClearButton() {
 }
 
 function updateModeIndicator(appMode = state.appMode) {
-  pendingModeIndicatorAppMode = appMode;
-  if (modeIndicatorFrame || !elements.modeChipGroup) {
+  runtime.pendingModeIndicatorAppMode = appMode;
+  if (runtime.modeIndicatorFrame || !elements.modeChipGroup) {
     return;
   }
 
-  modeIndicatorFrame = window.requestAnimationFrame(() => {
-    modeIndicatorFrame = 0;
-    const indicatorAppMode = pendingModeIndicatorAppMode || state.appMode;
+  runtime.modeIndicatorFrame = window.requestAnimationFrame(() => {
+    runtime.modeIndicatorFrame = 0;
+    const indicatorAppMode = runtime.pendingModeIndicatorAppMode || state.appMode;
     const activeButton = elements.modeButtons.find((button) => button.dataset.appMode === indicatorAppMode);
     if (!activeButton || !elements.modeChipGroup) {
       return;
@@ -1955,14 +1923,14 @@ function applyThemeChoice(choice, options = {}) {
 }
 
 function updateThemeIndicator(themeChoice = state.themeChoice) {
-  pendingThemeIndicatorChoice = themeChoice;
-  if (themeIndicatorFrame || !elements.themeChipGroup) {
+  runtime.pendingThemeIndicatorChoice = themeChoice;
+  if (runtime.themeIndicatorFrame || !elements.themeChipGroup) {
     return;
   }
 
-  themeIndicatorFrame = window.requestAnimationFrame(() => {
-    themeIndicatorFrame = 0;
-    const indicatorThemeChoice = pendingThemeIndicatorChoice || state.themeChoice;
+  runtime.themeIndicatorFrame = window.requestAnimationFrame(() => {
+    runtime.themeIndicatorFrame = 0;
+    const indicatorThemeChoice = runtime.pendingThemeIndicatorChoice || state.themeChoice;
     const activeButton = elements.themeButtons.find((button) => button.dataset.themeChoice === indicatorThemeChoice);
     if (!activeButton || !elements.themeChipGroup) {
       return;
@@ -2112,13 +2080,15 @@ async function analyzeSelectedFile() {
     return;
   }
 
-  worker.postMessage({
+  /** @type {import("@shared/contracts.js").AnalyzerWorkerRequest} */
+  const request = {
     type: "analyze",
     jobId,
     locale: state.locale,
     file,
     terminalSystem,
-  });
+  };
+  worker.postMessage(request);
 }
 
 function ensureWorker() {
@@ -2150,7 +2120,7 @@ function failActiveWorkerJobs(message) {
 
   for (const [, job] of jobs) {
     if (job.type === "compare") {
-      compareController?.finishJob(job.slotKey, null, message);
+      runtime.compareController?.finishJob(job.slotKey, null, message);
     } else {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
@@ -2163,8 +2133,13 @@ function failActiveWorkerJobs(message) {
   }
 }
 
+/** @param {MessageEvent<AnalyzerWorkerResponse>} event */
 function handleWorkerMessage(event) {
   const message = event.data || {};
+  if (!isAnalyzerWorkerMessage(message)) {
+    return;
+  }
+
   const job = state.jobs.get(message.jobId);
   if (!job) {
     return;
@@ -2172,7 +2147,7 @@ function handleWorkerMessage(event) {
 
   if (message.type === "progress") {
     if (job.type === "compare") {
-      compareController?.handleProgress(
+      runtime.compareController?.handleProgress(
         job.slotKey,
         message.jobId,
         message.stage === "parsing" ? "progressParsing" : "progressReading",
@@ -2187,7 +2162,7 @@ function handleWorkerMessage(event) {
     state.jobs.delete(message.jobId);
     scheduleWorkerIdleTermination();
     if (job.type === "compare") {
-      compareController?.finishJob(job.slotKey, null, message.error || t("workerFailed"));
+      runtime.compareController?.finishJob(job.slotKey, null, message.error || t("workerFailed"));
     } else {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
@@ -2203,7 +2178,7 @@ function handleWorkerMessage(event) {
   if (message.type === "result") {
     state.jobs.delete(message.jobId);
     if (job.type === "compare") {
-      compareController?.finishJob(job.slotKey, message.report, "");
+      runtime.compareController?.finishJob(job.slotKey, message.report, "");
       saveHistoryReport(message.report);
       scheduleWorkerIdleTermination();
       return;
@@ -2217,6 +2192,7 @@ function handleWorkerMessage(event) {
     updateClearButton();
     showProgress("progressDone");
     renderReport();
+    scheduleReportSdkRuleDetailHydration(message.report);
     trackWebEvent("webui.analysis.succeeded", {
       result: "success",
       input_source: "upload",
@@ -2366,15 +2342,15 @@ async function openHistoryItem(id) {
     return;
   }
 
-  const token = historyOpenToken + 1;
-  historyOpenToken = token;
+  const token = runtime.historyOpenToken + 1;
+  runtime.historyOpenToken = token;
   setHistoryLoadingId(id);
   hideError();
   stopTimer();
 
   try {
     const report = await hydrateReportSdkIconsForHistory(cloneReportForHydration(entry.report));
-    if (token !== historyOpenToken) {
+    if (token !== runtime.historyOpenToken) {
       return;
     }
 
@@ -2393,7 +2369,7 @@ async function openHistoryItem(id) {
       ...getReportAnalyticsFields(state.report),
     });
   } catch (error) {
-    if (token !== historyOpenToken) {
+    if (token !== runtime.historyOpenToken) {
       return;
     }
 
@@ -2404,7 +2380,7 @@ async function openHistoryItem(id) {
       input_source: "history",
     });
   } finally {
-    if (token === historyOpenToken) {
+    if (token === runtime.historyOpenToken) {
       setHistoryLoadingId("");
     }
   }
@@ -2549,40 +2525,27 @@ function renderHistoryIcon(summary) {
 
 function renderReport() {
   if (state.appMode !== "analyze") {
-    elements.emptyState.hidden = true;
-    elements.resultView.hidden = true;
+    hideAnalyzeReportViews(elements);
     return;
   }
 
   if (!state.report) {
-    elements.emptyState.hidden = false;
-    elements.resultView.hidden = true;
-    elements.reportHero.innerHTML = "";
-    elements.archiveDistribution.innerHTML = "";
-    elements.archiveDistribution.hidden = true;
-    elements.resultView.classList.remove("has-archive-distribution");
-    elements.tabPanel.innerHTML = "";
+    showEmptyReportState(elements);
     return;
   }
 
-  elements.emptyState.hidden = true;
-  elements.resultView.hidden = false;
-  elements.reportHero.innerHTML = renderHero(state.report);
   const archiveDistribution = renderArchiveDistribution(state.report);
-  elements.archiveDistribution.innerHTML = archiveDistribution;
-  elements.archiveDistribution.hidden = !archiveDistribution;
-  elements.resultView.classList.toggle("has-archive-distribution", Boolean(archiveDistribution));
+  showReportState(elements, {
+    heroHtml: renderHero(state.report),
+    archiveDistributionHtml: archiveDistribution,
+  });
   initReportTitleColorMask(elements.reportHero, state.report.apkInfo);
   updateTabs();
   renderTabPanel();
 }
 
 function updateTabs() {
-  elements.tabButtons.forEach((button) => {
-    const isActive = button.dataset.tab === state.activeTab;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-selected", isActive ? "true" : "false");
-  });
+  updateTabButtonsView(elements, state.activeTab);
 }
 
 function renderTabPanel() {
@@ -2591,23 +2554,25 @@ function renderTabPanel() {
     return;
   }
 
+  let html = "";
   if (state.activeTab === "sdk") {
-    elements.tabPanel.innerHTML = renderSdkTab(report);
+    html = renderSdkTab(report);
   } else if (state.activeTab === "native") {
-    elements.tabPanel.innerHTML = renderNativeTab(report);
+    html = renderNativeTab(report);
   } else if (state.activeTab === "components") {
-    elements.tabPanel.innerHTML = renderComponentsTab(report);
+    html = renderComponentsTab(report);
   } else if (state.activeTab === "permissions") {
-    elements.tabPanel.innerHTML = renderPermissionsTab(report);
+    html = renderPermissionsTab(report);
   } else if (state.activeTab === "signatures") {
-    elements.tabPanel.innerHTML = renderSignaturesTab(report);
+    html = renderSignaturesTab(report);
   } else if (state.activeTab === "metadata") {
-    elements.tabPanel.innerHTML = renderMetaDataTab(report);
+    html = renderMetaDataTab(report);
   } else if (state.activeTab === "raw") {
-    elements.tabPanel.innerHTML = renderRawTab(report);
+    html = renderRawTab(report);
   } else {
-    elements.tabPanel.innerHTML = renderSummaryTab(report);
+    html = renderSummaryTab(report);
   }
+  setTabPanelHtml(elements, html);
 }
 
 function renderHero(report) {

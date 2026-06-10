@@ -16,7 +16,8 @@ from urllib.parse import quote
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PACKAGE_DIR / "src" / "generated"
-RULES_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules.js"
+RULES_CORE_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules-core.js"
+RULE_DETAILS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules-detail.js"
 ICONS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-sdk-icons.js"
 
 DEFAULT_RULES_REF = "main"
@@ -111,10 +112,15 @@ def main() -> int:
     finally:
         cleanup_temp_rule_db(temp_rule_db_path)
 
-    write_rules_module(rules, RULES_OUTPUT_PATH)
+    rule_detail_count = write_rules_modules(
+        rules,
+        RULES_CORE_OUTPUT_PATH,
+        RULE_DETAILS_OUTPUT_PATH,
+    )
     write_icons_module(icon_svgs, ICONS_OUTPUT_PATH)
 
-    print(f"Wrote {len(rules)} rules to {RULES_OUTPUT_PATH}")
+    print(f"Wrote {len(rules)} core rules to {RULES_CORE_OUTPUT_PATH}")
+    print(f"Wrote {rule_detail_count} rule details to {RULE_DETAILS_OUTPUT_PATH}")
     print(f"Attached {detail_count} rule details from LibChecker-Rules ref: {DEFAULT_RULE_DETAILS_REF}")
     print(f"Wrote {len(icon_svgs)} icons to {ICONS_OUTPUT_PATH}")
     return 0
@@ -681,13 +687,57 @@ def escape_xml(value: str) -> str:
     )
 
 
-def write_rules_module(rules: list[dict[str, object]], output_path: Path) -> None:
-    body = json.dumps(rules, ensure_ascii=False, separators=(",", ":"))
-    output_path.write_text(
-        "// Generated from LibChecker-Rules-Bundle.\n"
-        f"export const LIBCHECKER_RULES = {body};\n",
+def write_rules_modules(
+    rules: list[dict[str, object]],
+    core_output_path: Path,
+    detail_output_path: Path,
+) -> int:
+    core_rules: list[dict[str, object]] = []
+    details_by_key: dict[str, object] = {}
+
+    for rule in rules:
+        core_rules.append(build_core_rule(rule))
+        detail = rule.get("ruleDetail")
+        key = build_rule_detail_key(rule)
+        if detail and key:
+            details_by_key[format_rule_detail_key(key)] = detail
+
+    core_body = json.dumps(core_rules, ensure_ascii=False, separators=(",", ":"))
+    core_output_path.write_text(
+        "// Generated from LibChecker-Rules-Bundle matching fields.\n"
+        f"export const LIBCHECKER_RULES_CORE = {core_body};\n",
         encoding="utf-8",
     )
+
+    detail_body = json.dumps(details_by_key, ensure_ascii=False, separators=(",", ":"))
+    detail_output_path.write_text(
+        "// Generated from LibChecker-Rules detail metadata.\n"
+        f"export const LIBCHECKER_RULE_DETAILS = {detail_body};\n",
+        encoding="utf-8",
+    )
+
+    return len(details_by_key)
+
+
+def build_core_rule(rule: dict[str, object]) -> dict[str, object]:
+    core: dict[str, object] = {}
+    for key in (
+        "name",
+        "label",
+        "type",
+        "iconIndex",
+        "iconName",
+        "singleColorIcon",
+        "isRegexRule",
+        "regexName",
+    ):
+        if key in rule:
+            core[key] = rule[key]
+    return core
+
+
+def format_rule_detail_key(key: tuple[int, str]) -> str:
+    return f"{key[0]}::{key[1]}"
 
 
 def write_icons_module(icon_svgs: dict[str, str | None], output_path: Path) -> None:

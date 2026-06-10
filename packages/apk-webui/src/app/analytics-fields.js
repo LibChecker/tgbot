@@ -1,3 +1,10 @@
+/** @typedef {import("@shared/contracts.js").AnalyticsEventFields} AnalyticsEventFields */
+/** @typedef {import("@shared/contracts.js").ApkReport} ApkReport */
+
+/**
+ * @param {File | { name?: string, size?: number } | null | undefined} file
+ * @returns {AnalyticsEventFields}
+ */
 export function getFileAnalyticsFields(file) {
   if (!file) {
     return {};
@@ -9,6 +16,10 @@ export function getFileAnalyticsFields(file) {
   });
 }
 
+/**
+ * @param {Partial<ApkReport> | null | undefined} report
+ * @returns {AnalyticsEventFields}
+ */
 export function getReportAnalyticsFields(report) {
   const info = report?.apkInfo || {};
   const archive = info.archive || null;
@@ -33,6 +44,10 @@ export function getReportAnalyticsFields(report) {
   });
 }
 
+/**
+ * @param {Record<string, unknown>} value
+ * @returns {AnalyticsEventFields}
+ */
 export function compactAnalyticsObject(value) {
   const compacted = {};
   for (const [key, entry] of Object.entries(value)) {

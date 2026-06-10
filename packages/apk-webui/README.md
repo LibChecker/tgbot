@@ -29,10 +29,11 @@ The build script generates ignored shared runtime bundles, then Vite bundles the
 - `packages/shared/src/i18n.js`
 - `packages/shared/src/sdk-markers.js`
 - `packages/shared/src/generated/i18n-catalogs.js`
-- `packages/shared/src/generated/libchecker-rules.js`
+- `packages/shared/src/generated/libchecker-rules-core.js`
+- `packages/shared/src/generated/libchecker-rules-detail.js`
 - `packages/shared/src/generated/libchecker-sdk-icons.js`
 
-UI translations are sourced from the repository-level `locales/*.json` files. LibChecker rules and icons are generated from the upstream bundle script. These generated files live under `packages/shared/src/generated/` locally and are not tracked by git.
+UI translations are sourced from the repository-level `locales/*.json` files. LibChecker matching rules, rule details, and icons are generated from the upstream bundle script. These generated files live under `packages/shared/src/generated/` locally and are not tracked by git.
 
 ## Local Development
 

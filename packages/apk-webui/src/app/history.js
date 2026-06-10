@@ -1,6 +1,10 @@
 import { sanitizeImageSrc } from "./format.js";
 import { getStats } from "./report-model.js";
 
+/** @typedef {import("@shared/contracts.js").ApkReport} ApkReport */
+/** @typedef {{ appName: string, packageName: string, versionName: string, versionCode: string, targetSdk: string, fileName: string, fileSizeBytes: number, analyzedAt: string, iconDataUri: string, sdkCount: number, stats: Record<string, number> }} HistorySummary */
+/** @typedef {{ id: string, key: string, savedAt: string, compactVersion: number, summary: HistorySummary, report: ApkReport }} HistoryEntry */
+
 const HISTORY_STORAGE_KEY = "apk-webui-history";
 const HISTORY_COLLAPSED_STORAGE_KEY = "apk-webui-history-collapsed";
 const MAX_HISTORY_ITEMS = 12;
@@ -13,6 +17,10 @@ const HISTORY_PATH_APK_INFO = 1;
 const HISTORY_PATH_APK_ICON = 2;
 const HISTORY_PATH_APK_ICON_DATA_URI = 3;
 
+/**
+ * @param {ApkReport} report
+ * @returns {HistoryEntry}
+ */
 export function createHistoryEntry(report) {
   const compactReport = compactReportForHistory(report, { keepAppIcon: true });
   const savedAt = new Date().toISOString();
@@ -27,6 +35,10 @@ export function createHistoryEntry(report) {
   };
 }
 
+/**
+ * @param {ApkReport} report
+ * @returns {HistorySummary}
+ */
 export function buildHistorySummary(report) {
   const info = report.apkInfo || {};
   const sdkSummary = info.sdkSummary || {};
@@ -65,6 +77,7 @@ function createHistoryId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/** @returns {HistoryEntry[]} */
 export function readHistory() {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(HISTORY_STORAGE_KEY) || "[]");
@@ -157,6 +170,11 @@ function scheduleHistoryMigrationPersist(history) {
   }
 }
 
+/**
+ * @param {HistoryEntry[]} history
+ * @param {{ normalized?: boolean }} [options]
+ * @returns {HistoryEntry[]}
+ */
 export function persistHistory(history, options = {}) {
   const normalized = options.normalized === true
     ? history.slice(0, MAX_HISTORY_ITEMS)

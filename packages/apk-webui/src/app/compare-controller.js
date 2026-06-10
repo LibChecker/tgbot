@@ -5,11 +5,13 @@ import { COMPONENT_SECTIONS, getStats } from "./report-model.js";
 import { buildHistorySummary } from "./history.js";
 import { renderSdkInline as renderSdkInlineBase } from "./sdk-icon-renderer.js";
 
+/** @typedef {import("@shared/contracts.js").AnalyzerWorkerRequest} AnalyzerWorkerRequest */
+
 const COMPARE_SLOT_KEYS = ["left", "right"];
 const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
 const pointerCoordinateUpdaters = new WeakMap();
 let terminalSystemDetectorPromise = null;
-let reportSdkIconHydratorPromise = null;
+let reportSdkMetadataModulePromise = null;
 
 export class CompareController {
   constructor(options) {
@@ -327,13 +329,15 @@ export class CompareController {
       return;
     }
 
-    worker.postMessage({
+    /** @type {AnalyzerWorkerRequest} */
+    const request = {
       type: "analyze",
       jobId,
       locale: this.getLocale(),
       file,
       terminalSystem,
-    });
+    };
+    worker.postMessage(request);
   }
 
   handleProgress(slotKey, jobId, progressKey) {
@@ -381,10 +385,44 @@ export class CompareController {
         slot: slotKey,
         ...this.getReportAnalyticsFields(report),
       });
+      this.scheduleReportSdkRuleDetailHydration(slotKey, report);
     }
 
     this.renderSlotPageState(slotKey);
     this.trackComparePairReady();
+  }
+
+  scheduleReportSdkRuleDetailHydration(slotKey, report) {
+    const slot = this.getSlot(slotKey);
+    if (!slot || !report) {
+      return;
+    }
+
+    const token = slot.sdkMetadataHydrationToken + 1;
+    slot.sdkMetadataHydrationToken = token;
+    const hydrate = () => {
+      void hydrateReportSdkRuleDetailsForUpload(report)
+        .then(() => {
+          const currentSlot = this.getSlot(slotKey);
+          if (
+            !currentSlot ||
+            currentSlot.report !== report ||
+            currentSlot.sdkMetadataHydrationToken !== token
+          ) {
+            return;
+          }
+          this.renderSlotPageState(slotKey);
+        })
+        .catch(() => {
+          // Rule details are hover-only metadata; compare results remain usable without them.
+        });
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(hydrate, { timeout: 1800 });
+    } else {
+      window.setTimeout(hydrate, 0);
+    }
   }
 
   clearSlot(slotKey) {
@@ -975,21 +1013,26 @@ async function detectCurrentTerminalSystem() {
 }
 
 async function hydrateReportSdkIconsForHistory(report) {
-  const hydrateReportSdkIcons = await loadReportSdkIconHydrator();
+  const { hydrateReportSdkIcons } = await loadReportSdkMetadataModule();
   return hydrateReportSdkIcons(report);
 }
 
-function loadReportSdkIconHydrator() {
-  if (!reportSdkIconHydratorPromise) {
-    reportSdkIconHydratorPromise = import("./sdk-icon-cache.js")
-      .then(({ hydrateReportSdkIcons }) => hydrateReportSdkIcons)
+async function hydrateReportSdkRuleDetailsForUpload(report) {
+  const { hydrateReportSdkRuleDetails } = await loadReportSdkMetadataModule();
+  return hydrateReportSdkRuleDetails(report);
+}
+
+function loadReportSdkMetadataModule() {
+  if (!reportSdkMetadataModulePromise) {
+    reportSdkMetadataModulePromise = import("./sdk-icon-cache.js")
+      .then((module) => module)
       .catch((error) => {
-        reportSdkIconHydratorPromise = null;
+        reportSdkMetadataModulePromise = null;
         throw error;
       });
   }
 
-  return reportSdkIconHydratorPromise;
+  return reportSdkMetadataModulePromise;
 }
 
 function createCompareSlotState() {
@@ -1003,6 +1046,7 @@ function createCompareSlotState() {
     progressKey: "",
     error: "",
     jobId: null,
+    sdkMetadataHydrationToken: 0,
   };
 }
 

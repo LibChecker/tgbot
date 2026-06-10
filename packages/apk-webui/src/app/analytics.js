@@ -3,6 +3,10 @@ import {
   getFileAnalyticsFields,
   getReportAnalyticsFields,
 } from "./analytics-fields.js";
+import { isAnalyticsEventName } from "@shared/contracts.js";
+
+/** @typedef {import("@shared/contracts.js").AnalyticsEventFields} AnalyticsEventFields */
+/** @typedef {import("@shared/contracts.js").AnalyticsEventPayload} AnalyticsEventPayload */
 
 const ANALYTICS_ENDPOINT = "/analytics";
 const SESSION_STORAGE_KEY = "apk-webui-analytics-session";
@@ -33,8 +37,12 @@ export function initWebAnalytics(contextProvider) {
   });
 }
 
+/**
+ * @param {string} event
+ * @param {AnalyticsEventFields} [fields]
+ */
 export function trackWebEvent(event, fields = {}) {
-  if (!event || typeof window === "undefined") {
+  if (!isAnalyticsEventName(event) || typeof window === "undefined") {
     return;
   }
 
@@ -59,6 +67,7 @@ function readSafeContext() {
   }
 }
 
+/** @param {AnalyticsEventPayload} payload */
 function sendAnalyticsPayload(payload) {
   const body = JSON.stringify(payload);
   const endpoint = new URL(ANALYTICS_ENDPOINT, window.location.href).toString();
@@ -84,8 +93,12 @@ function sendAnalyticsPayload(payload) {
   }
 }
 
+/**
+ * @param {AnalyticsEventPayload}
+ * @returns {AnalyticsEventPayload}
+ */
 function sanitizePayload(payload) {
-  const sanitized = {};
+  const sanitized = { event: payload.event };
   for (const [key, value] of Object.entries(payload)) {
     if (PRIVATE_EVENT_KEYS.has(key) || value == null) {
       continue;

@@ -1,3 +1,10 @@
+import { isLibCheckerRule } from "./contracts.js";
+
+/** @typedef {import("./contracts.js").ApkInfo} ApkInfo */
+/** @typedef {import("./contracts.js").LibCheckerRule} LibCheckerRule */
+/** @typedef {import("./contracts.js").LibCheckerRuleDetailMap} LibCheckerRuleDetailMap */
+/** @typedef {import("./contracts.js").SdkMarkerAnnotations} SdkMarkerAnnotations */
+
 const RULE_TYPE_NATIVE = 0;
 const RULE_TYPE_SERVICE = 1;
 const RULE_TYPE_ACTIVITY = 2;
@@ -30,19 +37,41 @@ const UNITY_VALIDATION_LIBS = new Set(["libmain.so"]);
 const compiledRuleIndexes = new WeakMap();
 const EMPTY_RULE_INDEX = new Map();
 
-export function annotateSdkMarkers(apkInfo, resolveIconUrl, rules = []) {
-  return annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, getCompiledRuleIndex(rules));
+/**
+ * @param {ApkInfo} apkInfo
+ * @param {(iconName: string) => string} resolveIconUrl
+ * @param {readonly LibCheckerRule[]} [rules]
+ * @param {LibCheckerRuleDetailMap | null} [ruleDetails]
+ * @returns {SdkMarkerAnnotations}
+ */
+export function annotateSdkMarkers(apkInfo, resolveIconUrl, rules = [], ruleDetails = null) {
+  return annotateSdkMarkersWithRuleIndex(
+    apkInfo,
+    resolveIconUrl,
+    getCompiledRuleIndex(rules),
+    ruleDetails,
+  );
 }
 
-export function createSdkMarkerAnnotator(rules = []) {
+/**
+ * @param {readonly LibCheckerRule[]} [rules]
+ * @param {LibCheckerRuleDetailMap | null} [ruleDetails]
+ * @returns {(apkInfo: ApkInfo, resolveIconUrl: (iconName: string) => string) => SdkMarkerAnnotations}
+ */
+export function createSdkMarkerAnnotator(rules = [], ruleDetails = null) {
   const ruleIndex = getCompiledRuleIndex(rules);
-  return (apkInfo, resolveIconUrl) => annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, ruleIndex);
+  return (apkInfo, resolveIconUrl) => annotateSdkMarkersWithRuleIndex(
+    apkInfo,
+    resolveIconUrl,
+    ruleIndex,
+    ruleDetails,
+  );
 }
 
-function annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, ruleIndex) {
+function annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, ruleIndex, ruleDetails = null) {
   const nativeLibraries = apkInfo.nativeLibraries.map((library) => ({
     ...library,
-    sdk: matchNativeLibraryRule(library, apkInfo, resolveIconUrl, ruleIndex),
+    sdk: matchNativeLibraryRule(library, apkInfo, resolveIconUrl, ruleIndex, ruleDetails),
   }));
 
   const components = {
@@ -51,24 +80,28 @@ function annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, ruleIndex) {
       RULE_TYPE_ACTIVITY,
       resolveIconUrl,
       ruleIndex,
+      ruleDetails,
     ),
     services: annotateComponentList(
       apkInfo.components.services,
       RULE_TYPE_SERVICE,
       resolveIconUrl,
       ruleIndex,
+      ruleDetails,
     ),
     receivers: annotateComponentList(
       apkInfo.components.receivers,
       RULE_TYPE_RECEIVER,
       resolveIconUrl,
       ruleIndex,
+      ruleDetails,
     ),
     providers: annotateComponentList(
       apkInfo.components.providers,
       RULE_TYPE_PROVIDER,
       resolveIconUrl,
       ruleIndex,
+      ruleDetails,
     ),
   };
 
@@ -82,14 +115,14 @@ function annotateSdkMarkersWithRuleIndex(apkInfo, resolveIconUrl, ruleIndex) {
   };
 }
 
-function annotateComponentList(components, ruleType, resolveIconUrl, ruleIndex) {
+function annotateComponentList(components, ruleType, resolveIconUrl, ruleIndex, ruleDetails) {
   return components.map((component) => ({
     ...component,
-    sdk: matchComponentRule(component, ruleType, resolveIconUrl, ruleIndex),
+    sdk: matchComponentRule(component, ruleType, resolveIconUrl, ruleIndex, ruleDetails),
   }));
 }
 
-function matchNativeLibraryRule(library, apkInfo, resolveIconUrl, ruleIndex) {
+function matchNativeLibraryRule(library, apkInfo, resolveIconUrl, ruleIndex, ruleDetails) {
   const rule = findRule(ruleIndex, library.name, RULE_TYPE_NATIVE, true);
   if (!rule) {
     return null;
@@ -99,23 +132,24 @@ function matchNativeLibraryRule(library, apkInfo, resolveIconUrl, ruleIndex) {
     return null;
   }
 
-  return materializeRule(rule, resolveIconUrl, rule.isRegexRule ? "regex" : "exact");
+  return materializeRule(rule, resolveIconUrl, rule.isRegexRule ? "regex" : "exact", ruleDetails);
 }
 
-function matchComponentRule(component, ruleType, resolveIconUrl, ruleIndex) {
+function matchComponentRule(component, ruleType, resolveIconUrl, ruleIndex, ruleDetails) {
   const directRule = findRule(ruleIndex, component.name, ruleType, true);
   if (directRule) {
     return materializeRule(
       directRule,
       resolveIconUrl,
       directRule.isRegexRule ? "regex" : "exact",
+      ruleDetails,
     );
   }
 
   for (const action of component.actions || []) {
     const actionRule = findRule(ruleIndex, action, RULE_TYPE_ACTION, false);
     if (actionRule) {
-      return materializeRule(actionRule, resolveIconUrl, "action");
+      return materializeRule(actionRule, resolveIconUrl, "action", ruleDetails);
     }
   }
 
@@ -146,7 +180,8 @@ function findRule(ruleIndex, name, type, useRegex) {
   return null;
 }
 
-function materializeRule(rule, resolveIconUrl, matchSource) {
+function materializeRule(rule, resolveIconUrl, matchSource, ruleDetails = null) {
+  const detailKey = rule.detailKey || buildRuleDetailMapKey(rule);
   return {
     label: rule.label,
     iconName: rule.iconName,
@@ -154,7 +189,8 @@ function materializeRule(rule, resolveIconUrl, matchSource) {
     singleColorIcon: Boolean(rule.singleColorIcon),
     matchSource,
     regexName: rule.regexName || null,
-    ruleDetail: rule.ruleDetail || null,
+    detailKey: detailKey || null,
+    ruleDetail: resolveRuleDetail(rule, ruleDetails),
     type: rule.type,
   };
 }
@@ -201,6 +237,7 @@ function summarizeNativeSdkMarkers(libraries, resolveIconUrl) {
         iconName: library.sdk.iconName,
         iconUrl: resolveIconUrl(library.sdk.iconName),
         singleColorIcon: Boolean(library.sdk.singleColorIcon),
+        detailKey: library.sdk.detailKey || null,
         ruleDetail: library.sdk.ruleDetail || null,
         count: 0,
         fileCount: 0,
@@ -228,6 +265,7 @@ function summarizeNativeSdkMarkers(libraries, resolveIconUrl) {
       iconName: entry.iconName,
       iconUrl: entry.iconUrl,
       singleColorIcon: entry.singleColorIcon,
+      detailKey: entry.detailKey || null,
       ruleDetail: entry.ruleDetail || null,
       count: entry.count,
       detail: buildNativeSummaryDetail(entry),
@@ -255,6 +293,7 @@ function summarizeComponentSdkMarkers(components, resolveIconUrl) {
           iconName: component.sdk.iconName,
           iconUrl: resolveIconUrl(component.sdk.iconName),
           singleColorIcon: Boolean(component.sdk.singleColorIcon),
+          detailKey: component.sdk.detailKey || null,
           ruleDetail: component.sdk.ruleDetail || null,
           count: 0,
           items: [],
@@ -279,6 +318,7 @@ function summarizeComponentSdkMarkers(components, resolveIconUrl) {
       iconName: entry.iconName,
       iconUrl: entry.iconUrl,
       singleColorIcon: entry.singleColorIcon,
+      detailKey: entry.detailKey || null,
       ruleDetail: entry.ruleDetail || null,
       count: entry.count,
       detail: buildComponentSummaryDetail(entry),
@@ -337,6 +377,10 @@ function compileRuleIndex(rules) {
   const index = new Map();
 
   for (const rule of rules) {
+    if (!isLibCheckerRule(rule)) {
+      continue;
+    }
+
     const typeGroup = index.get(rule.type) || { exact: new Map(), regex: [] };
     const normalizedRule = {
       name: rule.name,
@@ -346,7 +390,7 @@ function compileRuleIndex(rules) {
       singleColorIcon: Boolean(rule.singleColorIcon),
       isRegexRule: Boolean(rule.isRegexRule),
       regexName: rule.regexName || null,
-      ruleDetail: rule.ruleDetail || null,
+      detailKey: buildRuleDetailMapKey(rule),
     };
 
     if (normalizedRule.isRegexRule) {
@@ -366,4 +410,25 @@ function compileRuleIndex(rules) {
   }
 
   return index;
+}
+
+function resolveRuleDetail(rule, ruleDetails) {
+  if (!ruleDetails || typeof ruleDetails !== "object") {
+    return null;
+  }
+
+  const detailKey = rule.detailKey || buildRuleDetailMapKey(rule);
+  return detailKey ? ruleDetails[detailKey] || null : null;
+}
+
+export function buildRuleDetailMapKey(rule) {
+  if (!rule || !Number.isFinite(rule.type)) {
+    return "";
+  }
+
+  if (rule.isRegexRule && rule.regexName) {
+    return `${rule.type}::regex/${rule.regexName}`;
+  }
+
+  return rule.name ? `${rule.type}::${rule.name}` : "";
 }

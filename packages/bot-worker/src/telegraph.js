@@ -1,6 +1,8 @@
 import { createI18n } from "./i18n.js";
 import { logErrorEvent, logInfoEvent, logWarnEvent } from "./observability.js";
 
+/** @typedef {import("../../shared/src/contracts.js").TelegramApkReport} TelegramApkReport */
+
 const TELEGRAPH_API_BASE = "https://api.telegra.ph";
 const COMPACT_LEVELS = [
   {
@@ -31,6 +33,10 @@ const COMPACT_LEVELS = [
 
 let cachedAccessToken = null;
 
+/**
+ * @param {Record<string, unknown>} env
+ * @param {TelegramApkReport} report
+ */
 export async function createApkTelegraphPage(env, report) {
   const accessToken = await getTelegraphAccessToken(env);
   const { t } = createI18n(report.locale);

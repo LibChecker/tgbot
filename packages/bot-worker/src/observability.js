@@ -1,3 +1,7 @@
+import { isAnalyticsEventName } from "../../shared/src/contracts.js";
+
+/** @typedef {import("../../shared/src/contracts.js").AnalyticsEventFields} AnalyticsEventFields */
+
 const ANALYTICS_BLOB_KEYS = [
   "event",
   "surface",
@@ -84,6 +88,10 @@ export function createRequestTelemetryContext(request, url, env) {
   });
 }
 
+/**
+ * @param {Record<string, unknown>} baseContext
+ * @param {AnalyticsEventFields} [extra]
+ */
 export function extendTelemetryContext(baseContext, extra = {}) {
   return compactObject({
     ...baseContext,
@@ -91,23 +99,42 @@ export function extendTelemetryContext(baseContext, extra = {}) {
   });
 }
 
+/**
+ * @param {Record<string, unknown>} env
+ * @param {Record<string, unknown>} context
+ * @param {string} event
+ * @param {AnalyticsEventFields} [fields]
+ */
 export function logInfoEvent(env, context, event, fields = {}, options = {}) {
   writeTelemetry("info", env, context, event, fields, options);
 }
 
+/**
+ * @param {Record<string, unknown>} env
+ * @param {Record<string, unknown>} context
+ * @param {string} event
+ * @param {AnalyticsEventFields} [fields]
+ */
 export function logWarnEvent(env, context, event, fields = {}, options = {}) {
   writeTelemetry("warn", env, context, event, fields, options);
 }
 
+/**
+ * @param {Record<string, unknown>} env
+ * @param {Record<string, unknown>} context
+ * @param {string} event
+ * @param {AnalyticsEventFields} [fields]
+ */
 export function logErrorEvent(env, context, event, fields = {}, options = {}) {
   writeTelemetry("error", env, context, event, fields, options);
 }
 
 function writeTelemetry(level, env, context, event, fields, options) {
+  const eventName = isAnalyticsEventName(event) ? event : "telemetry.invalid_event";
   const normalizedFields = normalizeTelemetryFields(fields);
   const entry = {
     level,
-    event,
+    event: eventName,
     timestamp: new Date().toISOString(),
     ...context,
     ...normalizedFields,
@@ -119,7 +146,7 @@ function writeTelemetry(level, env, context, event, fields, options) {
     return;
   }
 
-  writeAnalyticsDataPoint(env, context, event, normalizedFields);
+  writeAnalyticsDataPoint(env, context, eventName, normalizedFields);
 }
 
 function writeConsole(level, entry) {
