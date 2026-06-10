@@ -7,7 +7,7 @@ import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistory
 import { getFileAnalyticsFields, getReportAnalyticsFields, initWebAnalytics, trackWebEvent } from "./app/analytics.js";
 import { hydrateReportSdkIcons } from "./app/sdk-icon-cache.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
-import { initAppTitleColorMask, initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
+import { initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
 const VALID_APP_MODES = new Set(["analyze", "compare"]);
 const THEME_STORAGE_KEY = "apk-webui-theme";
@@ -82,6 +82,7 @@ const exportJsonCache = new WeakMap();
 let compareController = null;
 let compareControllerPromise = null;
 let terminalSystemDetectorPromise = null;
+let appTitleColorMaskPromise = null;
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
@@ -235,6 +236,33 @@ async function detectCurrentTerminalSystem() {
 
   const detectTerminalSystem = await terminalSystemDetectorPromise;
   return detectTerminalSystem();
+}
+
+function initReportTitleColorMask(root, info) {
+  if (!root) {
+    return;
+  }
+
+  void loadAppTitleColorMask().then((initAppTitleColorMask) => {
+    if (root.isConnected) {
+      initAppTitleColorMask(root, info);
+    }
+  }).catch(() => {
+    // Report title color sampling is a visual enhancement; the default hue remains valid.
+  });
+}
+
+function loadAppTitleColorMask() {
+  if (!appTitleColorMaskPromise) {
+    appTitleColorMaskPromise = import("./app/app-title-effects.js")
+      .then(({ initAppTitleColorMask }) => initAppTitleColorMask)
+      .catch((error) => {
+        appTitleColorMaskPromise = null;
+        throw error;
+      });
+  }
+
+  return appTitleColorMaskPromise;
 }
 
 function resolveInitialLocale() {
@@ -2392,7 +2420,7 @@ function renderReport() {
   elements.archiveDistribution.innerHTML = archiveDistribution;
   elements.archiveDistribution.hidden = !archiveDistribution;
   elements.resultView.classList.toggle("has-archive-distribution", Boolean(archiveDistribution));
-  initAppTitleColorMask(elements.reportHero, state.report.apkInfo);
+  initReportTitleColorMask(elements.reportHero, state.report.apkInfo);
   updateTabs();
   renderTabPanel();
 }
