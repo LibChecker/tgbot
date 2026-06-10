@@ -4,7 +4,6 @@ import { clamp } from "./app/math.js";
 import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeImageSrc, stripDataUris } from "./app/format.js";
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
-import { CompareController } from "./app/compare-controller.js";
 import { getFileAnalyticsFields, getReportAnalyticsFields, initWebAnalytics, trackWebEvent } from "./app/analytics.js";
 import { hydrateReportSdkIcons } from "./app/sdk-icon-cache.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
@@ -81,6 +80,8 @@ let pendingThemeIndicatorChoice = "";
 const pointerCoordinateUpdaters = new WeakMap();
 const dateTimeFormatters = new Map();
 const exportJsonCache = new WeakMap();
+let compareController = null;
+let compareControllerPromise = null;
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
@@ -127,35 +128,100 @@ function t(key, variables = {}) {
   return translate(state.locale, key, variables);
 }
 
-const compareController = new CompareController({
-  elements: {
-    view: elements.compareView,
-    warning: elements.compareWarning,
-    result: elements.compareResult,
-    fileInputs: elements.compareFileInputs,
-    dropZones: elements.compareDropZones,
-    historySelects: elements.compareHistorySelects,
-    clearButtons: elements.compareClearButtons,
-  },
-  t,
-  getLocale: () => state.locale,
-  getHistory: () => state.history,
-  ensureWorker,
-  createJob: (job) => {
-    state.jobId += 1;
-    state.jobs.set(state.jobId, job);
-    return state.jobId;
-  },
-  deleteJob: (jobId) => {
-    state.jobs.delete(jobId);
-    scheduleWorkerIdleTermination();
-  },
-  hasJob: (jobId) => state.jobs.has(jobId),
-  updateClearButton,
-  trackEvent: trackWebEvent,
-  getFileAnalyticsFields,
-  getReportAnalyticsFields,
-});
+function createCompareController(CompareController) {
+  return new CompareController({
+    elements: {
+      view: elements.compareView,
+      warning: elements.compareWarning,
+      result: elements.compareResult,
+      fileInputs: elements.compareFileInputs,
+      dropZones: elements.compareDropZones,
+      historySelects: elements.compareHistorySelects,
+      clearButtons: elements.compareClearButtons,
+    },
+    t,
+    getLocale: () => state.locale,
+    getHistory: () => state.history,
+    ensureWorker,
+    createJob: (job) => {
+      state.jobId += 1;
+      state.jobs.set(state.jobId, job);
+      return state.jobId;
+    },
+    deleteJob: (jobId) => {
+      state.jobs.delete(jobId);
+      scheduleWorkerIdleTermination();
+    },
+    hasJob: (jobId) => state.jobs.has(jobId),
+    updateClearButton,
+    trackEvent: trackWebEvent,
+    getFileAnalyticsFields,
+    getReportAnalyticsFields,
+  });
+}
+
+function ensureCompareController() {
+  if (compareController) {
+    return Promise.resolve(compareController);
+  }
+
+  if (!compareControllerPromise) {
+    compareControllerPromise = import("./app/compare-controller.js")
+      .then(({ CompareController }) => {
+        compareController = createCompareController(CompareController);
+        compareController.bindEvents();
+        compareController.setVisible(state.appMode === "compare");
+        updateClearButton();
+        return compareController;
+      })
+      .catch((error) => {
+        compareControllerPromise = null;
+        handleCompareControllerLoadError(error);
+        return null;
+      });
+  }
+
+  return compareControllerPromise;
+}
+
+function loadCompareControllerForCurrentMode() {
+  void ensureCompareController().then((controller) => {
+    if (!controller) {
+      return;
+    }
+
+    controller.setVisible(state.appMode === "compare");
+    updateClearButton();
+  });
+}
+
+function handleCompareControllerLoadError(error) {
+  console.error("Failed to load compare controller", error);
+  trackWebEvent("webui.compare.load_failed", {
+    result: "error",
+    error_name: error?.name || "CompareControllerLoadError",
+  });
+  if (state.appMode !== "compare") {
+    return;
+  }
+
+  elements.compareView.hidden = false;
+  elements.compareWarning.hidden = false;
+  elements.compareWarning.textContent = t("workerFailed");
+  updateClearButton();
+}
+
+function renderComparePageIfLoaded() {
+  if (compareController) {
+    compareController.renderPage();
+  } else if (state.appMode === "compare") {
+    loadCompareControllerForCurrentMode();
+  }
+}
+
+function renderCompareHistoryOptionsIfLoaded() {
+  compareController?.renderHistoryOptions();
+}
 
 function resolveInitialLocale() {
   const browserLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
@@ -244,7 +310,7 @@ function bindEvents() {
     renderSelectedFile();
     renderHistoryList();
     renderReport();
-    compareController.renderPage();
+    renderComparePageIfLoaded();
     if (previousLocale !== state.locale) {
       trackWebEvent("webui.locale.changed", {
         result: "success",
@@ -291,7 +357,11 @@ function bindEvents() {
 
   elements.clearButton.addEventListener("click", () => {
     if (state.appMode === "compare") {
-      compareController.reset();
+      if (compareController) {
+        compareController.reset();
+      } else {
+        loadCompareControllerForCurrentMode();
+      }
     } else {
       resetState();
     }
@@ -393,8 +463,6 @@ function bindEvents() {
       operation: state.activeNativeAbi,
     });
   });
-
-  compareController.bindEvents();
 }
 
 function beginModeDrag(event) {
@@ -1589,7 +1657,14 @@ function updateAppMode() {
 
   elements.form.hidden = isCompare;
   elements.historyPanel.hidden = isCompare;
-  compareController.setVisible(isCompare);
+  if (compareController) {
+    compareController.setVisible(isCompare);
+  } else {
+    elements.compareView.hidden = true;
+    if (isCompare) {
+      loadCompareControllerForCurrentMode();
+    }
+  }
 
   if (isCompare) {
     elements.emptyState.hidden = true;
@@ -1602,7 +1677,7 @@ function updateAppMode() {
 
 function updateClearButton() {
   if (state.appMode === "compare") {
-    elements.clearButton.disabled = !compareController.hasContent();
+    elements.clearButton.disabled = !compareController?.hasContent();
     return;
   }
 
@@ -1881,7 +1956,7 @@ function failActiveWorkerJobs(message) {
 
   for (const [, job] of jobs) {
     if (job.type === "compare") {
-      compareController.finishJob(job.slotKey, null, message);
+      compareController?.finishJob(job.slotKey, null, message);
     } else {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
@@ -1903,7 +1978,7 @@ function handleWorkerMessage(event) {
 
   if (message.type === "progress") {
     if (job.type === "compare") {
-      compareController.handleProgress(
+      compareController?.handleProgress(
         job.slotKey,
         message.jobId,
         message.stage === "parsing" ? "progressParsing" : "progressReading",
@@ -1918,7 +1993,7 @@ function handleWorkerMessage(event) {
     state.jobs.delete(message.jobId);
     scheduleWorkerIdleTermination();
     if (job.type === "compare") {
-      compareController.finishJob(job.slotKey, null, message.error || t("workerFailed"));
+      compareController?.finishJob(job.slotKey, null, message.error || t("workerFailed"));
     } else {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
@@ -1934,7 +2009,7 @@ function handleWorkerMessage(event) {
   if (message.type === "result") {
     state.jobs.delete(message.jobId);
     if (job.type === "compare") {
-      compareController.finishJob(job.slotKey, message.report, "");
+      compareController?.finishJob(job.slotKey, message.report, "");
       saveHistoryReport(message.report);
       scheduleWorkerIdleTermination();
       return;
@@ -2217,12 +2292,12 @@ function renderHistoryList() {
 
   if (state.history.length === 0) {
     elements.historyList.innerHTML = emptyList(t("historyEmpty"));
-    compareController.renderHistoryOptions();
+    renderCompareHistoryOptionsIfLoaded();
     return;
   }
 
   elements.historyList.innerHTML = state.history.map(renderHistoryItem).join("");
-  compareController.renderHistoryOptions();
+  renderCompareHistoryOptionsIfLoaded();
 }
 
 function renderHistoryItem(entry) {
