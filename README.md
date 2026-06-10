@@ -44,7 +44,7 @@ Group behavior depends on Telegram Privacy Mode. For the most reliable group flo
 
 ## Quick Start
 
-Install root dependencies:
+Install workspace dependencies from the repository root:
 
 ```bash
 npm install
@@ -113,6 +113,8 @@ npm run pages:deploy
 | `npm run pages:deploy` | Web UI | Deploy the Pages app. |
 | `npm run check` | shared | Validate Worker, scripts, generated files, and Web UI. |
 
+The repository root is the npm workspace root. The root `pages:*` scripts delegate to the `@tgbot/apk-webui` workspace so existing commands keep working while Web UI-only dependencies stay scoped to the Web UI package.
+
 ## Localization
 
 User-facing copy lives in `locales/*.json`. These files are the translation source of truth for both the Telegram bot and the Web UI.
@@ -180,7 +182,7 @@ src/
     sdk-markers.js   LibChecker SDK marker annotator
     generated/       Ignored generated i18n, LibChecker rule, and icon bundles
 locales/             Translation JSON catalogs
-pages-apk-webui/     Web UI Pages app
+pages-apk-webui/     Web UI Pages app workspace package
 scripts/             Shared maintenance and webhook scripts
 wrangler.toml        Worker deployment config
 ```

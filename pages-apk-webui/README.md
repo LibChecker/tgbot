@@ -2,6 +2,8 @@
 
 This directory contains the standalone Cloudflare Pages app for local APK analysis in the browser. It shares the APK analyzer and LibChecker rule bundles from the repository-level `src/shared/` module, but it does not depend on the Telegram bot runtime.
 
+It is registered as the npm workspace package `@tgbot/apk-webui`. Run commands from the repository root through the root `pages:*` scripts, or target this workspace directly with `npm run <script> --workspace @tgbot/apk-webui`.
+
 ## Project Structure
 
 ```text

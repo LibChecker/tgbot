@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "pages-apk-webui"
+  ],
   "scripts": {
     "predev": "npm run generated:generate",
     "predeploy": "npm run generated:generate",
@@ -21,14 +24,13 @@
     "generated:generate": "node scripts/generate_shared_assets.mjs",
     "generated:refresh": "node scripts/generate_shared_assets.mjs --refresh",
     "rules:update": "python scripts/generate_libchecker_bundle.py",
-    "pages:build": "npm --prefix pages-apk-webui run build",
-    "pages:check": "npm --prefix pages-apk-webui run check",
-    "pages:dev": "npm --prefix pages-apk-webui run dev",
-    "pages:deploy": "npm --prefix pages-apk-webui run deploy",
+    "pages:build": "npm run build --workspace @tgbot/apk-webui",
+    "pages:check": "npm run check --workspace @tgbot/apk-webui",
+    "pages:dev": "npm run dev --workspace @tgbot/apk-webui",
+    "pages:deploy": "npm run deploy --workspace @tgbot/apk-webui",
     "check": "npm run generated:generate && npm run i18n:check && node --check src/bot/index.js && node --check src/bot/apk-url-preview.js && node --check src/bot/i18n.js && node --check src/bot/icons.js && node --check src/bot/observability.js && node --check src/bot/report-viewer.js && node --check src/bot/telegraph.js && node --check src/bot/upload-view.js && node --check src/shared/apk.js && node --check src/shared/apk-signatures.js && node --check src/shared/i18n.js && node --check src/shared/sdk-markers.js && node --check src/shared/terminal-system.js && node --check src/shared/generated/i18n-catalogs.js && node --check src/shared/generated/libchecker-rules.js && node --check src/shared/generated/libchecker-sdk-icons.js && node --check scripts/generate_i18n_catalogs.mjs && node --check scripts/generate_shared_assets.mjs && node --check scripts/manage-webhook.mjs && npm run pages:check"
   },
   "devDependencies": {
-    "vite": "^8.0.16",
     "wrangler": "^4.0.0"
   }
 }
