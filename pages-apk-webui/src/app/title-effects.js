@@ -32,35 +32,38 @@ function buildBrandTitleLayer(title, className) {
   const layerNode = document.createElement("span");
   layerNode.className = className;
   layerNode.setAttribute("aria-hidden", "true");
+  layerNode.innerHTML = renderBrandTitleLayerHtml(title);
+  return layerNode;
+}
 
+function renderBrandTitleLayerHtml(title) {
+  let html = "";
   title.split(" ").forEach((word) => {
     if (!word) {
       return;
     }
 
-    const wordNode = document.createElement("span");
-    wordNode.className = "brand-title__word";
+    html += `<span class="brand-title__word">`;
 
     Array.from(word.toUpperCase()).forEach((character) => {
       const glyph = DOT_TITLE_GLYPHS[character] || DOT_TITLE_GLYPHS["?"];
-      const letterNode = document.createElement("span");
-      letterNode.className = "brand-title__letter";
+      html += `<span class="brand-title__letter">`;
 
       glyph.forEach((row) => {
         Array.from(row).forEach((dot) => {
-          const dotNode = document.createElement("span");
-          dotNode.className = dot === "1" ? "brand-title__dot is-on" : "brand-title__dot";
-          letterNode.append(dotNode);
+          html += dot === "1"
+            ? `<span class="brand-title__dot is-on"></span>`
+            : `<span class="brand-title__dot"></span>`;
         });
       });
 
-      wordNode.append(letterNode);
+      html += `</span>`;
     });
 
-    layerNode.append(wordNode);
+    html += `</span>`;
   });
 
-  return layerNode;
+  return html;
 }
 
 function buildBrandTitleCanvas() {
