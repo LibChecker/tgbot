@@ -222,6 +222,18 @@ export function renderUploadPage({
         }
       }
 
+      @media (prefers-reduced-motion: reduce), (prefers-reduced-data: reduce) {
+        .progress__bar {
+          transition: none;
+        }
+
+        .progress.is-indeterminate .progress__bar {
+          width: 100%;
+          animation: none;
+          opacity: 0.72;
+        }
+      }
+
       @keyframes progress-slide {
         0% {
           transform: translateX(-120%);
