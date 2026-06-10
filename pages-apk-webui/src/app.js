@@ -5,7 +5,6 @@ import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeIm
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
 import { getFileAnalyticsFields, getReportAnalyticsFields, initWebAnalytics, trackWebEvent } from "./app/analytics.js";
-import { hydrateReportSdkIcons } from "./app/sdk-icon-cache.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import { initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
@@ -83,6 +82,7 @@ let compareController = null;
 let compareControllerPromise = null;
 let terminalSystemDetectorPromise = null;
 let appTitleColorMaskPromise = null;
+let reportSdkIconHydratorPromise = null;
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
@@ -263,6 +263,24 @@ function loadAppTitleColorMask() {
   }
 
   return appTitleColorMaskPromise;
+}
+
+async function hydrateReportSdkIconsForHistory(report) {
+  const hydrateReportSdkIcons = await loadReportSdkIconHydrator();
+  return hydrateReportSdkIcons(report);
+}
+
+function loadReportSdkIconHydrator() {
+  if (!reportSdkIconHydratorPromise) {
+    reportSdkIconHydratorPromise = import("./app/sdk-icon-cache.js")
+      .then(({ hydrateReportSdkIcons }) => hydrateReportSdkIcons)
+      .catch((error) => {
+        reportSdkIconHydratorPromise = null;
+        throw error;
+      });
+  }
+
+  return reportSdkIconHydratorPromise;
 }
 
 function resolveInitialLocale() {
@@ -2221,7 +2239,7 @@ async function openHistoryItem(id) {
   stopTimer();
 
   try {
-    const report = await hydrateReportSdkIcons(cloneReportForHydration(entry.report));
+    const report = await hydrateReportSdkIconsForHistory(cloneReportForHydration(entry.report));
     if (token !== historyOpenToken) {
       return;
     }

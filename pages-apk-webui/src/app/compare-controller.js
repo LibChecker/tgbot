@@ -3,13 +3,13 @@ import { clamp } from "./math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./format.js";
 import { COMPONENT_SECTIONS, getStats } from "./report-model.js";
 import { buildHistorySummary } from "./history.js";
-import { hydrateReportSdkIcons } from "./sdk-icon-cache.js";
 import { renderSdkInline as renderSdkInlineBase } from "./sdk-icon-renderer.js";
 
 const COMPARE_SLOT_KEYS = ["left", "right"];
 const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
 const pointerCoordinateUpdaters = new WeakMap();
 let terminalSystemDetectorPromise = null;
+let reportSdkIconHydratorPromise = null;
 
 export class CompareController {
   constructor(options) {
@@ -222,7 +222,7 @@ export class CompareController {
 
     const summary = entry.summary || buildHistorySummary(entry.report);
     Object.assign(slot, {
-      report: await hydrateReportSdkIcons(cloneReportForHydration(entry.report)),
+      report: await hydrateReportSdkIconsForHistory(cloneReportForHydration(entry.report)),
       source: "history",
       historyId,
       fileName: summary.fileName || "",
@@ -972,6 +972,24 @@ async function detectCurrentTerminalSystem() {
 
   const detectTerminalSystem = await terminalSystemDetectorPromise;
   return detectTerminalSystem();
+}
+
+async function hydrateReportSdkIconsForHistory(report) {
+  const hydrateReportSdkIcons = await loadReportSdkIconHydrator();
+  return hydrateReportSdkIcons(report);
+}
+
+function loadReportSdkIconHydrator() {
+  if (!reportSdkIconHydratorPromise) {
+    reportSdkIconHydratorPromise = import("./sdk-icon-cache.js")
+      .then(({ hydrateReportSdkIcons }) => hydrateReportSdkIcons)
+      .catch((error) => {
+        reportSdkIconHydratorPromise = null;
+        throw error;
+      });
+  }
+
+  return reportSdkIconHydratorPromise;
 }
 
 function createCompareSlotState() {
