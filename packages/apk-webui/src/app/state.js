@@ -58,6 +58,7 @@ export function createRuntimeState() {
     compareControllerPromise: null,
     rulePreviewMaterialCapabilityChecked: false,
     rulePreviewMaterialCapabilitySupported: false,
+    rulePreviewMaterialFallbackReason: "",
     rulePreviewMaterialWarmupScheduled: false,
     powerModeInitialized: false,
     powerConstrained: false,

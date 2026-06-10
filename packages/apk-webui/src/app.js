@@ -5,6 +5,7 @@ import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeIm
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
 import { getFileAnalyticsFields, getReportAnalyticsFields } from "./app/analytics-fields.js";
+import { getLiquidGlassBrowserConfigFallbackReason } from "./app/liquid-glass-support.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import {
   ANALYTICS_EVENT_QUEUE_LIMIT,
@@ -473,8 +474,10 @@ function ensureRulePreviewMaterial() {
   }
 
   runtime.rulePreviewMaterialCapabilityChecked = true;
-  runtime.rulePreviewMaterialCapabilitySupported = isLiquidGlassBrowserCapable();
+  runtime.rulePreviewMaterialFallbackReason = getLiquidGlassFallbackReason();
+  runtime.rulePreviewMaterialCapabilitySupported = !runtime.rulePreviewMaterialFallbackReason;
   if (!runtime.rulePreviewMaterialCapabilitySupported || isAppPowerConstrained()) {
+    setRulePreviewMaterialFallbackReason(runtime.rulePreviewMaterialFallbackReason);
     return;
   }
 
@@ -487,6 +490,7 @@ function enableRulePreviewMaterial() {
   }
 
   ensureLiquidGlassFilter();
+  setRulePreviewMaterialFallbackReason("");
   document.documentElement.dataset.rulePreviewMaterial = "liquid-glass";
   scheduleLiquidGlassMapPrewarm();
   updateLiquidGlassFilterForActivePreview();
@@ -499,6 +503,14 @@ function disableRulePreviewMaterial() {
 
   runtime.liquidGlassFilterSignature = "";
   runtime.liquidGlassMapCache.clear();
+}
+
+function setRulePreviewMaterialFallbackReason(reason) {
+  if (reason) {
+    document.documentElement.dataset.rulePreviewMaterialFallback = reason;
+  } else {
+    delete document.documentElement.dataset.rulePreviewMaterialFallback;
+  }
 }
 
 function scheduleRulePreviewMaterialWarmup() {
@@ -547,12 +559,25 @@ function scheduleLiquidGlassMapPrewarm() {
   }
 }
 
-function isLiquidGlassBrowserCapable() {
-  return (
-    supportsLiquidGlassCssFilters() &&
-    supportsLiquidGlassSvgFilters() &&
-    supportsLiquidGlassCanvasMap()
-  );
+function getLiquidGlassFallbackReason() {
+  const browserConfigReason = getLiquidGlassBrowserConfigFallbackReason();
+  if (browserConfigReason) {
+    return browserConfigReason;
+  }
+
+  if (!supportsLiquidGlassCssFilters()) {
+    return "css-svg-backdrop-filter";
+  }
+
+  if (!supportsLiquidGlassSvgFilters()) {
+    return "svg-filter-elements";
+  }
+
+  if (!supportsLiquidGlassCanvasMap()) {
+    return "canvas-filter-map";
+  }
+
+  return "";
 }
 
 function supportsLiquidGlassCssFilters() {
