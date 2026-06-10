@@ -2,6 +2,14 @@ import { createI18n, getSupportedLocales, normalizeLocale, resolvePreferredLocal
 
 export { getSupportedLocales, normalizeLocale, resolvePreferredLocale };
 
+let cachedLocale = "";
+let cachedI18n = null;
+
 export function translate(locale, key, variables = {}) {
-  return createI18n(locale, { scope: "webui" }).t(key, variables);
+  if (locale !== cachedLocale || !cachedI18n) {
+    cachedLocale = locale;
+    cachedI18n = createI18n(locale, { scope: "webui" });
+  }
+
+  return cachedI18n.t(key, variables);
 }

@@ -39,6 +39,7 @@ const AXML_NO_INDEX = 0xffffffff;
 const TABLE_NO_ENTRY_16 = 0xffff;
 
 const utf8Decoder = new TextDecoder();
+const utf16Decoder = new TextDecoder("utf-16le");
 // Keep this order aligned with LibChecker's getJetpackComposeVersion().
 const COMPOSE_VERSION_ENTRY_CANDIDATES = [
   "META-INF/androidx.compose.runtime_runtime.version",
@@ -78,7 +79,7 @@ const ZIP_BUNDLE_METADATA_PREFIX_BYTES = asciiBytes("BUNDLE-METADATA/");
 const ZIP_KOTLIN_TOOLING_METADATA_BYTES = asciiBytes("kotlin-tooling-metadata.json");
 const ZIP_APK_SUFFIX_BYTES = asciiBytes(".apk");
 const ZIP_MACOSX_PREFIX_BYTES = asciiBytes("__macosx/");
-const CONTAINED_APK_EXTRACT_CONCURRENCY = 2;
+const CONTAINED_APK_EXTRACT_CONCURRENCY = 4;
 const MAX_APP_ICON_BYTES = 128 * 1024;
 const ADAPTIVE_ICON_SIZE = 108;
 const ADAPTIVE_ICON_EXTRA_INSET_PERCENTAGE = 1 / 4;
@@ -471,14 +472,14 @@ export async function readApkInfoFromZipSource(source, options = {}) {
   const zipEntries = source.zipEntries;
   const nativeLibraries = collectNativeLibraries(zipEntries);
   const nativeLibrariesForValidation = options.nativeLibraries || nativeLibraries;
-  const buildFeatures = await detectBuildFeatures(source, {
+  const buildFeaturesPromise = detectBuildFeatures(source, {
     ...options,
     nativeLibraries: nativeLibrariesForValidation,
   });
-  const signatures = await readApkSignatures(source, {
+  const signaturesPromise = readApkSignatures(source, {
     maxSignatureEntryBytes: options.maxSignatureEntryBytes,
   });
-  const resources = await readApkResources(source, {
+  const resourcesPromise = readApkResources(source, {
     maxEntryBytes: options.maxResourceBytes,
   });
 
@@ -487,8 +488,13 @@ export async function readApkInfoFromZipSource(source, options = {}) {
     throw new Error("APK 中缺少 AndroidManifest.xml");
   }
 
-  const manifestBytes = await extractSourceEntry(source, manifestEntry);
-  const manifest = parseAndroidManifest(manifestBytes);
+  const manifestPromise = extractSourceEntry(source, manifestEntry).then(parseAndroidManifest);
+  const [buildFeatures, signatures, resources, manifest] = await Promise.all([
+    buildFeaturesPromise,
+    signaturesPromise,
+    resourcesPromise,
+    manifestPromise,
+  ]);
 
   let appName = normalizeText(manifest.applicationLabel);
   if (!appName && manifest.applicationLabelRef != null && resources) {
@@ -3644,11 +3650,7 @@ function decodeUtf8(bytes) {
 }
 
 function decodeUtf16(bytes, offset, codeUnitCount) {
-  let result = "";
-  for (let index = 0; index < codeUnitCount; index += 1) {
-    result += String.fromCharCode(readUint16(bytes, offset + index * 2));
-  }
-  return result;
+  return utf16Decoder.decode(bytes.subarray(offset, offset + codeUnitCount * 2));
 }
 
 function normalizeText(value) {

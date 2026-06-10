@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { env } from "node:process";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { gzipSync } from "node:zlib";
@@ -288,11 +289,7 @@ async function launchChrome() {
 }
 
 async function findChrome() {
-  const candidates = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-  ];
+  const candidates = getChromeCandidates();
 
   for (const candidate of candidates) {
     try {
@@ -305,7 +302,40 @@ async function findChrome() {
     }
   }
 
-  throw new Error("Could not find a Chrome-compatible browser in /Applications");
+  throw new Error("Could not find a Chrome-compatible browser");
+}
+
+function getChromeCandidates() {
+  if (process.platform === "win32") {
+    return [
+      resolveBrowserCandidate(env.PROGRAMFILES || "C:\\Program Files", "Google/Chrome/Application/chrome.exe"),
+      resolveBrowserCandidate(env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Google/Chrome/Application/chrome.exe"),
+      resolveBrowserCandidate(env.LOCALAPPDATA, "Google/Chrome/Application/chrome.exe"),
+      resolveBrowserCandidate(env.PROGRAMFILES || "C:\\Program Files", "Microsoft/Edge/Application/msedge.exe"),
+      resolveBrowserCandidate(env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)", "Microsoft/Edge/Application/msedge.exe"),
+      resolveBrowserCandidate(env.LOCALAPPDATA, "Microsoft/Edge/Application/msedge.exe"),
+    ].filter(Boolean);
+  }
+
+  if (process.platform === "darwin") {
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    ];
+  }
+
+  return [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/microsoft-edge",
+  ];
+}
+
+function resolveBrowserCandidate(baseDir, browserPath) {
+  return baseDir ? resolve(baseDir, browserPath) : "";
 }
 
 async function findFreePort() {
@@ -406,6 +436,12 @@ async function createPage(browser, url) {
   await browser.send("Page.enable", {}, sessionId);
   await browser.send("DOM.enable", {}, sessionId);
   await browser.send("Network.enable", {}, sessionId);
+  await browser.send("Network.setBlockedURLs", {
+    urls: [
+      "http://local.adguard.org/*",
+      "https://local.adguard.org/*",
+    ],
+  }, sessionId);
   await browser.send("Runtime.enable", {}, sessionId);
   await browser.send("Page.addScriptToEvaluateOnNewDocument", {
     source: createBenchmarkInjectionScript(),
@@ -565,20 +601,25 @@ async function waitForAnalysis(page, timeoutMs) {
       const snapshot = window.__webuiBenchmarkSnapshot();
       const latestWorker = snapshot.workers[snapshot.workers.length - 1] || null;
       const error = document.querySelector('#error-box:not([hidden])')?.textContent || '';
-      const done = Boolean(latestWorker?.resultAt || error);
+      const resultVisible = !document.querySelector('#result-view')?.hidden;
+      const observedAt = performance.now();
+      const done = Boolean(error || (latestWorker?.resultAt && resultVisible));
       return {
         done,
         error,
         progressText: document.querySelector('#progress-label')?.textContent || '',
-        resultVisible: !document.querySelector('#result-view')?.hidden,
+        resultVisible,
         reportTitle: document.querySelector('#report-hero h2, #report-hero h1')?.textContent || '',
         worker: latestWorker,
+        workerResultToVisibleMs: latestWorker?.resultAt && resultVisible
+          ? observedAt - latestWorker.resultAt
+          : 0,
       };
     })()`);
     if (value.done) {
       return value;
     }
-    await delay(500);
+    await delay(100);
   }
   throw new Error("Timed out waiting for APK analysis");
 }
@@ -745,6 +786,7 @@ function printSummary(result, outputPath) {
       `wall ${formatMs(sample.wallTimeMs)}`,
       `worker ${formatMs(worker.createToFirstProgressMs)}`,
       `analysis ${formatMs(worker.resultDurationMs)}`,
+      `ui ${formatMs(sample.flow.workerResultToVisibleMs)}`,
       sample.flow.error ? `error "${sample.flow.error}"` : "ok",
     ].join(" "));
   }

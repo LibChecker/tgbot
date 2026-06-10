@@ -7,8 +7,6 @@ import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistory
 import { getFileAnalyticsFields, getReportAnalyticsFields } from "./app/analytics-fields.js";
 import { applyFilePickerAcceptCompatibility } from "./app/file-picker-support.js";
 import { getLiquidGlassBrowserConfigFallbackReason } from "./app/liquid-glass-support.js";
-import { isLikelyLcappsFile, readLcappsArchive } from "./app/lcapps-reader.js";
-import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import {
   ANALYTICS_EVENT_QUEUE_LIMIT,
   THEME_CHOICES,
@@ -50,6 +48,10 @@ const LIQUID_GLASS_RED_DISPLACEMENT_ID = `${LIQUID_GLASS_FILTER_ID}-red-displace
 const LIQUID_GLASS_BLUE_DISPLACEMENT_ID = `${LIQUID_GLASS_FILTER_ID}-blue-displacement`;
 const LIQUID_GLASS_PREVIEW_SELECTOR = ".sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble";
 const LIQUID_GLASS_CHANNEL_GAIN = 6;
+const ANALYTICS_IDLE_LOAD_DELAY_MS = 4000;
+const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
+const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
+const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
 const LIQUID_GLASS_CONTROLS = Object.freeze({
   edgeIntensity: 0.01,
   rimIntensity: 0.05,
@@ -148,9 +150,11 @@ function scheduleAnalyticsLoad() {
   };
 
   if (typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(load, { timeout: 2000 });
+    window.setTimeout(() => {
+      window.requestIdleCallback(load, { timeout: ANALYTICS_IDLE_LOAD_TIMEOUT_MS });
+    }, ANALYTICS_IDLE_LOAD_DELAY_MS);
   } else {
-    window.setTimeout(load, 0);
+    window.setTimeout(load, ANALYTICS_IDLE_LOAD_DELAY_MS);
   }
 }
 
@@ -179,10 +183,16 @@ function initBrandTitleColorMaskWhenIdle(node) {
     return;
   }
 
+  let initialized = false;
+  const pointerOptions = { passive: true };
   const init = () => {
-    if (isAppPowerConstrained()) {
+    if (initialized || isAppPowerConstrained()) {
       return;
     }
+
+    initialized = true;
+    node.removeEventListener("pointerenter", init, pointerOptions);
+    node.removeEventListener("pointermove", init, pointerOptions);
 
     void loadBrandTitleColorMask().then((initBrandTitleColorMask) => {
       if (node.isConnected) {
@@ -191,10 +201,15 @@ function initBrandTitleColorMaskWhenIdle(node) {
     }).catch(() => {});
   };
 
+  node.addEventListener("pointerenter", init, pointerOptions);
+  node.addEventListener("pointermove", init, pointerOptions);
+
   if (typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(init, { timeout: 1200 });
+    window.setTimeout(() => {
+      window.requestIdleCallback(init, { timeout: BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS });
+    }, BRAND_TITLE_IDLE_LOAD_DELAY_MS);
   } else {
-    window.setTimeout(init, 0);
+    window.setTimeout(init, BRAND_TITLE_IDLE_LOAD_DELAY_MS);
   }
 }
 
@@ -292,6 +307,38 @@ function loadCompareControllerForCurrentMode() {
     controller.setVisible(state.appMode === "compare");
     updateClearButton();
   });
+}
+
+function loadLcappsReaderModule() {
+  if (!runtime.lcappsReaderModulePromise) {
+    runtime.lcappsReaderModulePromise = import("./app/lcapps-reader.js")
+      .catch((error) => {
+        runtime.lcappsReaderModulePromise = null;
+        throw error;
+      });
+  }
+
+  return runtime.lcappsReaderModulePromise;
+}
+
+function loadSdkIconRendererModule() {
+  if (runtime.sdkIconRendererModule) {
+    return Promise.resolve(runtime.sdkIconRendererModule);
+  }
+
+  if (!runtime.sdkIconRendererModulePromise) {
+    runtime.sdkIconRendererModulePromise = import("./app/sdk-icon-renderer.js")
+      .then((module) => {
+        runtime.sdkIconRendererModule = module;
+        return module;
+      })
+      .catch((error) => {
+        runtime.sdkIconRendererModulePromise = null;
+        throw error;
+      });
+  }
+
+  return runtime.sdkIconRendererModulePromise;
 }
 
 function handleCompareControllerLoadError(error) {
@@ -1997,7 +2044,7 @@ function initSdkRulePreview() {
       return;
     }
 
-    const detail = getRegisteredSdkRuleDetail(label.dataset.ruleDetailId);
+    const detail = runtime.sdkIconRendererModule?.getRegisteredSdkRuleDetail(label.dataset.ruleDetailId) || null;
     const content = buildRulePreviewContent(label, detail);
     if (!content) {
       hidePreview();
@@ -2802,6 +2849,7 @@ async function analyzeSelectedFile() {
     type: "analyze",
   });
 
+  void loadSdkIconRendererModule().catch(() => {});
   setBusy(true);
   showProgress("progressReading");
   startTimer();
@@ -3273,7 +3321,10 @@ function renderHistoryIcon(summary) {
   return `<span class="history-icon history-icon-placeholder" aria-hidden="true">${escapeHtml(getInitial(summary.appName || summary.packageName))}</span>`;
 }
 
-function renderReport() {
+async function renderReport() {
+  const renderToken = runtime.reportRenderToken + 1;
+  runtime.reportRenderToken = renderToken;
+
   if (state.appMode !== "analyze") {
     hideAnalyzeReportViews(elements);
     return;
@@ -3281,6 +3332,22 @@ function renderReport() {
 
   if (!state.report) {
     showEmptyReportState(elements);
+    return;
+  }
+
+  try {
+    await loadSdkIconRendererModule();
+  } catch (error) {
+    if (renderToken !== runtime.reportRenderToken) {
+      return;
+    }
+
+    console.error("Failed to load SDK icon renderer", error);
+    showError(t("workerFailed"));
+    return;
+  }
+
+  if (renderToken !== runtime.reportRenderToken || state.appMode !== "analyze" || !state.report) {
     return;
   }
 
@@ -3301,6 +3368,11 @@ function updateTabs() {
 function renderTabPanel() {
   const report = state.report;
   if (!report) {
+    return;
+  }
+
+  if (!runtime.sdkIconRendererModule) {
+    void renderReport();
     return;
   }
 
@@ -3969,11 +4041,19 @@ function renderFeaturePills(buildFeatures = {}) {
 }
 
 function renderSdkChip(sdk) {
-  return renderSdkChipBase(sdk, t("unknown"));
+  return runtime.sdkIconRendererModule.renderSdkChip(sdk, t("unknown"));
 }
 
 function renderSdkInline(sdk) {
-  return renderSdkInlineBase(sdk, t("unknown"));
+  return runtime.sdkIconRendererModule.renderSdkInline(sdk, t("unknown"));
+}
+
+function renderSdkIcon(src, label, singleColorIcon = false) {
+  return runtime.sdkIconRendererModule.renderSdkIcon(src, label, singleColorIcon);
+}
+
+function renderSdkRuleLabel(sdk, unknownLabel = "Unknown") {
+  return runtime.sdkIconRendererModule.renderSdkRuleLabel(sdk, unknownLabel);
 }
 
 function renderAppIcon(info) {
@@ -4074,6 +4154,7 @@ async function openLcappsPickerForFile(file) {
   });
 
   try {
+    const { readLcappsArchive } = await loadLcappsReaderModule();
     const archive = await readLcappsArchive(file, {
       locale: state.locale,
       nowIso: new Date().toISOString(),
@@ -4501,7 +4582,7 @@ function isLikelyApk(file) {
 }
 
 function isLikelyLcapps(file) {
-  return isLikelyLcappsFile(file);
+  return String(file?.name || "").toLowerCase().endsWith(".lcapps");
 }
 
 function downloadReport(report, json = "") {

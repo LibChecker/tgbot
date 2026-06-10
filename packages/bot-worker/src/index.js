@@ -1,6 +1,5 @@
 import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
-import { readApkInfoFromUrl } from "./apk-url-preview.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
 import {
@@ -10,17 +9,18 @@ import {
   logInfoEvent,
   logWarnEvent,
 } from "./observability.js";
-import { handleReportRequest } from "./report-viewer.js";
-import { annotateSdkMarkers } from "../../shared/src/sdk-markers.js";
-import { LIBCHECKER_RULES_CORE } from "../../shared/src/generated/libchecker-rules-core.js";
-import { LIBCHECKER_RULE_DETAILS } from "../../shared/src/generated/libchecker-rules-detail.js";
-import { createApkTelegraphPage } from "./telegraph.js";
-import { htmlResponse, renderUploadPage } from "./upload-view.js";
+import { createSdkMarkerAnnotator } from "../../shared/src/sdk-markers.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_TELEGRAM_APK_BYTES = 20 * 1024 * 1024;
 const DEFAULT_DIRECT_UPLOAD_BYTES = 90 * 1024 * 1024;
 const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
+const JSON_CONTENT_HEADERS = {
+  "content-type": "application/json; charset=UTF-8",
+};
+const TEXT_CONTENT_HEADERS = {
+  "content-type": "text/plain; charset=UTF-8",
+};
 const TELEGRAM_ALLOWED_UPDATES = [
   "message",
   "edited_message",
@@ -30,6 +30,11 @@ const TELEGRAM_ALLOWED_UPDATES = [
 const MANAGED_COMMAND_LANGUAGE_CODES = [null, ...SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE)];
 
 let cachedBotIdentity = null;
+let apkUrlPreviewModulePromise = null;
+let reportViewerModulePromise = null;
+let sdkRuleAnnotatorPromise = null;
+let telegraphModulePromise = null;
+let uploadViewModulePromise = null;
 
 export default {
   async fetch(request, env, ctx) {
@@ -38,7 +43,7 @@ export default {
 
     const iconResponse = handleIconRequest(url.pathname);
     if (iconResponse) {
-      return iconResponse;
+      return await iconResponse;
     }
 
     if (request.method === "GET" && url.pathname === "/") {
@@ -49,9 +54,7 @@ export default {
       return new Response(
         "Telegram APK info bot is running on Cloudflare Workers. Send Telegram webhook updates to /webhook. Admin endpoints: GET /admin/webhook, POST /admin/webhook/set, POST /admin/webhook/delete.",
         {
-          headers: {
-            "content-type": "text/plain; charset=UTF-8",
-          },
+          headers: TEXT_CONTENT_HEADERS,
         },
       );
     }
@@ -59,6 +62,7 @@ export default {
     if (request.method === "GET" && url.pathname === "/report") {
       const startedAt = Date.now();
       const reportPath = url.searchParams.get("path") || null;
+      const { handleReportRequest } = await loadReportViewerModule();
       const response = await handleReportRequest(url, env);
       const logFields = {
         result: response.ok ? "success" : "error",
@@ -386,7 +390,6 @@ async function handleAdminRequest(request, env, url, telemetry) {
 
 async function handleUploadRequest(request, env, url, telemetry) {
   const locale = normalizeUploadLocale(url.searchParams.get("lang"));
-  const { t } = createI18n(locale);
   const publicBaseUrl = resolvePublicBaseUrl(env, url.origin);
   const uploadUrl = buildUploadUrl(publicBaseUrl, locale);
   const maxUploadBytes = getMaxDirectUploadBytes(env);
@@ -397,7 +400,7 @@ async function handleUploadRequest(request, env, url, telemetry) {
       result: "success",
       http_status: 200,
     });
-    return htmlResponse(renderUploadPage({ locale, uploadUrl, maxSizeText }));
+    return renderUploadResponse({ locale, uploadUrl, maxSizeText });
   }
 
   const startedAt = Date.now();
@@ -418,13 +421,13 @@ async function handleUploadRequest(request, env, url, telemetry) {
         result: "missing_file",
         http_status: 400,
       });
-      return htmlResponse(
-        renderUploadPage({
+      return renderUploadResponse(
+        {
           locale: formLocale,
           uploadUrl: formUploadUrl,
           maxSizeText,
           error: formI18n.t("upload.choose_file"),
-        }),
+        },
         400,
       );
     }
@@ -436,13 +439,13 @@ async function handleUploadRequest(request, env, url, telemetry) {
         file_name: apkFile.name || null,
         file_size_bytes: apkFile.size || 0,
       });
-      return htmlResponse(
-        renderUploadPage({
+      return renderUploadResponse(
+        {
           locale: formLocale,
           uploadUrl: formUploadUrl,
           maxSizeText,
           error: formI18n.t("upload.invalid_file"),
-        }),
+        },
         400,
       );
     }
@@ -453,13 +456,13 @@ async function handleUploadRequest(request, env, url, telemetry) {
         file_name: apkFile.name || null,
         file_size_bytes: apkFile.size || 0,
       });
-      return htmlResponse(
-        renderUploadPage({
+      return renderUploadResponse(
+        {
           locale: formLocale,
           uploadUrl: formUploadUrl,
           maxSizeText,
           error: formI18n.t("upload.too_large", { maxSize: maxSizeText }),
-        }),
+        },
         413,
       );
     }
@@ -470,15 +473,19 @@ async function handleUploadRequest(request, env, url, telemetry) {
       file_size_bytes: apkFile.size || 0,
     });
 
+    const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
+    const telegraphModuleTask = loadTelegraphModule();
     const apkBuffer = await apkFile.arrayBuffer();
     const apkInfo = await readAndroidPackageInfo(apkBuffer);
-    const report = buildApkReport(
+    const report = await buildApkReport(
       buildWebUploadMessage(formLocale),
       buildUploadDocument(apkFile),
       apkInfo,
       publicBaseUrl,
       formLocale,
+      sdkRuleAnnotatorTask,
     );
+    const { createApkTelegraphPage } = await telegraphModuleTask;
     const telegraphPage = await createApkTelegraphPage(env, report);
     const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, formLocale);
 
@@ -515,15 +522,15 @@ async function handleUploadRequest(request, env, url, telemetry) {
       error_stack: getErrorStack(error),
     });
 
-    return htmlResponse(
-      renderUploadPage({
+    return renderUploadResponse(
+      {
         locale: activeLocale,
         uploadUrl: activeUploadUrl,
         maxSizeText,
         error: createI18n(activeLocale).t("upload.parse_failed", {
           message: getLocalizedErrorMessage(error, activeLocale),
         }),
-      }),
+      },
       500,
     );
   }
@@ -982,9 +989,19 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
   );
 
   try {
+    const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
+    const telegraphModuleTask = loadTelegraphModule();
     const apkBuffer = await downloadTelegramFile(env, document.file_id, locale);
     const apkInfo = await readAndroidPackageInfo(apkBuffer);
-    const report = buildApkReport(message, document, apkInfo, publicBaseUrl, locale);
+    const report = await buildApkReport(
+      message,
+      document,
+      apkInfo,
+      publicBaseUrl,
+      locale,
+      sdkRuleAnnotatorTask,
+    );
+    const { createApkTelegraphPage } = await telegraphModuleTask;
     const telegraphPage = await createApkTelegraphPage(env, report);
     const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
 
@@ -1040,6 +1057,8 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
   const startedAt = Date.now();
   const { t } = createI18n(locale);
   const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
+  const apkUrlPreviewModuleTask = loadApkUrlPreviewModule();
+  void apkUrlPreviewModuleTask.catch(() => {});
 
   if (supportsChatAction(message.chat?.type)) {
     await sendChatAction(env, message.chat.id, "typing");
@@ -1057,15 +1076,20 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
   );
 
   try {
+    const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
+    const telegraphModuleTask = loadTelegraphModule();
+    const { readApkInfoFromUrl } = await apkUrlPreviewModuleTask;
     const preview = await readApkInfoFromUrl(apkUrl, getLinkPreviewOptions(env));
     const document = buildUrlPreviewDocument(preview);
-    const report = buildApkReport(
+    const report = await buildApkReport(
       buildUrlPreviewMessage(message),
       document,
       preview.apkInfo,
       publicBaseUrl,
       locale,
+      sdkRuleAnnotatorTask,
     );
+    const { createApkTelegraphPage } = await telegraphModuleTask;
     const telegraphPage = await createApkTelegraphPage(env, report);
     const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
 
@@ -1283,11 +1307,9 @@ async function readJsonBody(request) {
 }
 
 function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
+  return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "content-type": "application/json; charset=UTF-8",
-    },
+    headers: JSON_CONTENT_HEADERS,
   });
 }
 
@@ -1532,14 +1554,89 @@ function buildUrlPreviewDocument(preview) {
   };
 }
 
-function buildApkReport(message, document, apkInfo, publicBaseUrl, locale) {
+function loadApkUrlPreviewModule() {
+  if (!apkUrlPreviewModulePromise) {
+    apkUrlPreviewModulePromise = import("./apk-url-preview.js")
+      .catch((error) => {
+        apkUrlPreviewModulePromise = null;
+        throw error;
+      });
+  }
+
+  return apkUrlPreviewModulePromise;
+}
+
+function loadReportViewerModule() {
+  if (!reportViewerModulePromise) {
+    reportViewerModulePromise = import("./report-viewer.js")
+      .catch((error) => {
+        reportViewerModulePromise = null;
+        throw error;
+      });
+  }
+
+  return reportViewerModulePromise;
+}
+
+function loadSdkRuleAnnotator() {
+  if (!sdkRuleAnnotatorPromise) {
+    sdkRuleAnnotatorPromise = Promise.all([
+      import("../../shared/src/generated/libchecker-rules-core.js"),
+      import("../../shared/src/generated/libchecker-rules-detail.js"),
+    ])
+      .then(([rulesModule, detailsModule]) => createSdkMarkerAnnotator(
+        rulesModule.LIBCHECKER_RULES_CORE || [],
+        detailsModule.LIBCHECKER_RULE_DETAILS || {},
+      ))
+      .catch((error) => {
+        sdkRuleAnnotatorPromise = null;
+        throw error;
+      });
+  }
+
+  return sdkRuleAnnotatorPromise;
+}
+
+function loadTelegraphModule() {
+  if (!telegraphModulePromise) {
+    telegraphModulePromise = import("./telegraph.js")
+      .catch((error) => {
+        telegraphModulePromise = null;
+        throw error;
+      });
+  }
+
+  return telegraphModulePromise;
+}
+
+function loadUploadViewModule() {
+  if (!uploadViewModulePromise) {
+    uploadViewModulePromise = import("./upload-view.js")
+      .catch((error) => {
+        uploadViewModulePromise = null;
+        throw error;
+      });
+  }
+
+  return uploadViewModulePromise;
+}
+
+async function renderUploadResponse(options, status = 200) {
+  const { htmlResponse, renderUploadPage } = await loadUploadViewModule();
+  return htmlResponse(renderUploadPage(options), status);
+}
+
+async function buildApkReport(
+  message,
+  document,
+  apkInfo,
+  publicBaseUrl,
+  locale,
+  sdkRuleAnnotatorTask = loadSdkRuleAnnotator(),
+) {
   const resolveSdkIconUrl = (iconName) => buildSdkIconUrl(publicBaseUrl, iconName);
-  const sdkAnnotated = annotateSdkMarkers(
-    apkInfo,
-    resolveSdkIconUrl,
-    LIBCHECKER_RULES_CORE,
-    LIBCHECKER_RULE_DETAILS,
-  );
+  const annotateSdkMarkers = await sdkRuleAnnotatorTask;
+  const sdkAnnotated = annotateSdkMarkers(apkInfo, resolveSdkIconUrl);
 
   return assertTelegramApkReport({
     locale,
@@ -1647,9 +1744,9 @@ function formatBytes(bytes) {
 
 async function downloadTelegramFile(env, fileId, locale = undefined) {
   const startedAt = Date.now();
-  const { t } = createI18n(locale);
   const file = await telegramApi(env, "getFile", { file_id: fileId }, locale);
   if (!file?.file_path) {
+    const { t } = createI18n(locale);
     throw new Error(t("errors.telegram_missing_file_path"));
   }
 
@@ -1660,6 +1757,7 @@ async function downloadTelegramFile(env, fileId, locale = undefined) {
       result: "error",
       duration_ms: Date.now() - startedAt,
     });
+    const { t } = createI18n(locale);
     throw new Error(t("errors.telegram_file_download_failed", { status: response.status }));
   }
 
@@ -1693,12 +1791,9 @@ async function sendChatAction(env, chatId, action) {
 
 async function telegramApi(env, method, payload, locale = undefined) {
   const startedAt = Date.now();
-  const { t } = createI18n(locale);
   const response = await fetch(`${TELEGRAM_API_BASE}/bot${env.BOT_TOKEN}/${method}`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json; charset=UTF-8",
-    },
+    headers: JSON_CONTENT_HEADERS,
     body: JSON.stringify(payload),
   });
 
@@ -1710,6 +1805,7 @@ async function telegramApi(env, method, payload, locale = undefined) {
       duration_ms: Date.now() - startedAt,
       result: "error",
     });
+    const { t } = createI18n(locale);
     throw new Error(t("errors.telegram_api_request_failed", { method, status: response.status }));
   }
 
@@ -1724,6 +1820,7 @@ async function telegramApi(env, method, payload, locale = undefined) {
       error_name: "TelegramApiResultError",
       result: "error",
     });
+    const { t } = createI18n(locale);
     throw new Error(data.description || t("errors.telegram_api_result_failed", { method }));
   }
 

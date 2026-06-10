@@ -1,8 +1,10 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 const repoDir = new URL("..", import.meta.url);
+const repoPath = fileURLToPath(repoDir);
 const distDir = new URL("../packages/apk-webui/dist/", import.meta.url);
 
 const FIRST_SCREEN_MAX_REQUESTS = 5;
@@ -44,6 +46,18 @@ const ASSET_BUDGETS = [
     label: "SDK marker chunk",
     pattern: /^assets\/sdk-markers-[\w-]+\.js$/u,
     maxBytes: 8 * 1024,
+  },
+  {
+    label: "SDK icon renderer chunk",
+    pattern: /^assets\/sdk-icon-renderer-[\w-]+\.js$/u,
+    maxBytes: 8 * 1024,
+    maxGzipBytes: 3 * 1024,
+  },
+  {
+    label: "LCApps reader chunk",
+    pattern: /^assets\/lcapps-reader-[\w-]+\.js$/u,
+    maxBytes: 16 * 1024,
+    maxGzipBytes: 5 * 1024,
   },
   {
     label: "LibChecker rules core chunk",
@@ -94,8 +108,10 @@ const FIRST_SCREEN_FORBIDDEN_PATTERNS = [
   /^assets\/analyzer-worker-/u,
   /^assets\/apk-analyzer-/u,
   /^assets\/compare-controller-/u,
+  /^assets\/lcapps-reader-/u,
   /^assets\/libchecker-/u,
   /^assets\/sdk-icon-cache-/u,
+  /^assets\/sdk-icon-renderer-/u,
   /^assets\/sdk-markers-/u,
 ];
 
@@ -354,7 +370,9 @@ async function listFiles(rootUrl, dirUrl = rootUrl) {
 
     const fileStat = await stat(fileUrl);
     const buffer = await readFile(fileUrl);
-    const path = relative(repoDir.pathname, fileUrl.pathname).replace(/^packages\/apk-webui\/dist\//u, "");
+    const path = relative(repoPath, fileURLToPath(fileUrl))
+      .replace(/\\/gu, "/")
+      .replace(/^packages\/apk-webui\/dist\//u, "");
     results.push({
       path,
       bytes: fileStat.size,

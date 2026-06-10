@@ -1,5 +1,3 @@
-import { LIBCHECKER_SDK_ICON_SVGS } from "../../shared/src/generated/libchecker-sdk-icons.js";
-
 const SVG_HEADERS = {
   "content-type": "image/svg+xml; charset=UTF-8",
   "cache-control": "public, max-age=300",
@@ -7,11 +5,13 @@ const SVG_HEADERS = {
 
 const ICON_VERSION = "libchecker-20260412";
 const SDK_ICON_VERSION = "libchecker-rules-20260412";
+let featureIconSvgs = null;
+let sdkIconSvgMapPromise = null;
 
 export function handleIconRequest(pathname) {
   const featureIconName = pathname.match(/^\/assets\/icons\/([a-z0-9_-]+)\.svg$/u)?.[1];
   if (featureIconName) {
-    const svg = FEATURE_ICON_SVGS[featureIconName];
+    const svg = getFeatureIconSvgs()[featureIconName];
     if (!svg) {
       return new Response("Not Found", { status: 404 });
     }
@@ -26,7 +26,12 @@ export function handleIconRequest(pathname) {
     return null;
   }
 
-  const svg = LIBCHECKER_SDK_ICON_SVGS[sdkIconName];
+  return handleSdkIconRequest(sdkIconName);
+}
+
+async function handleSdkIconRequest(sdkIconName) {
+  const svgMap = await loadSdkIconSvgMap();
+  const svg = svgMap[sdkIconName];
   if (!svg) {
     return new Response("Not Found", { status: 404 });
   }
@@ -44,7 +49,29 @@ export function buildSdkIconUrl(baseUrl, iconName) {
   return `${baseUrl.replace(/\/+$/u, "")}/assets/sdk-icons/${iconName}.svg?v=${SDK_ICON_VERSION}`;
 }
 
-const FEATURE_ICON_SVGS = {
+function loadSdkIconSvgMap() {
+  if (!sdkIconSvgMapPromise) {
+    sdkIconSvgMapPromise = import("../../shared/src/generated/libchecker-sdk-icons.js")
+      .then((module) => module.LIBCHECKER_SDK_ICON_SVGS)
+      .catch((error) => {
+        sdkIconSvgMapPromise = null;
+        throw error;
+      });
+  }
+
+  return sdkIconSvgMapPromise;
+}
+
+function getFeatureIconSvgs() {
+  if (!featureIconSvgs) {
+    featureIconSvgs = createFeatureIconSvgs();
+  }
+
+  return featureIconSvgs;
+}
+
+function createFeatureIconSvgs() {
+  return {
   kotlin: createSvg(
     `
       <defs>
@@ -75,7 +102,8 @@ const FEATURE_ICON_SVGS = {
     `,
     "0 0 1024 1024",
   ),
-};
+  };
+}
 
 function createSvg(content, viewBox = "0 0 24 24") {
   return [
