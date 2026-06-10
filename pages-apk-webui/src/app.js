@@ -80,6 +80,7 @@ let themeIndicatorFrame = 0;
 let pendingThemeIndicatorChoice = "";
 const pointerCoordinateUpdaters = new WeakMap();
 const dateTimeFormatters = new Map();
+const exportJsonCache = new WeakMap();
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
@@ -2660,15 +2661,6 @@ function renderComponentsTab(report) {
 }
 
 function renderComponentRow(component) {
-  const details = [
-    component.sdk ? { label: t("detectedRule"), html: renderSdkInline(component.sdk) } : null,
-    component.permission ? { label: t("permission"), value: component.permission } : null,
-    component.process ? { label: t("process"), value: component.process } : null,
-    component.authorities ? { label: t("authorities"), value: component.authorities } : null,
-    component.targetActivity ? { label: t("targetActivity"), value: component.targetActivity } : null,
-    component.actions?.length ? { label: t("actions"), value: component.actions.join(", ") } : null,
-  ].filter((item) => item?.html || item?.value);
-
   return [
     `<article class="list-row component-row">`,
     `<div class="component-row-header">`,
@@ -2676,18 +2668,45 @@ function renderComponentRow(component) {
     `<div class="row-title component-row-title"><span>${escapeHtml(component.name || t("unknown"))}</span></div>`,
     `</div>`,
     `</div>`,
-    details.length ? renderComponentDetails(details) : "",
+    renderComponentDetails(component),
     `</article>`,
   ].join("");
 }
 
-function renderComponentDetails(details) {
-  const rows = details.map((item) => [
-    item.label,
-    item.html || inlineCodeValue(item.value),
-  ]);
+function renderComponentDetails(component) {
+  let rows = "";
 
-  return renderHtmlKeyValueTable(rows, "component-detail-table divider-kv-table");
+  if (component.sdk) {
+    rows += renderComponentDetailRow(t("detectedRule"), renderSdkInline(component.sdk));
+  }
+  if (component.permission) {
+    rows += renderComponentDetailRow(t("permission"), inlineCodeValue(component.permission));
+  }
+  if (component.process) {
+    rows += renderComponentDetailRow(t("process"), inlineCodeValue(component.process));
+  }
+  if (component.authorities) {
+    rows += renderComponentDetailRow(t("authorities"), inlineCodeValue(component.authorities));
+  }
+  if (component.targetActivity) {
+    rows += renderComponentDetailRow(t("targetActivity"), inlineCodeValue(component.targetActivity));
+  }
+  if (component.actions?.length) {
+    rows += renderComponentDetailRow(t("actions"), inlineCodeValue(component.actions.join(", ")));
+  }
+
+  return rows
+    ? `<div class="kv-table component-detail-table divider-kv-table">${rows}</div>`
+    : "";
+}
+
+function renderComponentDetailRow(label, value) {
+  return [
+    `<div class="kv-row">`,
+    `<div class="kv-label">${escapeHtml(label)}</div>`,
+    `<div class="kv-value">${value || escapeHtml(t("unknown"))}</div>`,
+    `</div>`,
+  ].join("");
 }
 
 function renderPermissionsTab(report) {
@@ -3090,7 +3109,14 @@ function formatExportJson(report) {
     return "{}";
   }
 
-  return JSON.stringify(buildExportReport(report), null, 2);
+  const cached = exportJsonCache.get(report);
+  if (cached) {
+    return cached;
+  }
+
+  const formatted = JSON.stringify(buildExportReport(report), null, 2);
+  exportJsonCache.set(report, formatted);
+  return formatted;
 }
 
 
