@@ -67,6 +67,17 @@ const QIHOO_CLASS_PREFIX_BYTES = asciiBytes("Lcom/qihoo/util/");
 const TIANYU_CLASS_PREFIX_BYTES = asciiBytes("Lcom/tianyu/util/");
 const SECNEO_CLASS_PREFIX_BYTES = asciiBytes("Lcom/secneo/apkwrapper/");
 const FLUTTER_INJECTOR_CLASS_BYTES = asciiBytes("Lio/flutter/FlutterInjector;");
+const ZIP_ANDROID_MANIFEST_BYTES = asciiBytes("AndroidManifest.xml");
+const ZIP_RESOURCES_ARSC_BYTES = asciiBytes("resources.arsc");
+const ZIP_CLASSES_PREFIX_BYTES = asciiBytes("classes");
+const ZIP_DEX_SUFFIX_BYTES = asciiBytes(".dex");
+const ZIP_LIB_PREFIX_BYTES = asciiBytes("lib/");
+const ZIP_RES_PREFIX_BYTES = asciiBytes("res/");
+const ZIP_META_INF_PREFIX_BYTES = asciiBytes("META-INF/");
+const ZIP_BUNDLE_METADATA_PREFIX_BYTES = asciiBytes("BUNDLE-METADATA/");
+const ZIP_KOTLIN_TOOLING_METADATA_BYTES = asciiBytes("kotlin-tooling-metadata.json");
+const ZIP_APK_SUFFIX_BYTES = asciiBytes(".apk");
+const ZIP_MACOSX_PREFIX_BYTES = asciiBytes("__macosx/");
 const MAX_APP_ICON_BYTES = 128 * 1024;
 const ADAPTIVE_ICON_SIZE = 108;
 const ADAPTIVE_ICON_EXTRA_INSET_PERCENTAGE = 1 / 4;
@@ -2351,20 +2362,122 @@ function parseZipEntries(bytes) {
     const localHeaderOffset = readUint32(bytes, offset + 42);
 
     const nameStart = offset + 46;
-    const fileName = decodeUtf8(bytes.subarray(nameStart, nameStart + fileNameLength));
+    if (!shouldDecodeZipEntryName(bytes, nameStart, fileNameLength)) {
+      offset += 46 + fileNameLength + extraLength + commentLength;
+      continue;
+    }
 
-    entries.set(fileName, {
-      flags,
-      compressionMethod,
-      compressedSize,
-      uncompressedSize,
-      localHeaderOffset,
-    });
+    const fileName = decodeUtf8(bytes.subarray(nameStart, nameStart + fileNameLength));
+    if (shouldKeepZipEntry(fileName)) {
+      entries.set(fileName, {
+        flags,
+        compressionMethod,
+        compressedSize,
+        uncompressedSize,
+        localHeaderOffset,
+      });
+    }
 
     offset += 46 + fileNameLength + extraLength + commentLength;
   }
 
   return entries;
+}
+
+function shouldDecodeZipEntryName(bytes, start, length) {
+  return (
+    bytesMatchAscii(bytes, start, length, ZIP_ANDROID_MANIFEST_BYTES) ||
+    bytesMatchAscii(bytes, start, length, ZIP_RESOURCES_ARSC_BYTES) ||
+    (
+      bytesStartWithAscii(bytes, start, length, ZIP_CLASSES_PREFIX_BYTES) &&
+      bytesEndWithAscii(bytes, start, length, ZIP_DEX_SUFFIX_BYTES)
+    ) ||
+    bytesStartWithAscii(bytes, start, length, ZIP_LIB_PREFIX_BYTES) ||
+    bytesStartWithAscii(bytes, start, length, ZIP_RES_PREFIX_BYTES) ||
+    bytesStartWithAscii(bytes, start, length, ZIP_META_INF_PREFIX_BYTES) ||
+    bytesStartWithAscii(bytes, start, length, ZIP_BUNDLE_METADATA_PREFIX_BYTES) ||
+    bytesMatchAscii(bytes, start, length, ZIP_KOTLIN_TOOLING_METADATA_BYTES) ||
+    (
+      bytesEndWithAsciiIgnoreCase(bytes, start, length, ZIP_APK_SUFFIX_BYTES) &&
+      !bytesStartWithAsciiIgnoreCase(bytes, start, length, ZIP_MACOSX_PREFIX_BYTES)
+    )
+  );
+}
+
+function shouldKeepZipEntry(path) {
+  return (
+    path === "AndroidManifest.xml" ||
+    path === "resources.arsc" ||
+    DEX_ENTRY_PATTERN.test(path) ||
+    path.startsWith("lib/") ||
+    path.startsWith("res/") ||
+    path.startsWith("META-INF/") ||
+    path.startsWith("BUNDLE-METADATA/") ||
+    path === "kotlin-tooling-metadata.json" ||
+    isContainedApkPath(path)
+  );
+}
+
+function bytesMatchAscii(bytes, start, length, expected) {
+  return length === expected.length && bytesStartWithAscii(bytes, start, length, expected);
+}
+
+function bytesStartWithAscii(bytes, start, length, expected) {
+  if (length < expected.length) {
+    return false;
+  }
+
+  for (let index = 0; index < expected.length; index += 1) {
+    if (bytes[start + index] !== expected[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function bytesStartWithAsciiIgnoreCase(bytes, start, length, expected) {
+  if (length < expected.length) {
+    return false;
+  }
+
+  for (let index = 0; index < expected.length; index += 1) {
+    if (toAsciiLowerByte(bytes[start + index]) !== expected[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function bytesEndWithAscii(bytes, start, length, expected) {
+  if (length < expected.length) {
+    return false;
+  }
+
+  const suffixStart = start + length - expected.length;
+  for (let index = 0; index < expected.length; index += 1) {
+    if (bytes[suffixStart + index] !== expected[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function bytesEndWithAsciiIgnoreCase(bytes, start, length, expected) {
+  if (length < expected.length) {
+    return false;
+  }
+
+  const suffixStart = start + length - expected.length;
+  for (let index = 0; index < expected.length; index += 1) {
+    if (toAsciiLowerByte(bytes[suffixStart + index]) !== expected[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function toAsciiLowerByte(value) {
+  return value >= 65 && value <= 90 ? value + 32 : value;
 }
 
 function findEndOfCentralDirectory(bytes) {
@@ -2394,7 +2507,7 @@ async function extractZipEntry(zipBytes, entry) {
   const compressedData = zipBytes.subarray(dataOffset, dataOffset + entry.compressedSize);
 
   if (entry.compressionMethod === ZIP_COMPRESSION_STORE) {
-    return new Uint8Array(compressedData);
+    return compressedData;
   }
 
   if (entry.compressionMethod === ZIP_COMPRESSION_DEFLATE) {
@@ -2409,8 +2522,14 @@ async function inflateRaw(bytes) {
     return new Uint8Array();
   }
 
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
   const decompressed = new Response(
-    new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")),
+    stream.pipeThrough(new DecompressionStream("deflate-raw")),
   );
   const buffer = await decompressed.arrayBuffer();
   return new Uint8Array(buffer);
