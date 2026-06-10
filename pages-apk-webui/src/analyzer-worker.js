@@ -1,13 +1,11 @@
 import { readAndroidPackageInfo } from "./modules/apk.js";
 import { createI18n, normalizeLocale } from "./modules/i18n.js";
-import { annotateSdkMarkers } from "./modules/sdk-markers.js";
 import { detectTerminalSystemFromNavigator as detectTerminalSystemFromNavigatorValue } from "./modules/terminal-system.js";
-import { LIBCHECKER_RULES } from "./modules/generated/libchecker-rules.js";
-import { LIBCHECKER_SDK_ICON_SVGS } from "./modules/generated/libchecker-sdk-icons.js";
 
 const APK_MIME_TYPE = "application/vnd.android.package-archive";
 const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
 const sdkIconDataUriCache = new Map();
+let sdkModulesPromise = null;
 
 self.addEventListener("message", (event) => {
   const message = event.data || {};
@@ -48,6 +46,7 @@ async function analyze(message) {
     stage: "reading",
   });
 
+  const sdkModulesTask = loadSdkModules();
   const buffer = await file.arrayBuffer();
 
   self.postMessage({
@@ -57,13 +56,14 @@ async function analyze(message) {
   });
 
   const apkInfo = await readAndroidPackageInfo(buffer);
-  const annotated = annotateSdkMarkers(apkInfo, resolveSdkIconDataUri);
+  const sdkModules = await sdkModulesTask;
+  const annotated = sdkModules.annotateSdkMarkers(apkInfo, sdkModules.resolveSdkIconDataUri);
   const mergedApkInfo = {
     ...apkInfo,
     ...annotated,
   };
   const terminalSystem = normalizeTerminalSystem(message.terminalSystem);
-  const analysisProfile = buildAnalysisProfile(mergedApkInfo, terminalSystem);
+  const analysisProfile = buildAnalysisProfile(mergedApkInfo, terminalSystem, sdkModules);
 
   self.postMessage({
     type: "result",
@@ -91,13 +91,32 @@ function isLikelyApk(file) {
   );
 }
 
-function resolveSdkIconDataUri(iconName) {
+function loadSdkModules() {
+  if (!sdkModulesPromise) {
+    sdkModulesPromise = Promise.all([
+      import("./modules/sdk-markers.js"),
+      import("./modules/generated/libchecker-rules.js"),
+      import("./modules/generated/libchecker-sdk-icons.js"),
+    ]).then(([sdkMarkersModule, rulesModule, iconsModule]) => {
+      const sdkIconSvgs = iconsModule.LIBCHECKER_SDK_ICON_SVGS || {};
+      return {
+        annotateSdkMarkers: sdkMarkersModule.annotateSdkMarkers,
+        ruleCount: (rulesModule.LIBCHECKER_RULES || []).length,
+        iconCount: Object.keys(sdkIconSvgs).length,
+        resolveSdkIconDataUri: (iconName) => resolveSdkIconDataUri(iconName, sdkIconSvgs),
+      };
+    });
+  }
+  return sdkModulesPromise;
+}
+
+function resolveSdkIconDataUri(iconName, sdkIconSvgs) {
   const cacheKey = iconName || "ic_sdk_placeholder";
   if (sdkIconDataUriCache.has(cacheKey)) {
     return sdkIconDataUriCache.get(cacheKey);
   }
 
-  const svg = LIBCHECKER_SDK_ICON_SVGS[iconName] || LIBCHECKER_SDK_ICON_SVGS.ic_sdk_placeholder;
+  const svg = sdkIconSvgs[iconName] || sdkIconSvgs.ic_sdk_placeholder;
   if (!svg) {
     sdkIconDataUriCache.set(cacheKey, "");
     return "";
@@ -108,7 +127,7 @@ function resolveSdkIconDataUri(iconName) {
   return dataUri;
 }
 
-function buildAnalysisProfile(apkInfo, terminalSystem) {
+function buildAnalysisProfile(apkInfo, terminalSystem, sdkModules) {
   const sdkSummary = apkInfo.sdkSummary || {};
   const nativeSdkMarkerCount = countSdkSummaryItems(sdkSummary.native);
   const componentSdkMarkerCount = countSdkSummaryItems(sdkSummary.components);
@@ -123,8 +142,8 @@ function buildAnalysisProfile(apkInfo, terminalSystem) {
       "dex-feature-markers",
       "libchecker-sdk-rules",
     ],
-    ruleCount: LIBCHECKER_RULES.length,
-    iconCount: Object.keys(LIBCHECKER_SDK_ICON_SVGS).length,
+    ruleCount: sdkModules.ruleCount,
+    iconCount: sdkModules.iconCount,
     uniqueSdkCount: countUniqueSdkEntries(sdkSummary),
     sdkMarkerCount: nativeSdkMarkerCount + componentSdkMarkerCount,
     nativeSdkMarkerCount,
