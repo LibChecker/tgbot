@@ -1,8 +1,10 @@
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
+const ZIP_DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 const ZIP64_SENTINEL_16 = 0xffff;
 const ZIP64_SENTINEL_32 = 0xffffffff;
+const ZIP_FLAG_DATA_DESCRIPTOR = 0x0008;
 const TEXT_DECODER = new TextDecoder("utf-8");
 
 export async function readLcappsArchive(file, options = {}) {
@@ -46,6 +48,9 @@ function readZipEntries(buffer) {
   const view = new DataView(buffer);
   const eocdOffset = findEndOfCentralDirectory(view);
   if (eocdOffset < 0) {
+    if (view.byteLength >= 4 && view.getUint32(0, true) === ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
+      return readStreamingZipEntries(buffer);
+    }
     throw createLcappsError("lcappsInvalidZip");
   }
 
@@ -103,6 +108,115 @@ function readZipEntries(buffer) {
   }
 
   return entries;
+}
+
+function readStreamingZipEntries(buffer) {
+  const view = new DataView(buffer);
+  const entries = [];
+  let offset = 0;
+
+  while (offset + 30 <= view.byteLength && view.getUint32(offset, true) === ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
+    const flags = view.getUint16(offset + 6, true);
+    const compressionMethod = view.getUint16(offset + 8, true);
+    const compressedSizeHeader = view.getUint32(offset + 18, true);
+    const uncompressedSizeHeader = view.getUint32(offset + 22, true);
+    const nameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    const nameStart = offset + 30;
+    const nameEnd = nameStart + nameLength;
+    const dataStart = nameEnd + extraLength;
+
+    if (nameEnd > view.byteLength || dataStart > view.byteLength) {
+      throw createLcappsError("lcappsInvalidZip");
+    }
+
+    const name = decodeZipEntryName(new Uint8Array(buffer, nameStart, nameLength), flags);
+    let compressedSize = compressedSizeHeader;
+    let uncompressedSize = uncompressedSizeHeader;
+    let dataEnd = dataStart + compressedSize;
+    let nextOffset = dataEnd;
+
+    if (compressedSize === ZIP64_SENTINEL_32 || uncompressedSize === ZIP64_SENTINEL_32) {
+      throw createLcappsError("lcappsUnsupportedZip64");
+    }
+
+    if ((flags & ZIP_FLAG_DATA_DESCRIPTOR) !== 0) {
+      const descriptor = findZipDataDescriptor(view, dataStart);
+      if (descriptor) {
+        compressedSize = descriptor.compressedSize;
+        uncompressedSize = descriptor.uncompressedSize;
+        dataEnd = descriptor.offset;
+        nextOffset = descriptor.offset + descriptor.length;
+      } else {
+        throw createLcappsError("lcappsInvalidZip");
+      }
+    }
+
+    if (dataEnd < dataStart || dataEnd > view.byteLength) {
+      throw createLcappsError("lcappsInvalidZip");
+    }
+
+    if (name && !name.endsWith("/")) {
+      entries.push({
+        buffer,
+        name,
+        compressionMethod,
+        compressedSize,
+        uncompressedSize,
+        localHeaderOffset: offset,
+        dataStart,
+      });
+    }
+
+    offset = nextOffset;
+  }
+
+  if (entries.length === 0) {
+    throw createLcappsError("lcappsInvalidZip");
+  }
+
+  return entries;
+}
+
+function findZipDataDescriptor(view, dataStart) {
+  for (let offset = dataStart; offset <= view.byteLength - 16; offset += 1) {
+    if (view.getUint32(offset, true) !== ZIP_DATA_DESCRIPTOR_SIGNATURE) {
+      continue;
+    }
+
+    const compressedSize = view.getUint32(offset + 8, true);
+    const uncompressedSize = view.getUint32(offset + 12, true);
+    const nextOffset = offset + 16;
+    if (
+      compressedSize === offset - dataStart &&
+      isZipStreamingEntryBoundary(view, nextOffset)
+    ) {
+      return {
+        offset,
+        length: 16,
+        compressedSize,
+        uncompressedSize,
+      };
+    }
+  }
+
+  return null;
+}
+
+function isZipStreamingEntryBoundary(view, offset) {
+  if (offset === view.byteLength) {
+    return true;
+  }
+  if (offset + 4 > view.byteLength) {
+    return false;
+  }
+
+  const signature = view.getUint32(offset, true);
+  return (
+    signature === ZIP_LOCAL_FILE_HEADER_SIGNATURE ||
+    signature === ZIP_CENTRAL_DIRECTORY_SIGNATURE ||
+    signature === ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE
+  );
 }
 
 function findEndOfCentralDirectory(view) {

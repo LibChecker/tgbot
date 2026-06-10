@@ -972,6 +972,19 @@ function loadReportSdkMetadataModule() {
   return runtime.reportSdkMetadataModulePromise;
 }
 
+function loadLcappsSdkAnnotationModule() {
+  if (!runtime.lcappsSdkAnnotationModulePromise) {
+    runtime.lcappsSdkAnnotationModulePromise = import("./app/lcapps-sdk-annotation.js")
+      .then((module) => module)
+      .catch((error) => {
+        runtime.lcappsSdkAnnotationModulePromise = null;
+        throw error;
+      });
+  }
+
+  return runtime.lcappsSdkAnnotationModulePromise;
+}
+
 function scheduleReportSdkRuleDetailHydration(report) {
   if (!report || typeof report !== "object") {
     return;
@@ -2989,7 +3002,7 @@ function updateElapsed() {
 
 function resetState() {
   const hadContent = Boolean(state.selectedFile || state.report || state.activeAnalyzeJobId != null);
-  clearLcappsReportActivationTimer();
+  cancelLcappsReportActivation();
   clearLcappsBubbleTransitionTimer();
   if (state.activeAnalyzeJobId != null) {
     state.jobs.delete(state.activeAnalyzeJobId);
@@ -4038,7 +4051,7 @@ async function openLcappsPickerForFile(file) {
     return;
   }
 
-  clearLcappsReportActivationTimer();
+  cancelLcappsReportActivation();
   const token = runtime.lcappsPickerToken + 1;
   runtime.lcappsPickerToken = token;
   state.lcappsArchive = null;
@@ -4105,7 +4118,7 @@ function reopenLcappsPicker() {
     return;
   }
 
-  clearLcappsReportActivationTimer();
+  cancelLcappsReportActivation();
   clearLcappsBubbleTransitionTimer();
   hideLcappsBubble();
   state.lcappsPicker.open = true;
@@ -4304,14 +4317,21 @@ async function selectLcappsReport(index) {
   }
 
   clearLcappsReportActivationTimer();
+  const token = runtime.lcappsReportActivationToken + 1;
+  runtime.lcappsReportActivationToken = token;
   const report = cloneReportForHydration(sourceReport);
   state.lcappsPicker.selectedReport = report;
   closeLcappsPicker({ bounceBubble: true });
-  scheduleLcappsReportActivation(report);
+  scheduleLcappsReportActivation(report, token);
 }
 
-function scheduleLcappsReportActivation(report) {
-  void activateSelectedLcappsReport(report);
+function scheduleLcappsReportActivation(report, token) {
+  void activateSelectedLcappsReport(report, token);
+}
+
+function cancelLcappsReportActivation() {
+  clearLcappsReportActivationTimer();
+  runtime.lcappsReportActivationToken += 1;
 }
 
 function clearLcappsReportActivationTimer() {
@@ -4342,8 +4362,36 @@ function hideLcappsBubble() {
   elements.lcappsBubbleContent.innerHTML = "";
 }
 
-async function activateSelectedLcappsReport(report) {
-  if (state.lcappsPicker.selectedReport !== report) {
+async function activateSelectedLcappsReport(report, token) {
+  if (runtime.lcappsReportActivationToken !== token || state.lcappsPicker.selectedReport !== report) {
+    return;
+  }
+
+  state.startedAt = performance.now();
+  setBusy(true);
+  showProgress("progressParsing");
+  startTimer();
+
+  try {
+    await annotateLcappsReportSdkMarkers(report);
+  } catch (error) {
+    if (runtime.lcappsReportActivationToken !== token || state.lcappsPicker.selectedReport !== report) {
+      return;
+    }
+
+    finishAnalysis();
+    showError(getErrorMessage(error) || t("workerFailed"));
+    trackWebEvent("webui.lcapps.sdk_annotation_failed", {
+      result: "error",
+      input_source: "lcapps",
+      file_kind: "lcapps",
+      error_name: getErrorName(error),
+      ...getReportAnalyticsFields(report),
+    });
+    return;
+  }
+
+  if (runtime.lcappsReportActivationToken !== token || state.lcappsPicker.selectedReport !== report) {
     return;
   }
 
@@ -4360,6 +4408,11 @@ async function activateSelectedLcappsReport(report) {
   } catch {
     scheduleReportSdkRuleDetailHydration(report);
   }
+}
+
+async function annotateLcappsReportSdkMarkers(report) {
+  const { annotateLcappsReportSdkMarkers: annotateReport } = await loadLcappsSdkAnnotationModule();
+  return annotateReport(report);
 }
 
 function activateLcappsReport(report) {
