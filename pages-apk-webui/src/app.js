@@ -419,9 +419,7 @@ updateHistoryCollapse();
 updateAppMode();
 bindEvents();
 initColorOrbBackground();
-initSdkIconPreview();
-initSdkRulePreview();
-initArchiveChartPreview();
+initPreviewInteractionsWhenIdle();
 initWebAnalytics(() => ({
   locale: state.locale,
   ui_mode: state.appMode,
@@ -642,6 +640,20 @@ function bindEvents() {
       operation: state.activeNativeAbi,
     });
   });
+}
+
+function initPreviewInteractionsWhenIdle() {
+  const init = () => {
+    initSdkIconPreview();
+    initSdkRulePreview();
+    initArchiveChartPreview();
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(init, { timeout: 1200 });
+  } else {
+    window.setTimeout(init, 0);
+  }
 }
 
 function beginModeDrag(event) {
