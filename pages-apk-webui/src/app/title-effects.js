@@ -20,6 +20,8 @@ const BRAND_TITLE_CANVAS_DPR_LIMIT = 2;
 const BRAND_TITLE_MASK_REVEAL_MS = 320;
 const BRAND_TITLE_MASK_REVEAL_FEATHER_SCALE = 0.34;
 const POINTER_MASK_EVENT_OPTIONS = { passive: true };
+const ICON_HUE_CACHE_KEY = "__lcDominantHue";
+const ICON_HUE_CACHE_MISS_KEY = "__lcDominantHueMiss";
 
 function rgbToHsl(color) {
   const r = color.r / 255;
@@ -181,15 +183,18 @@ function initBrandTitleCanvasMask(node, canvas, context, baseLayer) {
     canvas.style.height = `${canvasHeight}px`;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    dots = [...baseLayer.querySelectorAll(".brand-title__dot.is-on")].map((dot, index) => {
+    dots = [];
+    let index = 0;
+    for (const dot of baseLayer.querySelectorAll(".brand-title__dot.is-on")) {
       const dotRect = dot.getBoundingClientRect();
-      return {
+      dots.push({
         hue: Math.round((210 + index * 3.1) % 360),
         radius: Math.max(1, Math.max(dotRect.width, dotRect.height) / 2),
         x: dotRect.left - rect.left + dotRect.width / 2,
         y: dotRect.top - rect.top + dotRect.height / 2,
-      };
-    });
+      });
+      index += 1;
+    }
   };
 
   const clearCanvas = () => {
@@ -387,7 +392,15 @@ function initColorMaskPointerTracking(node, { styleNode, xProperty, yProperty })
 }
 
 function extractAppIconHue(info) {
-  const src = sanitizeImageSrc(info?.icon?.dataUri || "");
+  const icon = info?.icon;
+  if (Object.prototype.hasOwnProperty.call(icon || {}, ICON_HUE_CACHE_KEY)) {
+    return Promise.resolve(icon[ICON_HUE_CACHE_KEY]);
+  }
+  if (Object.prototype.hasOwnProperty.call(icon || {}, ICON_HUE_CACHE_MISS_KEY)) {
+    return Promise.resolve(null);
+  }
+
+  const src = sanitizeImageSrc(icon?.dataUri || "");
   if (!src || typeof Image !== "function") {
     return Promise.resolve(null);
   }
@@ -398,14 +411,42 @@ function extractAppIconHue(info) {
     image.onload = () => {
       try {
         const hue = sampleDominantHue(image);
+        cacheIconHue(icon, hue);
         resolve(hue);
       } catch {
+        cacheIconHue(icon, null);
         resolve(null);
       }
     };
-    image.onerror = () => resolve(null);
+    image.onerror = () => {
+      cacheIconHue(icon, null);
+      resolve(null);
+    };
     image.src = src;
   });
+}
+
+function cacheIconHue(icon, hue) {
+  if (!icon || typeof icon !== "object") {
+    return;
+  }
+
+  try {
+    if (hue == null) {
+      Object.defineProperty(icon, ICON_HUE_CACHE_MISS_KEY, {
+        value: true,
+        configurable: true,
+      });
+      return;
+    }
+
+    Object.defineProperty(icon, ICON_HUE_CACHE_KEY, {
+      value: hue,
+      configurable: true,
+    });
+  } catch {
+    // Icon hue caching is a performance hint; rendering should not depend on it.
+  }
 }
 
 function sampleDominantHue(image) {

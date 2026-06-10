@@ -14,6 +14,7 @@ const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissio
 const VALID_APP_MODES = new Set(["analyze", "compare"]);
 const THEME_STORAGE_KEY = "apk-webui-theme";
 const THEME_CHOICES = new Set(["light", "dark", "system"]);
+const WORKER_IDLE_TERMINATE_MS = 60_000;
 const ARCHIVE_CHART_CENTER = 60;
 const ARCHIVE_CHART_RADIUS = 52;
 const ARCHIVE_CHART_LABEL_MIN_PERCENT = 6;
@@ -35,6 +36,8 @@ const CONTRIBUTOR_GITHUB_ALIASES = new Map([
 ]);
 const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
+const tapPopupMedia = window.matchMedia("(hover: none), (pointer: coarse)");
+const supportsPointerEvents = typeof window.PointerEvent === "function";
 
 
 const state = {
@@ -49,6 +52,7 @@ const state = {
   activeNativeAbi: "",
   loadingHistoryId: "",
   worker: null,
+  workerIdleTimer: null,
   jobs: new Map(),
   jobId: 0,
   activeAnalyzeJobId: null,
@@ -60,14 +64,22 @@ const themeDrag = {
   pointerId: null,
   pendingChoice: "",
   suppressClick: false,
+  buttonCenters: [],
 };
 const modeDrag = {
   active: false,
   pointerId: null,
   pendingMode: "",
   suppressClick: false,
+  buttonCenters: [],
 };
 let historyOpenToken = 0;
+let modeIndicatorFrame = 0;
+let pendingModeIndicatorAppMode = "";
+let themeIndicatorFrame = 0;
+let pendingThemeIndicatorChoice = "";
+const pointerCoordinateUpdaters = new WeakMap();
+const dateTimeFormatters = new Map();
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
@@ -83,6 +95,7 @@ const elements = {
   fileMeta: document.querySelector("#file-meta"),
   dropZone: document.querySelector("#drop-zone"),
   analyzeButton: document.querySelector("#analyze-button"),
+  analyzeButtonLabel: document.querySelector("#analyze-button span"),
   progress: document.querySelector("#progress"),
   progressLabel: document.querySelector("#progress-label"),
   progressTime: document.querySelector("#progress-time"),
@@ -97,6 +110,7 @@ const elements = {
   reportHero: document.querySelector("#report-hero"),
   archiveDistribution: document.querySelector("#archive-distribution"),
   tabs: document.querySelector("#tabs"),
+  tabButtons: [...document.querySelectorAll("#tabs [data-tab]")],
   tabPanel: document.querySelector("#tab-panel"),
   compareView: document.querySelector("#compare-view"),
   compareSlots: document.querySelector("#compare-slots"),
@@ -133,6 +147,7 @@ const compareController = new CompareController({
   },
   deleteJob: (jobId) => {
     state.jobs.delete(jobId);
+    scheduleWorkerIdleTermination();
   },
   hasJob: (jobId) => state.jobs.has(jobId),
   updateClearButton,
@@ -317,6 +332,7 @@ function bindEvents() {
       return;
     }
 
+    resetPointerCoordinates(row);
     row.classList.remove("is-pointer-active");
   });
 
@@ -326,7 +342,7 @@ function bindEvents() {
   document.addEventListener("pointercancel", clearTouchHistoryPointerState);
   window.addEventListener("blur", clearHistoryPointerState);
 
-  document.addEventListener("pointermove", (event) => {
+  document.addEventListener("pointerover", (event) => {
     const row = event.target.closest?.(".history-row");
     if (elements.historyList.contains(event.target) || (row && elements.historyList.contains(row))) {
       return;
@@ -338,6 +354,10 @@ function bindEvents() {
   elements.tabs.addEventListener("click", (event) => {
     const tab = event.target.closest("[data-tab]")?.dataset.tab;
     if (!tab || !VALID_TABS.has(tab)) {
+      return;
+    }
+
+    if (tab === state.activeTab) {
       return;
     }
 
@@ -355,7 +375,7 @@ function bindEvents() {
     const exportButton = event.target.closest("[data-json-export]");
     if (exportButton) {
       if (state.report) {
-        downloadReport(state.report);
+        downloadReport(state.report, elements.tabPanel.querySelector(".json-block")?.textContent || "");
       }
       return;
     }
@@ -384,6 +404,7 @@ function beginModeDrag(event) {
   modeDrag.active = true;
   modeDrag.pointerId = event.pointerId;
   modeDrag.suppressClick = true;
+  modeDrag.buttonCenters = measureChoiceCenters(elements.modeButtons, "appMode");
   elements.modeChipGroup.classList.add("is-dragging");
   try {
     elements.modeChipGroup.setPointerCapture?.(event.pointerId);
@@ -426,6 +447,7 @@ function finishModeDrag(pointerId) {
   modeDrag.active = false;
   modeDrag.pointerId = null;
   modeDrag.pendingMode = "";
+  modeDrag.buttonCenters = [];
   clearModePendingButtons();
   updateModeIndicator();
   try {
@@ -454,20 +476,7 @@ function previewModeFromPointer(event) {
 }
 
 function getAppModeAtClientX(clientX) {
-  let nearestMode = "";
-  let nearestDistance = Infinity;
-
-  for (const button of elements.modeButtons) {
-    const rect = button.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const distance = Math.abs(clientX - centerX);
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestMode = button.dataset.appMode;
-    }
-  }
-
-  return nearestMode;
+  return getNearestChoiceAtClientX(clientX, modeDrag.buttonCenters, elements.modeButtons, "appMode");
 }
 
 function beginThemeDrag(event) {
@@ -478,6 +487,7 @@ function beginThemeDrag(event) {
   themeDrag.active = true;
   themeDrag.pointerId = event.pointerId;
   themeDrag.suppressClick = true;
+  themeDrag.buttonCenters = measureChoiceCenters(elements.themeButtons, "themeChoice");
   elements.themeChipGroup.classList.add("is-dragging");
   try {
     elements.themeChipGroup.setPointerCapture?.(event.pointerId);
@@ -520,6 +530,7 @@ function finishThemeDrag(pointerId) {
   themeDrag.active = false;
   themeDrag.pointerId = null;
   themeDrag.pendingChoice = "";
+  themeDrag.buttonCenters = [];
   clearThemePendingButtons();
   updateThemeIndicator();
   try {
@@ -548,28 +559,42 @@ function previewThemeChoiceFromPointer(event) {
 }
 
 function getThemeChoiceAtClientX(clientX) {
-  let nearestChoice = "";
+  return getNearestChoiceAtClientX(clientX, themeDrag.buttonCenters, elements.themeButtons, "themeChoice");
+}
+
+function measureChoiceCenters(buttons, datasetKey) {
+  return buttons.map((button) => {
+    const rect = button.getBoundingClientRect();
+    return {
+      value: button.dataset[datasetKey] || "",
+      centerX: rect.left + rect.width / 2,
+    };
+  });
+}
+
+function getNearestChoiceAtClientX(clientX, measuredChoices, fallbackButtons, datasetKey) {
+  const choices = measuredChoices.length
+    ? measuredChoices
+    : measureChoiceCenters(fallbackButtons, datasetKey);
+  let nearestValue = "";
   let nearestDistance = Infinity;
 
-  for (const button of elements.themeButtons) {
-    const rect = button.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const distance = Math.abs(clientX - centerX);
+  for (const choice of choices) {
+    const distance = Math.abs(clientX - choice.centerX);
     if (distance < nearestDistance) {
       nearestDistance = distance;
-      nearestChoice = button.dataset.themeChoice;
+      nearestValue = choice.value;
     }
   }
 
-  return nearestChoice;
+  return nearestValue;
 }
 
 function updateDropZonePointer(event, zone = elements.dropZone) {
-  const rect = zone.getBoundingClientRect();
-  const x = clamp(event.clientX - rect.left, 0, rect.width);
-  const y = clamp(event.clientY - rect.top, 0, rect.height);
-  zone.style.setProperty("--drop-x", `${x.toFixed(1)}px`);
-  zone.style.setProperty("--drop-y", `${y.toFixed(1)}px`);
+  schedulePointerCoordinates(event, zone, {
+    xProperty: "--drop-x",
+    yProperty: "--drop-y",
+  });
 }
 
 function activateDropZonePointer(event) {
@@ -580,6 +605,7 @@ function activateDropZonePointer(event) {
 }
 
 function clearDropZonePointerState() {
+  resetPointerCoordinates(elements.dropZone);
   elements.dropZone.classList.remove("is-pointer-active");
 }
 
@@ -598,11 +624,10 @@ function handleHistoryPointerEvent(event) {
     return;
   }
 
-  const rect = row.getBoundingClientRect();
-  const x = clamp(event.clientX - rect.left, 0, rect.width);
-  const y = clamp(event.clientY - rect.top, 0, rect.height);
-  row.style.setProperty("--history-row-glass-x", `${x.toFixed(1)}px`);
-  row.style.setProperty("--history-row-glass-y", `${y.toFixed(1)}px`);
+  schedulePointerCoordinates(event, row, {
+    xProperty: "--history-row-glass-x",
+    yProperty: "--history-row-glass-y",
+  });
 
   if (!shouldActivatePointerHighlight(event)) {
     return;
@@ -615,6 +640,7 @@ function handleHistoryPointerEvent(event) {
 function clearActiveHistoryRows(exceptRow = null) {
   elements.historyList.querySelectorAll(".history-row.is-pointer-active").forEach((row) => {
     if (row !== exceptRow) {
+      resetPointerCoordinates(row);
       row.classList.remove("is-pointer-active");
     }
   });
@@ -632,6 +658,95 @@ function clearTouchHistoryPointerState(event) {
   clearHistoryPointerState();
 }
 
+function schedulePointerCoordinates(event, node, options) {
+  if (!node) {
+    return;
+  }
+
+  let updater = pointerCoordinateUpdaters.get(node);
+  if (!updater || updater.xProperty !== options.xProperty || updater.yProperty !== options.yProperty) {
+    updater = createPointerCoordinateUpdater(node, options);
+    pointerCoordinateUpdaters.set(node, updater);
+  }
+
+  updater.schedule(event.clientX, event.clientY, event.type);
+}
+
+function resetPointerCoordinates(node) {
+  pointerCoordinateUpdaters.get(node)?.reset();
+}
+
+function createPointerCoordinateUpdater(node, { xProperty, yProperty }) {
+  let frameId = 0;
+  let rect = null;
+  let pendingClientX = 0;
+  let pendingClientY = 0;
+  let lastX = "";
+  let lastY = "";
+
+  const readRect = () => {
+    rect = node.getBoundingClientRect();
+  };
+
+  const shouldRefreshRect = (eventType) => (
+    !rect ||
+    eventType === "pointerdown" ||
+    eventType === "pointerenter" ||
+    eventType === "pointerover" ||
+    eventType === "dragover"
+  );
+
+  const apply = () => {
+    frameId = 0;
+    if (!node.isConnected) {
+      rect = null;
+      return;
+    }
+
+    if (!rect) {
+      readRect();
+    }
+
+    const x = clamp(pendingClientX - rect.left, 0, rect.width);
+    const y = clamp(pendingClientY - rect.top, 0, rect.height);
+    const nextX = `${x.toFixed(1)}px`;
+    const nextY = `${y.toFixed(1)}px`;
+
+    if (nextX !== lastX) {
+      node.style.setProperty(xProperty, nextX);
+      lastX = nextX;
+    }
+    if (nextY !== lastY) {
+      node.style.setProperty(yProperty, nextY);
+      lastY = nextY;
+    }
+  };
+
+  return {
+    xProperty,
+    yProperty,
+    schedule(clientX, clientY, eventType) {
+      pendingClientX = clientX;
+      pendingClientY = clientY;
+      if (shouldRefreshRect(eventType)) {
+        readRect();
+      }
+      if (!frameId) {
+        frameId = window.requestAnimationFrame(apply);
+      }
+    },
+    reset() {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+        frameId = 0;
+      }
+      rect = null;
+      lastX = "";
+      lastY = "";
+    },
+  };
+}
+
 function shouldActivatePointerHighlight(event) {
   return event.type === "pointerdown" || isFineHoverPointer(event);
 }
@@ -642,6 +757,25 @@ function shouldClearPointerHighlightOnRelease(event) {
 
 function isFineHoverPointer(event) {
   return event.pointerType === "mouse" && fineHoverMedia.matches;
+}
+
+function addPreviewPointerListeners({ onPointerStart, onHover, onLeave, trackMove = false }) {
+  if (supportsPointerEvents) {
+    document.addEventListener("pointerdown", onPointerStart);
+    document.addEventListener("pointerover", onHover);
+    if (trackMove) {
+      document.addEventListener("pointermove", onHover);
+    }
+    document.addEventListener("pointerout", onLeave);
+    return;
+  }
+
+  document.addEventListener("mousedown", onPointerStart);
+  document.addEventListener("mouseover", onHover);
+  if (trackMove) {
+    document.addEventListener("mousemove", onHover);
+  }
+  document.addEventListener("mouseout", onLeave);
 }
 
 function initSdkIconPreview() {
@@ -757,6 +891,10 @@ function initSdkIconPreview() {
       return;
     }
 
+    if (icon === activeIcon) {
+      return;
+    }
+
     showPreview(icon);
   };
 
@@ -777,15 +915,13 @@ function initSdkIconPreview() {
     hidePreview();
   };
 
-  document.addEventListener("pointerdown", (event) => {
-    lastPointerType = event.pointerType || "";
+  addPreviewPointerListeners({
+    onPointerStart(event) {
+      lastPointerType = event.pointerType || "";
+    },
+    onHover: handleHoverEvent,
+    onLeave: handleLeaveEvent,
   });
-  document.addEventListener("pointerover", handleHoverEvent);
-  document.addEventListener("pointermove", handleHoverEvent);
-  document.addEventListener("mouseover", handleHoverEvent);
-  document.addEventListener("mousemove", handleHoverEvent);
-  document.addEventListener("pointerout", handleLeaveEvent);
-  document.addEventListener("mouseout", handleLeaveEvent);
   document.addEventListener("click", (event) => {
     const icon = event.target.closest?.(".sdk-icon");
     if (icon) {
@@ -918,6 +1054,15 @@ function initSdkRulePreview() {
 
   const showPreview = (label, options = {}) => {
     cancelScheduledHide();
+    const pinned = Boolean(options.pinned);
+    if (activeLabel === label) {
+      const popup = ensurePreview();
+      activePinned = activePinned || pinned;
+      popup.classList.toggle("is-pinned", activePinned);
+      positionPreview(label);
+      return;
+    }
+
     const detail = getRegisteredSdkRuleDetail(label.dataset.ruleDetailId);
     const content = buildRulePreviewContent(label, detail);
     if (!content) {
@@ -926,14 +1071,6 @@ function initSdkRulePreview() {
     }
 
     const popup = ensurePreview();
-    const pinned = Boolean(options.pinned);
-    if (activeLabel === label) {
-      activePinned = activePinned || pinned;
-      popup.classList.toggle("is-pinned", activePinned);
-      positionPreview(label);
-      return;
-    }
-
     popup.hidden = false;
     popup.classList.remove("is-visible", "is-pinned");
     popup.classList.toggle("is-pinned", pinned);
@@ -992,15 +1129,13 @@ function initSdkRulePreview() {
     scheduleHidePreview();
   };
 
-  document.addEventListener("pointerdown", (event) => {
-    lastPointerType = event.pointerType || "";
+  addPreviewPointerListeners({
+    onPointerStart(event) {
+      lastPointerType = event.pointerType || "";
+    },
+    onHover: handleHoverEvent,
+    onLeave: handleLeaveEvent,
   });
-  document.addEventListener("pointerover", handleHoverEvent);
-  document.addEventListener("pointermove", handleHoverEvent);
-  document.addEventListener("mouseover", handleHoverEvent);
-  document.addEventListener("mousemove", handleHoverEvent);
-  document.addEventListener("pointerout", handleLeaveEvent);
-  document.addEventListener("mouseout", handleLeaveEvent);
   document.addEventListener("click", (event) => {
     const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
     if (label) {
@@ -1138,19 +1273,12 @@ function initArchiveChartPreview() {
 
   const showPreview = (segment, event = null, options = {}) => {
     cancelScheduledHide();
-    const content = buildArchiveChartPreviewContent(segment);
-    if (!content) {
-      hidePreview();
-      return;
-    }
-
     if (Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
       lastPoint = { x: event.clientX, y: event.clientY };
     }
 
     const popup = ensurePreview();
     const pinned = Boolean(options.pinned);
-    popup.style.setProperty("--archive-segment-color", segment.dataset.archiveColor || "var(--accent)");
     if (activeSegment === segment) {
       activePinned = activePinned || pinned;
       popup.classList.toggle("is-pinned", activePinned);
@@ -1159,6 +1287,13 @@ function initArchiveChartPreview() {
       return;
     }
 
+    const content = buildArchiveChartPreviewContent(segment);
+    if (!content) {
+      hidePreview();
+      return;
+    }
+
+    popup.style.setProperty("--archive-segment-color", segment.dataset.archiveColor || "var(--accent)");
     activeSegment?.classList.remove("is-active");
     popup.hidden = false;
     popup.classList.remove("is-visible", "is-pinned");
@@ -1209,15 +1344,14 @@ function initArchiveChartPreview() {
     scheduleHidePreview();
   };
 
-  document.addEventListener("pointerdown", (event) => {
-    lastPointerType = event.pointerType || "";
+  addPreviewPointerListeners({
+    onPointerStart(event) {
+      lastPointerType = event.pointerType || "";
+    },
+    onHover: handleHoverEvent,
+    onLeave: handleLeaveEvent,
+    trackMove: true,
   });
-  document.addEventListener("pointerover", handleHoverEvent);
-  document.addEventListener("pointermove", handleHoverEvent);
-  document.addEventListener("mouseover", handleHoverEvent);
-  document.addEventListener("mousemove", handleHoverEvent);
-  document.addEventListener("pointerout", handleLeaveEvent);
-  document.addEventListener("mouseout", handleLeaveEvent);
   document.addEventListener("click", (event) => {
     const segment = event.target.closest?.(".archive-chart-segment");
     if (segment) {
@@ -1260,7 +1394,7 @@ function shouldUseTapPopups(pointerType = "") {
   return (
     pointerType === "touch" ||
     pointerType === "pen" ||
-    window.matchMedia?.("(hover: none), (pointer: coarse)")?.matches
+    tapPopupMedia.matches
   );
 }
 
@@ -1475,12 +1609,19 @@ function updateClearButton() {
 }
 
 function updateModeIndicator(appMode = state.appMode) {
-  const activeButton = elements.modeButtons.find((button) => button.dataset.appMode === appMode);
-  if (!activeButton || !elements.modeChipGroup) {
+  pendingModeIndicatorAppMode = appMode;
+  if (modeIndicatorFrame || !elements.modeChipGroup) {
     return;
   }
 
-  window.requestAnimationFrame(() => {
+  modeIndicatorFrame = window.requestAnimationFrame(() => {
+    modeIndicatorFrame = 0;
+    const indicatorAppMode = pendingModeIndicatorAppMode || state.appMode;
+    const activeButton = elements.modeButtons.find((button) => button.dataset.appMode === indicatorAppMode);
+    if (!activeButton || !elements.modeChipGroup) {
+      return;
+    }
+
     const groupRect = elements.modeChipGroup.getBoundingClientRect();
     const buttonRect = activeButton.getBoundingClientRect();
     const groupStyle = getComputedStyle(elements.modeChipGroup);
@@ -1544,12 +1685,19 @@ function applyThemeChoice(choice, options = {}) {
 }
 
 function updateThemeIndicator(themeChoice = state.themeChoice) {
-  const activeButton = elements.themeButtons.find((button) => button.dataset.themeChoice === themeChoice);
-  if (!activeButton || !elements.themeChipGroup) {
+  pendingThemeIndicatorChoice = themeChoice;
+  if (themeIndicatorFrame || !elements.themeChipGroup) {
     return;
   }
 
-  window.requestAnimationFrame(() => {
+  themeIndicatorFrame = window.requestAnimationFrame(() => {
+    themeIndicatorFrame = 0;
+    const indicatorThemeChoice = pendingThemeIndicatorChoice || state.themeChoice;
+    const activeButton = elements.themeButtons.find((button) => button.dataset.themeChoice === indicatorThemeChoice);
+    if (!activeButton || !elements.themeChipGroup) {
+      return;
+    }
+
     const groupRect = elements.themeChipGroup.getBoundingClientRect();
     const buttonRect = activeButton.getBoundingClientRect();
     const groupStyle = getComputedStyle(elements.themeChipGroup);
@@ -1704,6 +1852,7 @@ async function analyzeSelectedFile() {
 }
 
 function ensureWorker() {
+  cancelWorkerIdleTermination();
   if (state.worker) {
     return state.worker;
   }
@@ -1726,6 +1875,7 @@ function ensureWorker() {
 function failActiveWorkerJobs(message) {
   const jobs = [...state.jobs.entries()];
   state.jobs.clear();
+  cancelWorkerIdleTermination();
   state.worker = null;
 
   for (const [, job] of jobs) {
@@ -1765,6 +1915,7 @@ function handleWorkerMessage(event) {
 
   if (message.type === "error") {
     state.jobs.delete(message.jobId);
+    scheduleWorkerIdleTermination();
     if (job.type === "compare") {
       compareController.finishJob(job.slotKey, null, message.error || t("workerFailed"));
     } else {
@@ -1784,6 +1935,7 @@ function handleWorkerMessage(event) {
     if (job.type === "compare") {
       compareController.finishJob(job.slotKey, message.report, "");
       saveHistoryReport(message.report);
+      scheduleWorkerIdleTermination();
       return;
     }
 
@@ -1800,7 +1952,30 @@ function handleWorkerMessage(event) {
       input_source: "upload",
       ...getReportAnalyticsFields(message.report),
     });
+    scheduleWorkerIdleTermination();
   }
+}
+
+function cancelWorkerIdleTermination() {
+  if (state.workerIdleTimer) {
+    window.clearTimeout(state.workerIdleTimer);
+    state.workerIdleTimer = null;
+  }
+}
+
+function scheduleWorkerIdleTermination() {
+  cancelWorkerIdleTermination();
+  if (!state.worker || state.jobs.size > 0) {
+    return;
+  }
+
+  state.workerIdleTimer = window.setTimeout(() => {
+    state.workerIdleTimer = null;
+    if (state.worker && state.jobs.size === 0) {
+      state.worker.terminate();
+      state.worker = null;
+    }
+  }, WORKER_IDLE_TERMINATE_MS);
 }
 
 function finishAnalysis() {
@@ -1810,7 +1985,9 @@ function finishAnalysis() {
 
 function setBusy(isBusy) {
   elements.analyzeButton.disabled = isBusy || !state.selectedFile;
-  elements.analyzeButton.querySelector("span").textContent = isBusy ? t("analyzing") : t("analyze");
+  if (elements.analyzeButtonLabel) {
+    elements.analyzeButtonLabel.textContent = isBusy ? t("analyzing") : t("analyze");
+  }
 }
 
 function showProgress(key) {
@@ -1834,7 +2011,10 @@ function stopTimer() {
 
 function updateElapsed() {
   const elapsed = state.startedAt ? (performance.now() - state.startedAt) / 1000 : 0;
-  elements.progressTime.textContent = `${elapsed.toFixed(1)}s`;
+  const text = `${elapsed.toFixed(1)}s`;
+  if (elements.progressTime.textContent !== text) {
+    elements.progressTime.textContent = text;
+  }
 }
 
 function resetState() {
@@ -1843,6 +2023,7 @@ function resetState() {
     state.jobs.delete(state.activeAnalyzeJobId);
     state.activeAnalyzeJobId = null;
   }
+  scheduleWorkerIdleTermination();
   stopTimer();
   hideError();
   state.selectedFile = null;
@@ -1884,14 +2065,24 @@ function getErrorName(error) {
   return error instanceof Error ? (error.name || "Error") : "UnknownError";
 }
 
+function cloneReportForHydration(report) {
+  if (typeof structuredClone === "function") {
+    return structuredClone(report);
+  }
+
+  return JSON.parse(JSON.stringify(report));
+}
+
 function saveHistoryReport(report) {
   const entry = createHistoryEntry(report);
-  const nextHistory = [
-    entry,
-    ...state.history.filter((item) => item.key !== entry.key),
-  ];
+  const nextHistory = [entry];
+  for (const item of state.history) {
+    if (item.key !== entry.key) {
+      nextHistory.push(item);
+    }
+  }
 
-  state.history = persistHistory(nextHistory);
+  state.history = persistHistory(nextHistory, { normalized: true });
   renderHistoryList();
 }
 
@@ -1912,7 +2103,7 @@ async function openHistoryItem(id) {
   stopTimer();
 
   try {
-    const report = await hydrateReportSdkIcons(entry.report);
+    const report = await hydrateReportSdkIcons(cloneReportForHydration(entry.report));
     if (token !== historyOpenToken) {
       return;
     }
@@ -1955,7 +2146,14 @@ function deleteHistoryItem(id) {
   }
 
   const previousCount = state.history.length;
-  state.history = persistHistory(state.history.filter((item) => item.id !== id));
+  const nextHistory = [];
+  for (const item of state.history) {
+    if (item.id !== id) {
+      nextHistory.push(item);
+    }
+  }
+
+  state.history = persistHistory(nextHistory, { normalized: true });
   renderHistoryList();
   trackWebEvent("webui.history.deleted", {
     result: "success",
@@ -2110,7 +2308,7 @@ function renderReport() {
 }
 
 function updateTabs() {
-  elements.tabs.querySelectorAll("[data-tab]").forEach((button) => {
+  elements.tabButtons.forEach((button) => {
     const isActive = button.dataset.tab === state.activeTab;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-selected", isActive ? "true" : "false");
@@ -2315,7 +2513,25 @@ function getArchiveChartColor(index) {
 }
 
 function getFileNameFromPath(path) {
-  return String(path || "").split(/[\\/]/u).filter(Boolean).at(-1) || "";
+  const value = String(path || "");
+  let end = value.length - 1;
+  while (end >= 0 && isPathSeparator(value.charCodeAt(end))) {
+    end -= 1;
+  }
+  if (end < 0) {
+    return "";
+  }
+
+  let start = end;
+  while (start >= 0 && !isPathSeparator(value.charCodeAt(start))) {
+    start -= 1;
+  }
+
+  return value.slice(start + 1, end + 1);
+}
+
+function isPathSeparator(charCode) {
+  return charCode === 47 || charCode === 92;
 }
 
 function formatPercent(size, totalSize) {
@@ -2646,7 +2862,7 @@ function renderRawTab(report) {
     `<span>${escapeHtml(t("exportJson"))}</span>`,
     `</button>`,
     `</div>`,
-    `<pre class="json-block">${escapeHtml(JSON.stringify(buildExportReport(report), null, 2))}</pre>`,
+    `<pre class="json-block">${escapeHtml(formatExportJson(report))}</pre>`,
   ].join("");
 }
 
@@ -2655,10 +2871,10 @@ function renderSdkSummaryPreview(sdkSummary) {
     return emptyList(t("noSdkMarkers"));
   }
 
-  const combined = [
-    ...(sdkSummary.native || []).map((item) => ({ ...item, source: t("nativeLibraries") })),
-    ...(sdkSummary.components || []).map((item) => ({ ...item, source: t("components") })),
-  ].sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  const combined = [];
+  appendSdkSummaryEntries(combined, sdkSummary.native, t("nativeLibraries"));
+  appendSdkSummaryEntries(combined, sdkSummary.components, t("components"));
+  combined.sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
 
   if (combined.length === 0) {
     return emptyList(t("noSdkMarkers"));
@@ -2667,16 +2883,29 @@ function renderSdkSummaryPreview(sdkSummary) {
   return renderSdkRows(combined.slice(0, 8));
 }
 
+function appendSdkSummaryEntries(target, entries = [], source) {
+  for (const entry of entries || []) {
+    target.push({
+      ...entry,
+      source,
+    });
+  }
+}
+
 function renderSdkRows(entries) {
   if (!entries.length) {
     return emptyList(t("noSdkMarkers"));
   }
 
-  const max = Math.max(...entries.map((entry) => entry.count || 0), 1);
+  let max = 1;
+  for (const entry of entries) {
+    max = Math.max(max, entry.count || 0);
+  }
+
   const rows = entries.map((entry) => {
     const width = Math.max(4, Math.round(((entry.count || 0) / max) * 100));
-    const preview = (entry.previewItems || []).map(codeChip).join("");
-    const detailParts = [entry.source, entry.detail].filter(Boolean);
+    const preview = renderCodeChipList(entry.previewItems || []);
+    const detail = joinTextParts([entry.source, entry.detail]);
     return [
       `<article class="sdk-row">`,
       `<div class="sdk-row-header">`,
@@ -2684,13 +2913,31 @@ function renderSdkRows(entries) {
       `<span class="sdk-count">${escapeHtml(String(entry.count || 0))}</span>`,
       `</div>`,
       `<div class="bar-track"><div class="bar" style="width: ${width}%"></div></div>`,
-      detailParts.length ? `<div class="sdk-meta">${escapeHtml(detailParts.join(" · "))}</div>` : "",
+      detail ? `<div class="sdk-meta">${escapeHtml(detail)}</div>` : "",
       preview ? `<div class="sdk-preview">${preview}</div>` : "",
       `</article>`,
     ].join("");
   }).join("");
 
   return `<div class="sdk-stack">${rows}</div>`;
+}
+
+function renderCodeChipList(items) {
+  let html = "";
+  for (const item of items) {
+    html += codeChip(item);
+  }
+  return html;
+}
+
+function joinTextParts(parts) {
+  const values = [];
+  for (const part of parts) {
+    if (part) {
+      values.push(part);
+    }
+  }
+  return values.join(" · ");
 }
 
 function renderFeaturePills(buildFeatures = {}) {
@@ -2810,14 +3057,14 @@ function isLikelyApk(file) {
   );
 }
 
-function downloadReport(report) {
+function downloadReport(report, json = "") {
   trackWebEvent("webui.report.exported", {
     result: "success",
     operation: "json_export",
     ...getReportAnalyticsFields(report),
   });
 
-  const data = JSON.stringify(buildExportReport(report), null, 2);
+  const data = json || formatExportJson(report);
   const blob = new Blob([data], { type: "application/json;charset=UTF-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -2838,6 +3085,14 @@ function buildExportReport(report) {
   });
 }
 
+function formatExportJson(report) {
+  if (!report || typeof report !== "object") {
+    return "{}";
+  }
+
+  return JSON.stringify(buildExportReport(report), null, 2);
+}
+
 
 
 
@@ -2847,13 +3102,24 @@ function formatDate(value) {
   }
 
   try {
-    return new Intl.DateTimeFormat(state.locale, {
-      dateStyle: "medium",
-      timeStyle: "medium",
-    }).format(new Date(value));
+    return getDateTimeFormatter(state.locale).format(new Date(value));
   } catch {
     return value;
   }
+}
+
+function getDateTimeFormatter(locale) {
+  const key = normalizeLocale(locale);
+  let formatter = dateTimeFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(key, {
+      dateStyle: "medium",
+      timeStyle: "medium",
+    });
+    dateTimeFormatters.set(key, formatter);
+  }
+
+  return formatter;
 }
 
 function formatSignatureDate(value) {

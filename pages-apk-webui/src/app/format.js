@@ -1,6 +1,16 @@
-export function stripDataUris(value) {
+export function stripDataUris(value, seen = new WeakMap()) {
   if (Array.isArray(value)) {
-    return value.map(stripDataUris);
+    const cached = seen.get(value);
+    if (cached) {
+      return cached;
+    }
+
+    const result = new Array(value.length);
+    seen.set(value, result);
+    for (let index = 0; index < value.length; index += 1) {
+      result[index] = stripDataUris(value[index], seen);
+    }
+    return result;
   }
 
   if (!value || typeof value !== "object") {
@@ -10,14 +20,20 @@ export function stripDataUris(value) {
     return value;
   }
 
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      typeof entry === "string" && entry.startsWith("data:image/")
-        ? `[omitted ${entry.length} chars]`
-        : stripDataUris(entry),
-    ]),
-  );
+  const cached = seen.get(value);
+  if (cached) {
+    return cached;
+  }
+
+  const result = {};
+  seen.set(value, result);
+  for (const [key, entry] of Object.entries(value)) {
+    result[key] = typeof entry === "string" && entry.startsWith("data:image/")
+      ? `[omitted ${entry.length} chars]`
+      : stripDataUris(entry, seen);
+  }
+
+  return result;
 }
 
 export function formatBytes(bytes) {

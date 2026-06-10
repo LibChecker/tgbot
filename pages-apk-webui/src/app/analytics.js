@@ -201,7 +201,11 @@ function clipText(value, maxLength) {
 }
 
 function compactObject(value) {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null && entry !== ""),
-  );
+  const compacted = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry !== undefined && entry !== null && entry !== "") {
+      compacted[key] = entry;
+    }
+  }
+  return compacted;
 }

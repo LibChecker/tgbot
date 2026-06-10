@@ -5,6 +5,12 @@ const HISTORY_STORAGE_KEY = "apk-webui-history";
 const HISTORY_COLLAPSED_STORAGE_KEY = "apk-webui-history-collapsed";
 const MAX_HISTORY_ITEMS = 12;
 const HISTORY_MAX_APP_ICON_DATA_URI_LENGTH = 180_000;
+const COMPACT_SKIP = Symbol("compact-skip");
+const HISTORY_PATH_ROOT = 0;
+const HISTORY_PATH_OTHER = -1;
+const HISTORY_PATH_APK_INFO = 1;
+const HISTORY_PATH_APK_ICON = 2;
+const HISTORY_PATH_APK_ICON_DATA_URI = 3;
 
 export function createHistoryEntry(report) {
   const compactReport = compactReportForHistory(report, { keepAppIcon: true });
@@ -64,7 +70,7 @@ export function readHistory() {
       return [];
     }
 
-    return parsed.map(normalizeHistoryEntry).filter(Boolean).slice(0, MAX_HISTORY_ITEMS);
+    return normalizeHistoryList(parsed, MAX_HISTORY_ITEMS);
   } catch {
     return [];
   }
@@ -83,13 +89,14 @@ function normalizeHistoryEntry(entry) {
     return null;
   }
 
-  const computedSummary = buildHistorySummary(entry.report);
+  const report = compactReportForHistory(entry.report, { keepAppIcon: true });
+  const computedSummary = buildHistorySummary(report);
   const providedSummary = entry.summary && typeof entry.summary === "object" ? entry.summary : {};
 
   return {
     id: String(entry.id || createHistoryId()),
-    key: String(entry.key || buildHistoryKey(entry.report)),
-    savedAt: String(entry.savedAt || entry.report.analyzedAt || new Date().toISOString()),
+    key: String(entry.key || buildHistoryKey(report)),
+    savedAt: String(entry.savedAt || report.analyzedAt || new Date().toISOString()),
     summary: {
       ...computedSummary,
       ...providedSummary,
@@ -99,28 +106,61 @@ function normalizeHistoryEntry(entry) {
         ...(providedSummary.stats || {}),
       },
     },
-    report: entry.report,
+    report,
   };
 }
 
-export function persistHistory(history) {
-  const normalized = history.map(normalizeHistoryEntry).filter(Boolean).slice(0, MAX_HISTORY_ITEMS);
-  const candidates = [
-    normalized,
-    normalized.slice(0, 8).map((entry) => compactHistoryEntry(entry, { keepAppIcon: true })),
-    normalized.slice(0, 6).map((entry) => compactHistoryEntry(entry, { keepAppIcon: false })),
-  ];
+export function persistHistory(history, options = {}) {
+  const normalized = options.normalized === true
+    ? history.slice(0, MAX_HISTORY_ITEMS)
+    : normalizeHistoryList(history, MAX_HISTORY_ITEMS);
+  if (tryPersistHistoryCandidate(normalized)) {
+    return normalized;
+  }
 
-  for (const candidate of candidates) {
-    try {
-      window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(candidate));
-      return candidate;
-    } catch {
-      // Try a smaller representation below.
-    }
+  const compactWithIcons = compactHistoryEntries(normalized, 8, { keepAppIcon: true });
+  if (tryPersistHistoryCandidate(compactWithIcons)) {
+    return compactWithIcons;
+  }
+
+  const compactWithoutIcons = compactHistoryEntries(normalized, 6, { keepAppIcon: false });
+  if (tryPersistHistoryCandidate(compactWithoutIcons)) {
+    return compactWithoutIcons;
   }
 
   return normalized;
+}
+
+function normalizeHistoryList(history, limit) {
+  const normalized = [];
+  for (const entry of history) {
+    const item = normalizeHistoryEntry(entry);
+    if (item) {
+      normalized.push(item);
+      if (normalized.length >= limit) {
+        break;
+      }
+    }
+  }
+  return normalized;
+}
+
+function compactHistoryEntries(history, limit, options) {
+  const compacted = [];
+  const count = Math.min(history.length, limit);
+  for (let index = 0; index < count; index += 1) {
+    compacted.push(compactHistoryEntry(history[index], options));
+  }
+  return compacted;
+}
+
+function tryPersistHistoryCandidate(candidate) {
+  try {
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(candidate));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function compactHistoryEntry(entry, options) {
@@ -135,14 +175,21 @@ function compactHistoryEntry(entry, options) {
 }
 
 function compactReportForHistory(report, options = {}) {
-  return compactHistoryValue(report, [], {
+  return compactHistoryValue(report, {
     keepAppIcon: options.keepAppIcon !== false,
-  });
+  }, HISTORY_PATH_ROOT);
 }
 
-function compactHistoryValue(value, path, options) {
+function compactHistoryValue(value, options, pathState) {
   if (Array.isArray(value)) {
-    return value.map((entry, index) => compactHistoryValue(entry, [...path, String(index)], options));
+    const result = [];
+    for (const entry of value) {
+      const compacted = compactHistoryValue(entry, options, HISTORY_PATH_OTHER);
+      if (compacted !== COMPACT_SKIP) {
+        result.push(compacted);
+      }
+    }
+    return result;
   }
 
   if (!value || typeof value !== "object") {
@@ -150,20 +197,48 @@ function compactHistoryValue(value, path, options) {
       return value;
     }
 
-    const isAppIcon = path.join(".") === "apkInfo.icon.dataUri";
-    if (options.keepAppIcon && isAppIcon && value.length <= HISTORY_MAX_APP_ICON_DATA_URI_LENGTH) {
+    if (
+      options.keepAppIcon &&
+      pathState === HISTORY_PATH_APK_ICON_DATA_URI &&
+      value.length <= HISTORY_MAX_APP_ICON_DATA_URI_LENGTH
+    ) {
       return value;
     }
 
-    return "";
+    return COMPACT_SKIP;
   }
 
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
-      compactHistoryValue(entry, [...path, key], options),
-    ]),
-  );
+  const result = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (shouldSkipHistoryField(key)) {
+      continue;
+    }
+
+    const compacted = compactHistoryValue(entry, options, getNextHistoryPathState(pathState, key));
+    if (compacted !== COMPACT_SKIP) {
+      result[key] = compacted;
+    }
+  }
+
+  return result;
+}
+
+function getNextHistoryPathState(pathState, key) {
+  if (pathState === HISTORY_PATH_ROOT && key === "apkInfo") {
+    return HISTORY_PATH_APK_INFO;
+  }
+  if (pathState === HISTORY_PATH_APK_INFO && key === "icon") {
+    return HISTORY_PATH_APK_ICON;
+  }
+  if (pathState === HISTORY_PATH_APK_ICON && key === "dataUri") {
+    return HISTORY_PATH_APK_ICON_DATA_URI;
+  }
+
+  return HISTORY_PATH_OTHER;
+}
+
+function shouldSkipHistoryField(key) {
+  return key === "iconUrl" || key === "ruleDetail";
 }
 
 export function persistHistoryCollapsed(isCollapsed) {

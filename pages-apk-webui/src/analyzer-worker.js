@@ -7,6 +7,7 @@ import { LIBCHECKER_SDK_ICON_SVGS } from "./modules/generated/libchecker-sdk-ico
 
 const APK_MIME_TYPE = "application/vnd.android.package-archive";
 const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
+const sdkIconDataUriCache = new Map();
 
 self.addEventListener("message", (event) => {
   const message = event.data || {};
@@ -91,12 +92,20 @@ function isLikelyApk(file) {
 }
 
 function resolveSdkIconDataUri(iconName) {
+  const cacheKey = iconName || "ic_sdk_placeholder";
+  if (sdkIconDataUriCache.has(cacheKey)) {
+    return sdkIconDataUriCache.get(cacheKey);
+  }
+
   const svg = LIBCHECKER_SDK_ICON_SVGS[iconName] || LIBCHECKER_SDK_ICON_SVGS.ic_sdk_placeholder;
   if (!svg) {
+    sdkIconDataUriCache.set(cacheKey, "");
     return "";
   }
 
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  const dataUri = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  sdkIconDataUriCache.set(cacheKey, dataUri);
+  return dataUri;
 }
 
 function buildAnalysisProfile(apkInfo, terminalSystem) {
@@ -153,17 +162,26 @@ function detectTerminalSystemFromNavigator() {
 }
 
 function countSdkSummaryItems(entries = []) {
-  return entries.reduce((sum, entry) => sum + (Number(entry.count) || 0), 0);
+  let count = 0;
+  for (const entry of entries || []) {
+    count += Number(entry.count) || 0;
+  }
+  return count;
 }
 
 function countUniqueSdkEntries(sdkSummary = {}) {
   const keys = new Set();
 
-  for (const entry of [...(sdkSummary.native || []), ...(sdkSummary.components || [])]) {
-    keys.add(entry.key || `${entry.label || ""}::${entry.iconName || ""}`);
-  }
+  addSdkEntryKeys(keys, sdkSummary.native);
+  addSdkEntryKeys(keys, sdkSummary.components);
 
   return keys.size;
+}
+
+function addSdkEntryKeys(keys, entries = []) {
+  for (const entry of entries || []) {
+    keys.add(entry.key || `${entry.label || ""}::${entry.iconName || ""}`);
+  }
 }
 
 function createWorkerI18n(locale) {

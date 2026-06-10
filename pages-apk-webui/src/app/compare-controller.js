@@ -9,6 +9,7 @@ import { detectTerminalSystem } from "./system.js";
 
 const COMPARE_SLOT_KEYS = ["left", "right"];
 const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
+const pointerCoordinateUpdaters = new WeakMap();
 
 export class CompareController {
   constructor(options) {
@@ -29,10 +30,20 @@ export class CompareController {
       ? options.getReportAnalyticsFields
       : () => ({});
     this.lastTrackedPairKey = "";
+    this.lastHistoryOptionsSignature = "";
+    this.lastRenderedPairSummary = null;
     this.slots = {
       left: createCompareSlotState(),
       right: createCompareSlotState(),
     };
+    this.slotElements = Object.fromEntries(COMPARE_SLOT_KEYS.map((slotKey) => [
+      slotKey,
+      {
+        meta: this.elements.view.querySelector(`[data-compare-file-meta="${slotKey}"]`),
+        report: this.elements.view.querySelector(`[data-compare-slot-report="${slotKey}"]`),
+        clearButton: this.elements.clearButtons.find((button) => button.dataset.compareClear === slotKey) || null,
+      },
+    ]));
   }
 
   t(key, variables = {}) {
@@ -66,6 +77,7 @@ export class CompareController {
       zone.addEventListener("pointerenter", activatePointer);
       zone.addEventListener("pointermove", activatePointer);
       zone.addEventListener("pointerleave", () => {
+        resetPointerCoordinates(zone);
         zone.classList.remove("is-pointer-active");
       });
       zone.addEventListener("dragover", (event) => {
@@ -124,8 +136,28 @@ export class CompareController {
     this.updateClearButton();
   }
 
+  renderSlotPageState(slotKey, options = {}) {
+    if (options.historyOptions) {
+      this.renderHistoryOptions();
+    }
+    this.renderSlot(slotKey);
+    this.renderWarning();
+    this.renderResult();
+    this.updateClearButton();
+  }
+
   renderHistoryOptions() {
+    if (this.elements.view.hidden) {
+      return;
+    }
+
     const history = this.getHistory();
+    const signature = this.getHistoryOptionsSignature(history);
+    if (signature === this.lastHistoryOptionsSignature) {
+      return;
+    }
+
+    this.lastHistoryOptionsSignature = signature;
     this.elements.historySelects.forEach((select) => {
       const slot = this.getSlot(select.dataset.compareHistory);
       const selectedId = slot?.historyId || "";
@@ -142,6 +174,30 @@ export class CompareController {
       ];
       select.innerHTML = options.join("");
     });
+  }
+
+  getHistoryOptionsSignature(history) {
+    const selectedSignature = this.elements.historySelects
+      .map((select) => {
+        const slotKey = select.dataset.compareHistory || "";
+        return `${slotKey}:${this.getSlot(slotKey)?.historyId || ""}`;
+      })
+      .join("|");
+    const historySignature = history
+      .map((entry) => {
+        const summary = entry.summary || buildHistorySummary(entry.report);
+        return [
+          entry.id,
+          summary.appName,
+          summary.packageName,
+          summary.versionName,
+          summary.versionCode,
+          summary.fileName,
+          summary.fileSizeBytes,
+        ].join(":");
+      })
+      .join("|");
+    return `${this.getLocale()}|${selectedSignature}|${historySignature}`;
   }
 
   async setSlotFromHistory(slotKey, historyId) {
@@ -166,7 +222,7 @@ export class CompareController {
 
     const summary = entry.summary || buildHistorySummary(entry.report);
     Object.assign(slot, {
-      report: await hydrateReportSdkIcons(entry.report),
+      report: await hydrateReportSdkIcons(cloneReportForHydration(entry.report)),
       source: "history",
       historyId,
       fileName: summary.fileName || "",
@@ -176,7 +232,7 @@ export class CompareController {
       error: "",
       jobId: null,
     });
-    this.renderPage();
+    this.renderSlotPageState(slotKey, { historyOptions: true });
     this.trackCompareEvent("webui.compare.slot_loaded", {
       result: "success",
       input_source: "history",
@@ -208,7 +264,7 @@ export class CompareController {
         error: this.t("invalidFile"),
         jobId: null,
       });
-      this.renderPage();
+      this.renderSlotPageState(slotKey, { historyOptions: true });
       this.trackCompareEvent("webui.compare.analysis.failed", {
         result: "invalid_file",
         error_name: "InvalidFile",
@@ -232,7 +288,7 @@ export class CompareController {
         error: this.t("workerFailed"),
         jobId: null,
       });
-      this.renderPage();
+      this.renderSlotPageState(slotKey, { historyOptions: true });
       this.trackCompareEvent("webui.compare.analysis.failed", {
         result: "worker_unavailable",
         error_name: "WorkerUnavailable",
@@ -258,7 +314,7 @@ export class CompareController {
       error: "",
       jobId,
     });
-    this.renderPage();
+    this.renderSlotPageState(slotKey, { historyOptions: true });
     this.trackCompareEvent("webui.compare.analysis.started", {
       result: "started",
       input_source: "upload",
@@ -287,7 +343,7 @@ export class CompareController {
     }
 
     slot.progressKey = progressKey;
-    this.renderPage();
+    this.renderSlot(slotKey);
   }
 
   finishJob(slotKey, report, error) {
@@ -327,7 +383,7 @@ export class CompareController {
       });
     }
 
-    this.renderPage();
+    this.renderSlotPageState(slotKey);
     this.trackComparePairReady();
   }
 
@@ -343,11 +399,12 @@ export class CompareController {
 
     this.slots[slotKey] = createCompareSlotState();
     this.lastTrackedPairKey = "";
+    this.lastRenderedPairSummary = null;
     const input = this.elements.fileInputs.find((item) => item.dataset.compareFile === slotKey);
     if (input) {
       input.value = "";
     }
-    this.renderPage();
+    this.renderSlotPageState(slotKey, { historyOptions: true });
     this.trackCompareEvent("webui.compare.slot_cleared", {
       result: "success",
       slot: slotKey,
@@ -369,6 +426,7 @@ export class CompareController {
     });
     this.renderPage();
     this.lastTrackedPairKey = "";
+    this.lastRenderedPairSummary = null;
     if (hadContent) {
       this.trackCompareEvent("webui.compare.reset", {
         result: "success",
@@ -382,20 +440,22 @@ export class CompareController {
 
   renderSlots() {
     for (const slotKey of COMPARE_SLOT_KEYS) {
-      const slot = this.slots[slotKey];
-      const meta = document.querySelector(`[data-compare-file-meta="${slotKey}"]`);
-      const reportNode = document.querySelector(`[data-compare-slot-report="${slotKey}"]`);
-      const clearButton = this.elements.clearButtons.find((button) => button.dataset.compareClear === slotKey);
+      this.renderSlot(slotKey);
+    }
+  }
 
-      if (meta) {
-        meta.textContent = this.getSlotMeta(slot);
-      }
-      if (reportNode) {
-        reportNode.innerHTML = this.renderSlotReport(slot);
-      }
-      if (clearButton) {
-        clearButton.disabled = !slot.report && slot.status !== "busy" && !slot.error;
-      }
+  renderSlot(slotKey) {
+    const slot = this.slots[slotKey];
+    const slotElements = this.slotElements[slotKey] || {};
+
+    if (slotElements.meta) {
+      slotElements.meta.textContent = this.getSlotMeta(slot);
+    }
+    if (slotElements.report) {
+      slotElements.report.innerHTML = this.renderSlotReport(slot);
+    }
+    if (slotElements.clearButton) {
+      slotElements.clearButton.disabled = !slot.report && slot.status !== "busy" && !slot.error;
     }
   }
 
@@ -489,14 +549,20 @@ export class CompareController {
   renderReport(leftReport, rightReport) {
     const summaryRows = this.buildSummaryRows(leftReport, rightReport);
     const sections = this.buildSections(leftReport, rightReport);
+    const leftStats = getStats(leftReport.apkInfo || {});
+    const rightStats = getStats(rightReport.apkInfo || {});
     const totalChanges = sections.reduce((sum, sectionItem) => sum + getSectionChangeCount(sectionItem), 0);
+    this.lastRenderedPairSummary = {
+      pairKey: this.buildComparePairKey(leftReport, rightReport),
+      totalChanges,
+    };
 
     return sectionStack([
       `<section class="compare-overview">`,
       metric(this.t("compareChangeCount"), totalChanges),
-      metric(this.t("permissions"), compareDeltaCount(leftReport, rightReport, "permissions")),
-      metric(this.t("nativeLibraries"), compareDeltaCount(leftReport, rightReport, "nativeLibraries")),
-      metric(this.t("components"), compareDeltaCount(leftReport, rightReport, "components")),
+      metric(this.t("permissions"), compareDeltaValue(leftStats, rightStats, "permissions")),
+      metric(this.t("nativeLibraries"), compareDeltaValue(leftStats, rightStats, "nativeLibraries")),
+      metric(this.t("components"), compareDeltaValue(leftStats, rightStats, "components")),
       `</section>`,
       section(this.t("compareBasicInfo"), this.renderValueTable(summaryRows)),
       section(this.t("compareDifferences"), totalChanges ? this.renderDiffSections(sections) : emptyList(this.t("compareNoDifferences"))),
@@ -741,25 +807,27 @@ export class CompareController {
   }
 
   getNativeItems(report) {
-    return (report.apkInfo?.nativeLibraries || []).map((library) => compareItem(
-      `${library.abi || ""}/${library.name || ""}:${library.size || 0}:${library.sdk?.label || ""}`,
-      library.name || this.t("unknown"),
-      [library.abi, formatBytes(library.size || 0), library.sdk?.label].filter(Boolean).join(" · "),
-      {
-        identityKey: `${library.abi || ""}/${library.name || ""}`,
-        metaHtml: this.renderMetaParts([
-          library.abi,
-          formatBytes(library.size || 0),
-          library.sdk ? { html: this.renderSdkInline(library.sdk) } : null,
-        ]),
-        pairValue: [library.abi, formatBytes(library.size || 0), library.sdk?.label].filter(Boolean).join(" · "),
-        pairValueHtml: this.renderMetaParts([
-          library.abi,
-          formatBytes(library.size || 0),
-          library.sdk ? { html: this.renderSdkInline(library.sdk) } : null,
-        ]),
-      },
-    ));
+    return (report.apkInfo?.nativeLibraries || []).map((library) => {
+      const size = formatBytes(library.size || 0);
+      const sdkHtml = library.sdk ? this.renderSdkInline(library.sdk) : "";
+      const metaHtml = this.renderMetaParts([
+        library.abi,
+        size,
+        sdkHtml ? { html: sdkHtml } : null,
+      ]);
+      const pairValue = joinMetaText([library.abi, size, library.sdk?.label]);
+      return compareItem(
+        `${library.abi || ""}/${library.name || ""}:${library.size || 0}:${library.sdk?.label || ""}`,
+        library.name || this.t("unknown"),
+        pairValue,
+        {
+          identityKey: `${library.abi || ""}/${library.name || ""}`,
+          metaHtml,
+          pairValue,
+          pairValueHtml: metaHtml,
+        },
+      );
+    });
   }
 
   getComponentItems(report) {
@@ -815,18 +883,19 @@ export class CompareController {
   }
 
   renderMetaParts(parts) {
-    return parts
-      .map((part) => {
-        if (!part) {
-          return "";
-        }
-        if (typeof part === "object" && part.html) {
-          return String(part.html);
-        }
-        return escapeHtml(String(part));
-      })
-      .filter(Boolean)
-      .join(`<span class="compare-diff-meta-separator" aria-hidden="true"> · </span>`);
+    const htmlParts = [];
+    for (const part of parts) {
+      if (!part) {
+        continue;
+      }
+      if (typeof part === "object" && part.html) {
+        htmlParts.push(String(part.html));
+      } else {
+        htmlParts.push(escapeHtml(String(part)));
+      }
+    }
+
+    return htmlParts.join(`<span class="compare-diff-meta-separator" aria-hidden="true"> · </span>`);
   }
 
   renderPairMeta(left, right) {
@@ -857,25 +926,30 @@ export class CompareController {
       return;
     }
 
-    const pairKey = [
-      leftReport.analyzedAt || "",
-      rightReport.analyzedAt || "",
-      leftReport.fileSizeBytes || 0,
-      rightReport.fileSizeBytes || 0,
-    ].join(":");
+    const pairKey = this.buildComparePairKey(leftReport, rightReport);
     if (pairKey === this.lastTrackedPairKey) {
       return;
     }
 
     this.lastTrackedPairKey = pairKey;
-    const sections = this.buildSections(leftReport, rightReport);
-    const totalChanges = sections.reduce((sum, sectionItem) => sum + getSectionChangeCount(sectionItem), 0);
+    const totalChanges = this.lastRenderedPairSummary?.pairKey === pairKey
+      ? this.lastRenderedPairSummary.totalChanges
+      : this.buildSections(leftReport, rightReport).reduce((sum, sectionItem) => sum + getSectionChangeCount(sectionItem), 0);
     this.trackCompareEvent("webui.compare.report.ready", {
       result: "success",
       slot_count: 2,
       total_changes_count: totalChanges,
       value: totalChanges,
     });
+  }
+
+  buildComparePairKey(leftReport, rightReport) {
+    return [
+      leftReport.analyzedAt || "",
+      rightReport.analyzedAt || "",
+      leftReport.fileSizeBytes || 0,
+      rightReport.fileSizeBytes || 0,
+    ].join(":");
   }
 
   trackCompareEvent(event, fields = {}) {
@@ -901,17 +975,99 @@ function createCompareSlotState() {
 }
 
 function updateDropZonePointer(event, zone) {
-  const rect = zone.getBoundingClientRect();
-  const x = clamp(event.clientX - rect.left, 0, rect.width);
-  const y = clamp(event.clientY - rect.top, 0, rect.height);
-  zone.style.setProperty("--drop-x", `${x.toFixed(1)}px`);
-  zone.style.setProperty("--drop-y", `${y.toFixed(1)}px`);
+  schedulePointerCoordinates(event, zone);
 }
 
 function clearDropZonePointerState(zones) {
   zones.forEach((zone) => {
+    resetPointerCoordinates(zone);
     zone.classList.remove("is-pointer-active");
   });
+}
+
+function schedulePointerCoordinates(event, node) {
+  if (!node) {
+    return;
+  }
+
+  let updater = pointerCoordinateUpdaters.get(node);
+  if (!updater) {
+    updater = createPointerCoordinateUpdater(node);
+    pointerCoordinateUpdaters.set(node, updater);
+  }
+  updater.schedule(event.clientX, event.clientY, event.type);
+}
+
+function resetPointerCoordinates(node) {
+  pointerCoordinateUpdaters.get(node)?.reset();
+}
+
+function createPointerCoordinateUpdater(node) {
+  let frameId = 0;
+  let rect = null;
+  let pendingClientX = 0;
+  let pendingClientY = 0;
+  let lastX = "";
+  let lastY = "";
+
+  const readRect = () => {
+    rect = node.getBoundingClientRect();
+  };
+
+  const shouldRefreshRect = (eventType) => (
+    !rect ||
+    eventType === "pointerdown" ||
+    eventType === "pointerenter" ||
+    eventType === "dragover"
+  );
+
+  const apply = () => {
+    frameId = 0;
+    if (!node.isConnected) {
+      rect = null;
+      return;
+    }
+
+    if (!rect) {
+      readRect();
+    }
+
+    const x = clamp(pendingClientX - rect.left, 0, rect.width);
+    const y = clamp(pendingClientY - rect.top, 0, rect.height);
+    const nextX = `${x.toFixed(1)}px`;
+    const nextY = `${y.toFixed(1)}px`;
+
+    if (nextX !== lastX) {
+      node.style.setProperty("--drop-x", nextX);
+      lastX = nextX;
+    }
+    if (nextY !== lastY) {
+      node.style.setProperty("--drop-y", nextY);
+      lastY = nextY;
+    }
+  };
+
+  return {
+    schedule(clientX, clientY, eventType) {
+      pendingClientX = clientX;
+      pendingClientY = clientY;
+      if (shouldRefreshRect(eventType)) {
+        readRect();
+      }
+      if (!frameId) {
+        frameId = window.requestAnimationFrame(apply);
+      }
+    },
+    reset() {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+        frameId = 0;
+      }
+      rect = null;
+      lastX = "";
+      lastY = "";
+    },
+  };
 }
 
 function shouldActivatePointerHighlight(event) {
@@ -958,6 +1114,14 @@ function chip(value, unknownLabel) {
 
 function emptyList(message) {
   return `<p class="empty-list">${escapeHtml(message)}</p>`;
+}
+
+function cloneReportForHydration(report) {
+  if (typeof structuredClone === "function") {
+    return structuredClone(report);
+  }
+
+  return JSON.parse(JSON.stringify(report));
 }
 
 function buildFeatureLabel(name, version) {
@@ -1007,31 +1171,46 @@ function partitionCompareMatches(leftItems, rightItems, keySelector) {
       return;
     }
     const bucket = rightBuckets.get(key) || [];
-    bucket.push({ item, index });
+    bucket.push(index);
     rightBuckets.set(key, bucket);
   });
 
   const pairs = [];
   const leftRest = [];
-  const usedRightIndexes = new Set();
+  const usedRightIndexes = new Uint8Array(rightItems.length);
+  const bucketPositions = new Map();
 
   leftItems.forEach((left) => {
     const key = String(keySelector(left) || "");
     const bucket = key ? rightBuckets.get(key) : null;
-    const match = bucket?.find((entry) => !usedRightIndexes.has(entry.index));
-    if (!match) {
+    if (!bucket) {
       leftRest.push(left);
       return;
     }
 
-    usedRightIndexes.add(match.index);
-    pairs.push([left, match.item]);
+    const position = bucketPositions.get(key) || 0;
+    const rightIndex = bucket[position];
+    if (rightIndex == null) {
+      leftRest.push(left);
+      return;
+    }
+
+    bucketPositions.set(key, position + 1);
+    usedRightIndexes[rightIndex] = 1;
+    pairs.push([left, rightItems[rightIndex]]);
+  });
+
+  const rightRest = [];
+  rightItems.forEach((item, index) => {
+    if (!usedRightIndexes[index]) {
+      rightRest.push(item);
+    }
   });
 
   return {
     pairs,
     leftRest,
-    rightRest: rightItems.filter((_, index) => !usedRightIndexes.has(index)),
+    rightRest,
   };
 }
 
@@ -1066,11 +1245,19 @@ function compareItemsByLabel(left, right) {
   });
 }
 
-function compareDeltaCount(leftReport, rightReport, statsKey) {
-  const leftStats = getStats(leftReport.apkInfo || {});
-  const rightStats = getStats(rightReport.apkInfo || {});
+function compareDeltaValue(leftStats, rightStats, statsKey) {
   const delta = (rightStats[statsKey] || 0) - (leftStats[statsKey] || 0);
   return delta === 0 ? "0" : delta > 0 ? `+${delta}` : String(delta);
+}
+
+function joinMetaText(parts) {
+  const values = [];
+  for (const part of parts) {
+    if (part) {
+      values.push(part);
+    }
+  }
+  return values.join(" · ");
 }
 
 function getComponentSimpleName(name = "") {

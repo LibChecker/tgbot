@@ -7,6 +7,7 @@ let sdkSingleColorIconNames = null;
 let sdkSingleColorIconNamesPromise = null;
 let sdkRuleDetailMap = null;
 let sdkRuleDetailMapPromise = null;
+const sdkIconDataUriCache = new Map();
 
 export async function hydrateReportSdkIcons(report) {
   const [iconMap, singleColorIconNames, ruleDetailMap] = await Promise.all([
@@ -57,16 +58,22 @@ async function loadSdkSingleColorIconNames() {
 
   if (!sdkSingleColorIconNamesPromise) {
     sdkSingleColorIconNamesPromise = import("../modules/generated/libchecker-rules.js")
-      .then((module) => new Set(
-        (module.LIBCHECKER_RULES || [])
-          .filter((rule) => rule.singleColorIcon && rule.iconName)
-          .map((rule) => rule.iconName),
-      ))
+      .then((module) => buildSdkSingleColorIconNameSet(module.LIBCHECKER_RULES || []))
       .catch(() => new Set());
   }
 
   sdkSingleColorIconNames = await sdkSingleColorIconNamesPromise;
   return sdkSingleColorIconNames;
+}
+
+function buildSdkSingleColorIconNameSet(rules) {
+  const iconNames = new Set();
+  for (const rule of rules) {
+    if (rule.singleColorIcon && rule.iconName) {
+      iconNames.add(rule.iconName);
+    }
+  }
+  return iconNames;
 }
 
 async function loadSdkRuleDetailMap() {
@@ -177,10 +184,18 @@ function buildSdkTypedRuleDetailKey(sdk) {
 }
 
 function resolveSdkIconDataUri(iconName, iconMap) {
+  const cacheKey = iconName || "ic_sdk_placeholder";
+  if (sdkIconDataUriCache.has(cacheKey)) {
+    return sdkIconDataUriCache.get(cacheKey);
+  }
+
   const svg = iconMap?.[iconName] || iconMap?.ic_sdk_placeholder;
   if (!svg) {
+    sdkIconDataUriCache.set(cacheKey, "");
     return "";
   }
 
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  const dataUri = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  sdkIconDataUriCache.set(cacheKey, dataUri);
+  return dataUri;
 }
