@@ -291,6 +291,38 @@ body {
   }
 }
 
+:root[data-power-mode="constrained"] .color-orb-background {
+  opacity: 0.5;
+  filter: none;
+}
+
+:root[data-power-mode="constrained"] .color-mesh-spot {
+  animation: none;
+  filter: blur(44px);
+  opacity: 0.42;
+  will-change: auto;
+}
+
+:root[data-power-mode="constrained"] .brand-title__color-canvas,
+:root[data-power-mode="constrained"] .app-title-mask__color {
+  display: none;
+}
+
+:root[data-power-mode="constrained"] .history-row::before,
+:root[data-power-mode="constrained"] .drop-zone::before,
+:root[data-power-mode="constrained"] .compare-drop-zone::before {
+  opacity: 0;
+  transition: none;
+}
+
+:root[data-power-mode="constrained"] .history-row,
+:root[data-power-mode="constrained"] .drop-zone,
+:root[data-power-mode="constrained"] .compare-drop-zone,
+:root[data-power-mode="constrained"] .sdk-icon-preview,
+:root[data-power-mode="constrained"] .sdk-rule-preview {
+  transition-duration: 1ms;
+}
+
 button,
 input,
 select {
@@ -1014,9 +1046,11 @@ svg {
 }
 
 .history-loading-spinner {
+  display: block;
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
+  box-sizing: border-box;
   border: 2px solid color-mix(in srgb, currentColor 26%, transparent);
   border-top-color: currentColor;
   border-radius: 50%;
@@ -2596,6 +2630,8 @@ svg {
 
 .sdk-icon-preview .sdk-icon__image,
 .sdk-icon-preview .sdk-icon__svg {
+  position: relative;
+  z-index: 2;
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -2607,8 +2643,8 @@ svg {
   left: var(--rule-preview-x, 0);
   z-index: 1001;
   width: min(380px, calc(100vw - 16px));
-  max-height: min(420px, calc(100vh - 16px));
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   overscroll-behavior: contain;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
@@ -2620,6 +2656,7 @@ svg {
   transform: translateY(-4px) scale(0.98);
   transform-origin: top center;
   transition: opacity 140ms ease, transform 140ms ease;
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   -webkit-overflow-scrolling: touch;
 }
@@ -2628,6 +2665,146 @@ svg {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview) {
+    --liquid-glass-x: 64%;
+    --liquid-glass-y: 18%;
+    --liquid-glass-edge-width: 20px;
+    --liquid-glass-tint-opacity: 0.34;
+    --liquid-glass-bottom-tint-opacity: 0.24;
+    --liquid-glass-highlight: rgba(255, 255, 255, 0.22);
+    --liquid-glass-edge: rgba(255, 255, 255, 0.42);
+    --liquid-glass-blur: 5px;
+    --liquid-glass-rim-opacity: 0.74;
+    --rule-preview-glass-title: #160f22;
+    --rule-preview-glass-text: #251a34;
+    --rule-preview-glass-muted: #4d405e;
+    --rule-preview-glass-link: #5422b8;
+    isolation: isolate;
+    overflow: clip;
+    border-color: rgba(255, 255, 255, 0.42);
+    border-radius: 24px;
+    background:
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, var(--liquid-glass-tint-opacity)),
+        rgba(178, 178, 178, var(--liquid-glass-bottom-tint-opacity))
+      ),
+      rgba(255, 255, 255, 0.04);
+    box-shadow:
+      0 25px 50px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.46),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.12);
+    -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) url("#apk-rule-preview-liquid-glass-refraction");
+    backdrop-filter: blur(var(--liquid-glass-blur)) url("#apk-rule-preview-liquid-glass-refraction");
+  }
+
+  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    background:
+      radial-gradient(ellipse 74% 60% at var(--liquid-glass-x) var(--liquid-glass-y), var(--liquid-glass-highlight), transparent 62%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 48%, rgba(0, 0, 0, 0.03));
+    mix-blend-mode: screen;
+    opacity: 0.78;
+    pointer-events: none;
+  }
+
+  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview)::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    background: none;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.66),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.12),
+      inset 14px 0 20px -18px var(--liquid-glass-edge),
+      inset -14px 0 20px -18px rgba(255, 255, 255, 0.22);
+    opacity: var(--liquid-glass-rim-opacity);
+    pointer-events: none;
+  }
+
+  :root[data-rule-preview-material="liquid-glass"] .sdk-rule-preview .sdk-rule-preview-card {
+    position: relative;
+    z-index: 2;
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.38);
+  }
+
+  :root[data-rule-preview-material="liquid-glass"] .sdk-rule-preview .sdk-rule-preview-title {
+    color: var(--rule-preview-glass-title);
+  }
+
+  :root[data-rule-preview-material="liquid-glass"] .sdk-rule-preview .sdk-rule-preview-description,
+  :root[data-rule-preview-material="liquid-glass"] .sdk-rule-preview .sdk-rule-preview-meta-row span:last-child {
+    color: var(--rule-preview-glass-text);
+  }
+
+  :root[data-rule-preview-material="liquid-glass"] .sdk-rule-preview .sdk-rule-preview-meta,
+  :root[data-rule-preview-material="liquid-glass"] .sdk-rule-preview .sdk-rule-preview-meta-row span:first-child {
+    color: var(--rule-preview-glass-muted);
+  }
+
+  :root[data-rule-preview-material="liquid-glass"] .sdk-rule-preview a {
+    color: var(--rule-preview-glass-link);
+    text-decoration-color: color-mix(in srgb, var(--rule-preview-glass-link) 58%, transparent);
+  }
+
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview) {
+    --liquid-glass-tint-opacity: 0.08;
+    --liquid-glass-bottom-tint-opacity: 0.05;
+    --liquid-glass-highlight: rgba(255, 255, 255, 0.16);
+    --liquid-glass-edge: rgba(255, 255, 255, 0.22);
+    --liquid-glass-blur: 5px;
+    --liquid-glass-rim-opacity: 0.82;
+    --rule-preview-glass-title: #fbf8ff;
+    --rule-preview-glass-text: #eee7f6;
+    --rule-preview-glass-muted: #c9bed6;
+    --rule-preview-glass-link: #d5c8ff;
+    border-color: rgba(255, 255, 255, 0.24);
+    background:
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, var(--liquid-glass-tint-opacity)),
+        rgba(178, 178, 178, var(--liquid-glass-bottom-tint-opacity))
+      ),
+      rgba(14, 18, 24, 0.12);
+    box-shadow:
+      0 25px 50px rgba(0, 0, 0, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview)::before {
+    background:
+      radial-gradient(ellipse 74% 60% at var(--liquid-glass-x) var(--liquid-glass-y), rgba(255, 255, 255, 0.1), transparent 62%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 48%, rgba(0, 0, 0, 0.04));
+    opacity: 0.72;
+  }
+
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview)::after {
+    background:
+      linear-gradient(180deg, var(--liquid-glass-edge), transparent 18% 82%, rgba(255, 255, 255, 0.08)),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.14), transparent 14% 86%, rgba(255, 255, 255, 0.08));
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+      inset 14px 0 20px -18px rgba(255, 255, 255, 0.1),
+      inset -14px 0 20px -18px rgba(255, 255, 255, 0.06);
+    opacity: 0.8;
+  }
+
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] .sdk-rule-preview .sdk-rule-preview-card {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.32);
+  }
 }
 
 .archive-chart-preview,
@@ -2645,6 +2822,7 @@ svg {
   box-shadow: 0 18px 48px rgb(28 18 45 / 0.22);
   color: var(--archive-preview-text);
   pointer-events: none;
+  -webkit-backdrop-filter: blur(18px) saturate(1.18);
   backdrop-filter: blur(18px) saturate(1.18);
 }
 
@@ -2658,16 +2836,17 @@ svg {
   box-shadow: 0 20px 54px rgb(0 0 0 / 0.44);
 }
 
-.archive-chart-preview::before {
+.archive-chart-preview .sdk-rule-preview-card::before {
   content: "";
   position: absolute;
-  inset: 10px auto 10px 10px;
+  inset: 10px auto 10px 8px;
   width: 4px;
   border-radius: 999px;
   background: var(--archive-segment-color, var(--accent));
 }
 
 .archive-chart-preview .sdk-rule-preview-card {
+  position: relative;
   gap: 8px;
   padding-left: 22px;
 }
@@ -2693,6 +2872,38 @@ svg {
 
 .archive-chart-preview .sdk-rule-preview-meta-row span:last-child {
   color: var(--archive-preview-text);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-rule-preview-material="liquid-glass"] .archive-chart-preview,
+  :root[data-rule-preview-material="liquid-glass"] .archive-chart-preview.is-visible {
+    --liquid-glass-highlight: color-mix(in srgb, var(--archive-segment-color, #7c3aed) 16%, rgba(255, 255, 255, 0.22));
+    --liquid-glass-edge: color-mix(in srgb, var(--archive-segment-color, #7c3aed) 30%, rgba(255, 255, 255, 0.42));
+    --rule-preview-glass-title: var(--archive-preview-title);
+    --rule-preview-glass-text: var(--archive-preview-text);
+    --rule-preview-glass-muted: var(--archive-preview-muted);
+    overflow: clip;
+    border-color: var(--archive-preview-border);
+    background: var(--archive-preview-bg);
+    box-shadow:
+      0 18px 48px rgb(28 18 45 / 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.42),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+    -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) url("#apk-rule-preview-liquid-glass-refraction");
+    backdrop-filter: blur(var(--liquid-glass-blur)) url("#apk-rule-preview-liquid-glass-refraction");
+  }
+
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] .archive-chart-preview,
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] .archive-chart-preview.is-visible {
+    --liquid-glass-highlight: color-mix(in srgb, var(--archive-segment-color, #38bdf8) 18%, rgba(255, 255, 255, 0.1));
+    --liquid-glass-edge: color-mix(in srgb, var(--archive-segment-color, #38bdf8) 24%, rgba(255, 255, 255, 0.22));
+    border-color: var(--archive-preview-border);
+    background: var(--archive-preview-bg);
+    box-shadow:
+      0 20px 54px rgb(0 0 0 / 0.44),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+  }
 }
 
 .sdk-rule-preview-card {

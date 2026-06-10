@@ -40,6 +40,26 @@ const ARCHIVE_CHART_CENTER = 60;
 const ARCHIVE_CHART_RADIUS = 52;
 const ARCHIVE_CHART_LABEL_MIN_PERCENT = 6;
 const ARCHIVE_CHART_SEGMENT_LIFT = 5;
+const LIQUID_GLASS_FILTER_ID = "apk-rule-preview-liquid-glass-refraction";
+const LIQUID_GLASS_FILTER_MAP_ID = `${LIQUID_GLASS_FILTER_ID}-map`;
+const LIQUID_GLASS_DISPLACEMENT_ID = `${LIQUID_GLASS_FILTER_ID}-displacement`;
+const LIQUID_GLASS_RED_DISPLACEMENT_ID = `${LIQUID_GLASS_FILTER_ID}-red-displacement`;
+const LIQUID_GLASS_BLUE_DISPLACEMENT_ID = `${LIQUID_GLASS_FILTER_ID}-blue-displacement`;
+const LIQUID_GLASS_PREVIEW_SELECTOR = ".sdk-rule-preview, .sdk-icon-preview";
+const LIQUID_GLASS_CHANNEL_GAIN = 6;
+const LIQUID_GLASS_CONTROLS = Object.freeze({
+  edgeIntensity: 0.01,
+  rimIntensity: 0.05,
+  baseIntensity: 0.01,
+  edgeDistance: 0.15,
+  rimDistance: 0.8,
+  baseDistance: 0.1,
+  cornerBoost: 0.02,
+  rippleEffect: 0.1,
+  blurRadius: 5,
+  tintOpacity: 0.2,
+  warp: false,
+});
 const ARCHIVE_CHART_COLORS = [
   "#38bdf8",
   "#22c55e",
@@ -80,6 +100,9 @@ function initWebAnalytics(contextProvider) {
   if (typeof contextProvider === "function") {
     runtime.analyticsContextProvider = contextProvider;
   }
+  if (isAppPowerConstrained()) {
+    return;
+  }
   scheduleAnalyticsLoad();
 }
 
@@ -105,7 +128,12 @@ function trackWebEvent(event, fields = {}) {
 }
 
 function scheduleAnalyticsLoad() {
-  if (runtime.analyticsModule || runtime.analyticsModulePromise || runtime.analyticsLoadScheduled) {
+  if (
+    isAppPowerConstrained() ||
+    runtime.analyticsModule ||
+    runtime.analyticsModulePromise ||
+    runtime.analyticsLoadScheduled
+  ) {
     return;
   }
 
@@ -143,11 +171,15 @@ function loadWebAnalyticsModule() {
 }
 
 function initBrandTitleColorMaskWhenIdle(node) {
-  if (!node) {
+  if (!node || isAppPowerConstrained()) {
     return;
   }
 
   const init = () => {
+    if (isAppPowerConstrained()) {
+      return;
+    }
+
     void loadBrandTitleColorMask().then((initBrandTitleColorMask) => {
       if (node.isConnected) {
         initBrandTitleColorMask(node);
@@ -300,8 +332,575 @@ async function detectCurrentTerminalSystem() {
   return detectTerminalSystem();
 }
 
+function initPowerModeAdaptation() {
+  if (runtime.powerModeInitialized) {
+    return;
+  }
+
+  runtime.powerModeInitialized = true;
+  runtime.powerModeMediaQueries = [
+    createOptionalMediaQuery("(prefers-reduced-motion: reduce)"),
+    createOptionalMediaQuery("(prefers-reduced-transparency: reduce)"),
+    createOptionalMediaQuery("(prefers-reduced-data: reduce)"),
+  ].filter(Boolean);
+
+  for (const mediaQuery of runtime.powerModeMediaQueries) {
+    addChangeListener(mediaQuery, refreshPowerMode);
+  }
+
+  const connection = getNetworkInformation();
+  if (connection) {
+    addChangeListener(connection, refreshPowerMode);
+  }
+
+  initBatteryPowerModeMonitoring();
+  refreshPowerMode();
+}
+
+function createOptionalMediaQuery(query) {
+  try {
+    return typeof window.matchMedia === "function" ? window.matchMedia(query) : null;
+  } catch {
+    return null;
+  }
+}
+
+function addChangeListener(target, listener) {
+  if (typeof target.addEventListener === "function") {
+    target.addEventListener("change", listener);
+    return;
+  }
+
+  if (typeof target.addListener === "function") {
+    target.addListener(listener);
+  }
+}
+
+function initBatteryPowerModeMonitoring() {
+  if (typeof navigator.getBattery !== "function") {
+    return;
+  }
+
+  void navigator.getBattery()
+    .then((battery) => {
+      runtime.powerModeBattery = battery;
+      addChangeListener(battery, refreshPowerMode);
+      battery.addEventListener?.("chargingchange", refreshPowerMode);
+      battery.addEventListener?.("levelchange", refreshPowerMode);
+      refreshPowerMode();
+    })
+    .catch(() => {});
+}
+
+function refreshPowerMode() {
+  const constrained = detectPowerConstrainedMode();
+  runtime.powerConstrained = constrained;
+  document.documentElement.dataset.powerMode = constrained ? "constrained" : "normal";
+
+  if (constrained) {
+    disableRulePreviewMaterial();
+    clearDropZonePointerState();
+    clearHistoryPointerState();
+    return;
+  }
+
+  if (runtime.rulePreviewMaterialCapabilitySupported) {
+    enableRulePreviewMaterial();
+  }
+}
+
+function detectPowerConstrainedMode() {
+  return (
+    hasReducedMotionPreference() ||
+    hasReducedTransparencyPreference() ||
+    hasReducedDataPreference() ||
+    hasSaveDataPreference() ||
+    hasLowBatteryPowerConstraint()
+  );
+}
+
+function isAppPowerConstrained() {
+  return runtime.powerConstrained;
+}
+
+function hasReducedMotionPreference() {
+  return matchesMediaQuery("(prefers-reduced-motion: reduce)");
+}
+
+function hasReducedTransparencyPreference() {
+  return matchesMediaQuery("(prefers-reduced-transparency: reduce)");
+}
+
+function hasReducedDataPreference() {
+  return matchesMediaQuery("(prefers-reduced-data: reduce)");
+}
+
+function matchesMediaQuery(query) {
+  try {
+    return typeof window.matchMedia === "function" && window.matchMedia(query).matches;
+  } catch {
+    return false;
+  }
+}
+
+function hasSaveDataPreference() {
+  return getNetworkInformation()?.saveData === true;
+}
+
+function getNetworkInformation() {
+  return navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
+}
+
+function hasLowBatteryPowerConstraint() {
+  const battery = runtime.powerModeBattery;
+  return Boolean(battery && battery.charging === false && battery.level <= 0.2);
+}
+
+function ensureRulePreviewMaterial() {
+  if (document.documentElement.dataset.rulePreviewMaterial) {
+    if (isAppPowerConstrained()) {
+      disableRulePreviewMaterial();
+      return;
+    }
+
+    ensureLiquidGlassFilter();
+    scheduleLiquidGlassMapPrewarm();
+    return;
+  }
+
+  if (runtime.rulePreviewMaterialCapabilityChecked) {
+    return;
+  }
+
+  runtime.rulePreviewMaterialCapabilityChecked = true;
+  runtime.rulePreviewMaterialCapabilitySupported = isLiquidGlassBrowserCapable();
+  if (!runtime.rulePreviewMaterialCapabilitySupported || isAppPowerConstrained()) {
+    return;
+  }
+
+  enableRulePreviewMaterial();
+}
+
+function enableRulePreviewMaterial() {
+  if (isAppPowerConstrained()) {
+    return;
+  }
+
+  ensureLiquidGlassFilter();
+  document.documentElement.dataset.rulePreviewMaterial = "liquid-glass";
+  scheduleLiquidGlassMapPrewarm();
+  updateLiquidGlassFilterForActivePreview();
+}
+
+function disableRulePreviewMaterial() {
+  if (document.documentElement.dataset.rulePreviewMaterial === "liquid-glass") {
+    delete document.documentElement.dataset.rulePreviewMaterial;
+  }
+
+  runtime.liquidGlassFilterSignature = "";
+  runtime.liquidGlassMapCache.clear();
+}
+
+function scheduleRulePreviewMaterialWarmup() {
+  if (
+    runtime.rulePreviewMaterialWarmupScheduled ||
+    runtime.rulePreviewMaterialCapabilityChecked ||
+    document.documentElement.dataset.rulePreviewMaterial
+  ) {
+    return;
+  }
+
+  runtime.rulePreviewMaterialWarmupScheduled = true;
+  const warmup = () => {
+    runtime.rulePreviewMaterialWarmupScheduled = false;
+    ensureRulePreviewMaterial();
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(warmup, { timeout: 1600 });
+  } else {
+    window.setTimeout(warmup, 0);
+  }
+}
+
+function scheduleLiquidGlassMapPrewarm() {
+  if (runtime.liquidGlassMapPrewarmScheduled || isAppPowerConstrained()) {
+    return;
+  }
+
+  runtime.liquidGlassMapPrewarmScheduled = true;
+  const prewarm = () => {
+    runtime.liquidGlassMapPrewarmScheduled = false;
+    if (isAppPowerConstrained() || document.documentElement.dataset.rulePreviewMaterial !== "liquid-glass") {
+      return;
+    }
+
+    getLiquidGlassRefractionMapDataUrl(96, 64, 24);
+    getLiquidGlassRefractionMapDataUrl(150, 70, 12);
+    getLiquidGlassRefractionMapDataUrl(190, 90, 12);
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(prewarm, { timeout: 2200 });
+  } else {
+    window.setTimeout(prewarm, 0);
+  }
+}
+
+function isLiquidGlassBrowserCapable() {
+  return (
+    supportsLiquidGlassCssFilters() &&
+    supportsLiquidGlassSvgFilters() &&
+    supportsLiquidGlassCanvasMap()
+  );
+}
+
+function supportsLiquidGlassCssFilters() {
+  if (typeof CSS === "undefined" || typeof CSS.supports !== "function") {
+    return false;
+  }
+
+  const filterValue = `blur(${LIQUID_GLASS_CONTROLS.blurRadius}px) url("#${LIQUID_GLASS_FILTER_ID}")`;
+  return (
+    CSS.supports("backdrop-filter", filterValue) ||
+    CSS.supports("-webkit-backdrop-filter", filterValue)
+  );
+}
+
+function supportsLiquidGlassSvgFilters() {
+  if (typeof document.createElementNS !== "function" || typeof SVGElement === "undefined") {
+    return false;
+  }
+
+  const namespace = "http://www.w3.org/2000/svg";
+  return ["filter", "feImage", "feDisplacementMap", "feColorMatrix", "feComposite"]
+    .every((tagName) => document.createElementNS(namespace, tagName) instanceof SVGElement);
+}
+
+function supportsLiquidGlassCanvasMap() {
+  try {
+    const canvas = document.createElement("canvas");
+    return typeof canvas.toDataURL === "function" && Boolean(canvas.getContext("2d"));
+  } catch {
+    return false;
+  }
+}
+
+function ensureLiquidGlassFilter() {
+  if (document.getElementById(LIQUID_GLASS_FILTER_ID)) {
+    return;
+  }
+
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(namespace, "svg");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.style.position = "absolute";
+  svg.style.width = "0";
+  svg.style.height = "0";
+  svg.style.overflow = "hidden";
+
+  const defs = document.createElementNS(namespace, "defs");
+  const filter = document.createElementNS(namespace, "filter");
+  filter.id = LIQUID_GLASS_FILTER_ID;
+  filter.setAttribute("x", "0");
+  filter.setAttribute("y", "0");
+  filter.setAttribute("width", "100%");
+  filter.setAttribute("height", "100%");
+  filter.setAttribute("color-interpolation-filters", "sRGB");
+
+  const map = document.createElementNS(namespace, "feImage");
+  map.id = LIQUID_GLASS_FILTER_MAP_ID;
+  map.setAttribute("x", "0");
+  map.setAttribute("y", "0");
+  map.setAttribute("width", "100%");
+  map.setAttribute("height", "100%");
+  map.setAttribute("preserveAspectRatio", "none");
+  map.setAttribute("result", "liquidMap");
+  setSvgHref(map, createNeutralLiquidGlassMapDataUrl());
+
+  const redDisplacement = createLiquidGlassDisplacementNode(
+    namespace,
+    LIQUID_GLASS_RED_DISPLACEMENT_ID,
+    "liquidRedWarp",
+    "22",
+  );
+  const displacement = createLiquidGlassDisplacementNode(
+    namespace,
+    LIQUID_GLASS_DISPLACEMENT_ID,
+    "liquidGreenWarp",
+    "18",
+  );
+  const blueDisplacement = createLiquidGlassDisplacementNode(
+    namespace,
+    LIQUID_GLASS_BLUE_DISPLACEMENT_ID,
+    "liquidBlueWarp",
+    "14",
+  );
+  const redChannel = createLiquidGlassColorMatrixNode(
+    namespace,
+    "liquidRedWarp",
+    "liquidRedChannel",
+    "1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0",
+  );
+  const greenChannel = createLiquidGlassColorMatrixNode(
+    namespace,
+    "liquidGreenWarp",
+    "liquidGreenChannel",
+    "0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0",
+  );
+  const blueChannel = createLiquidGlassColorMatrixNode(
+    namespace,
+    "liquidBlueWarp",
+    "liquidBlueChannel",
+    "0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0",
+  );
+  const redGreenComposite = createLiquidGlassCompositeNode(
+    namespace,
+    "liquidRedChannel",
+    "liquidGreenChannel",
+    "liquidRedGreen",
+  );
+  const glassComposite = createLiquidGlassCompositeNode(
+    namespace,
+    "liquidRedGreen",
+    "liquidBlueChannel",
+    "liquidGlassComposite",
+  );
+
+  filter.append(
+    map,
+    redDisplacement,
+    displacement,
+    blueDisplacement,
+    redChannel,
+    greenChannel,
+    blueChannel,
+    redGreenComposite,
+    glassComposite,
+  );
+  defs.append(filter);
+  svg.append(defs);
+  document.body.prepend(svg);
+}
+
+function createLiquidGlassDisplacementNode(namespace, id, result, scale) {
+  const displacement = document.createElementNS(namespace, "feDisplacementMap");
+  displacement.id = id;
+  displacement.setAttribute("in", "SourceGraphic");
+  displacement.setAttribute("in2", "liquidMap");
+  displacement.setAttribute("scale", scale);
+  displacement.setAttribute("xChannelSelector", "R");
+  displacement.setAttribute("yChannelSelector", "G");
+  displacement.setAttribute("result", result);
+  return displacement;
+}
+
+function createLiquidGlassColorMatrixNode(namespace, source, result, values) {
+  const matrix = document.createElementNS(namespace, "feColorMatrix");
+  matrix.setAttribute("in", source);
+  matrix.setAttribute("type", "matrix");
+  matrix.setAttribute("values", values);
+  matrix.setAttribute("result", result);
+  return matrix;
+}
+
+function createLiquidGlassCompositeNode(namespace, source, source2, result) {
+  const composite = document.createElementNS(namespace, "feComposite");
+  composite.setAttribute("in", source);
+  composite.setAttribute("in2", source2);
+  composite.setAttribute("operator", "arithmetic");
+  composite.setAttribute("k2", "1");
+  composite.setAttribute("k3", "1");
+  composite.setAttribute("result", result);
+  return composite;
+}
+
+function updateLiquidGlassFilterForActivePreview() {
+  const preview = Array.from(document.querySelectorAll(LIQUID_GLASS_PREVIEW_SELECTOR))
+    .find((node) => node instanceof HTMLElement && !node.hidden && node.classList.contains("is-visible"));
+  if (preview instanceof HTMLElement && !preview.hidden) {
+    updateLiquidGlassFilterForPreview(preview);
+  }
+}
+
+function updateLiquidGlassFilterForPreview(preview) {
+  if (document.documentElement.dataset.rulePreviewMaterial !== "liquid-glass") {
+    return;
+  }
+
+  ensureLiquidGlassFilter();
+  const rect = preview.getBoundingClientRect();
+  if (!rect.width || !rect.height) {
+    return;
+  }
+
+  const style = getComputedStyle(preview);
+  const radius = Number.parseFloat(style.borderTopLeftRadius) || 24;
+  const mapWidth = clamp(Math.round(rect.width / 2), 96, 220);
+  const mapHeight = clamp(Math.round(rect.height / 2), 64, 180);
+  const mapRadius = clamp(Math.round(radius * mapWidth / rect.width), 8, Math.min(mapWidth, mapHeight) / 2);
+  const filterScale = clamp(Math.round(Math.min(rect.width, rect.height) * 0.16), 12, 32);
+  const chromaScale = clamp(Math.round(filterScale * 0.28), 4, 9);
+  const signature = `${mapWidth}x${mapHeight}:${mapRadius}:${filterScale}:${chromaScale}`;
+
+  if (runtime.liquidGlassFilterSignature === signature) {
+    return;
+  }
+
+  const map = document.getElementById(LIQUID_GLASS_FILTER_MAP_ID);
+  if (!map) {
+    return;
+  }
+
+  const dataUrl = getLiquidGlassRefractionMapDataUrl(mapWidth, mapHeight, mapRadius);
+  setSvgHref(map, dataUrl);
+  document.getElementById(LIQUID_GLASS_DISPLACEMENT_ID)?.setAttribute("scale", String(filterScale));
+  document.getElementById(LIQUID_GLASS_RED_DISPLACEMENT_ID)
+    ?.setAttribute("scale", String(filterScale + chromaScale));
+  document.getElementById(LIQUID_GLASS_BLUE_DISPLACEMENT_ID)
+    ?.setAttribute("scale", String(Math.max(1, filterScale - chromaScale)));
+  runtime.liquidGlassFilterSignature = signature;
+}
+
+function getLiquidGlassRefractionMapDataUrl(width, height, radius) {
+  const key = `${width}x${height}:${radius}`;
+  const cached = runtime.liquidGlassMapCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const dataUrl = createLiquidGlassRefractionMapDataUrl(width, height, radius);
+  runtime.liquidGlassMapCache.set(key, dataUrl);
+  if (runtime.liquidGlassMapCache.size > 8) {
+    runtime.liquidGlassMapCache.delete(runtime.liquidGlassMapCache.keys().next().value);
+  }
+  return dataUrl;
+}
+
+function setLiquidGlassHighlightFromClientPoint(preview, clientX, clientY) {
+  const rect = preview.getBoundingClientRect();
+  if (!rect.width || !rect.height) {
+    return;
+  }
+
+  const x = clamp(((clientX - rect.left) / rect.width) * 100, 0, 100);
+  const y = clamp(((clientY - rect.top) / rect.height) * 100, 0, 100);
+  preview.style.setProperty("--liquid-glass-x", `${x.toFixed(1)}%`);
+  preview.style.setProperty("--liquid-glass-y", `${y.toFixed(1)}%`);
+}
+
+function setSvgHref(node, value) {
+  node.setAttribute("href", value);
+  node.setAttributeNS("http://www.w3.org/1999/xlink", "href", value);
+}
+
+function createNeutralLiquidGlassMapDataUrl() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return "";
+  }
+
+  const imageData = context.createImageData(1, 1);
+  imageData.data.set([128, 128, 128, 255]);
+  context.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function createLiquidGlassRefractionMapDataUrl(width, height, radius) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return createNeutralLiquidGlassMapDataUrl();
+  }
+
+  const imageData = context.createImageData(width, height);
+  const data = imageData.data;
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  const minDimension = Math.min(width, height);
+  const safeRadius = clamp(radius, 1, minDimension / 2);
+  const controls = LIQUID_GLASS_CONTROLS;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const px = x + 0.5;
+      const py = y + 0.5;
+      const centeredX = px - halfWidth;
+      const centeredY = py - halfHeight;
+      const { distance, normalX, normalY } = getRoundedRectSignedDistanceAndNormal(
+        centeredX,
+        centeredY,
+        halfWidth,
+        halfHeight,
+        safeRadius,
+      );
+      if (distance > 0) {
+        data[index] = 128;
+        data[index + 1] = 128;
+        data[index + 2] = 128;
+        data[index + 3] = 255;
+        continue;
+      }
+
+      const insideDistance = Math.max(-distance, 0);
+      const distFromEdge = insideDistance / minDimension;
+      const baseIntensity = 1 - Math.exp(-insideDistance * controls.baseDistance);
+      const edgeIntensity = Math.exp(-insideDistance * controls.edgeDistance);
+      const rimIntensity = Math.exp(-insideDistance * controls.rimDistance);
+      const baseComponent = controls.warp ? baseIntensity * controls.baseIntensity : 0;
+      const edgeComponent = edgeIntensity * controls.edgeIntensity;
+      const rimComponent = rimIntensity * controls.rimIntensity;
+      const totalIntensity = baseComponent + edgeComponent + rimComponent;
+      const cornerDistance = Math.max(
+        Math.min(px / width, 1 - px / width),
+        Math.min(py / height, 1 - py / height),
+      ) * minDimension;
+      const cornerBoost = Math.exp(-cornerDistance * 0.3) * controls.cornerBoost;
+      const ripple = Math.sin(distFromEdge * 25) * controls.rippleEffect * rimIntensity;
+      const tangentX = -normalY;
+      const tangentY = normalX;
+      const offsetX = (normalX * (totalIntensity + cornerBoost) + tangentX * ripple) * LIQUID_GLASS_CHANNEL_GAIN;
+      const offsetY = (normalY * (totalIntensity + cornerBoost) + tangentY * ripple) * LIQUID_GLASS_CHANNEL_GAIN;
+
+      data[index] = clamp(Math.round(128 + offsetX * 127), 0, 255);
+      data[index + 1] = clamp(Math.round(128 + offsetY * 127), 0, 255);
+      data[index + 2] = 128;
+      data[index + 3] = 255;
+    }
+  }
+
+  context.putImageData(imageData, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function getRoundedRectSignedDistanceAndNormal(x, y, halfWidth, halfHeight, radius) {
+  const cornerX = Math.abs(x) - (halfWidth - radius);
+  const cornerY = Math.abs(y) - (halfHeight - radius);
+  const outsideX = Math.max(cornerX, 0);
+  const outsideY = Math.max(cornerY, 0);
+  const outsideDistance = Math.hypot(outsideX, outsideY);
+  const insideDistance = Math.min(Math.max(cornerX, cornerY), 0);
+  const distance = outsideDistance + insideDistance - radius;
+  const normalizedX = x / Math.max(halfWidth * 2, 1);
+  const normalizedY = y / Math.max(halfHeight * 2, 1);
+  const normalLength = Math.hypot(normalizedX, normalizedY) || 1;
+
+  return {
+    distance,
+    normalX: normalizedX / normalLength,
+    normalY: normalizedY / normalLength,
+  };
+}
+
 function initReportTitleColorMask(root, info) {
-  if (!root) {
+  if (!root || isAppPowerConstrained()) {
     return;
   }
 
@@ -366,7 +965,9 @@ function scheduleReportSdkRuleDetailHydration(report) {
       });
   };
 
-  if (typeof window.requestIdleCallback === "function") {
+  if (isAppPowerConstrained()) {
+    window.setTimeout(hydrate, 4200);
+  } else if (typeof window.requestIdleCallback === "function") {
     window.requestIdleCallback(hydrate, { timeout: 1800 });
   } else {
     window.setTimeout(hydrate, 0);
@@ -381,6 +982,7 @@ function resolveInitialLocale() {
 }
 
 applyThemeChoice(state.themeChoice, { persist: false });
+initPowerModeAdaptation();
 renderLanguageOptions();
 applyLocale();
 renderBrandTitle(elements.brandTitle, t("title"));
@@ -618,6 +1220,7 @@ function initPreviewInteractionsWhenIdle() {
     initSdkIconPreview();
     initSdkRulePreview();
     initArchiveChartPreview();
+    scheduleRulePreviewMaterialWarmup();
   };
 
   if (typeof window.requestIdleCallback === "function") {
@@ -890,7 +1493,7 @@ function clearTouchHistoryPointerState(event) {
 }
 
 function schedulePointerCoordinates(event, node, options) {
-  if (!node) {
+  if (!node || isAppPowerConstrained()) {
     return;
   }
 
@@ -979,7 +1582,7 @@ function createPointerCoordinateUpdater(node, { xProperty, yProperty }) {
 }
 
 function shouldActivatePointerHighlight(event) {
-  return event.type === "pointerdown" || isFineHoverPointer(event);
+  return !isAppPowerConstrained() && (event.type === "pointerdown" || isFineHoverPointer(event));
 }
 
 function shouldClearPointerHighlightOnRelease(event) {
@@ -1016,6 +1619,8 @@ function initSdkIconPreview() {
   let lastPointerType = "";
 
   const ensurePreview = () => {
+    ensureRulePreviewMaterial();
+
     if (preview) {
       return preview;
     }
@@ -1061,6 +1666,7 @@ function initSdkIconPreview() {
 
     popup.style.setProperty("--preview-x", `${left}px`);
     popup.style.setProperty("--preview-y", `${top}px`);
+    setLiquidGlassHighlightFromClientPoint(popup, iconRect.left + iconRect.width / 2, iconRect.top + iconRect.height / 2);
   };
 
   const hidePreview = () => {
@@ -1084,6 +1690,7 @@ function initSdkIconPreview() {
       activePinned = activePinned || pinned;
       ensurePreview().classList.toggle("is-pinned", activePinned);
       positionPreview(icon);
+      updateLiquidGlassFilterForPreview(ensurePreview());
       return;
     }
 
@@ -1102,6 +1709,7 @@ function initSdkIconPreview() {
     activeIcon = icon;
     activePinned = pinned;
     positionPreview(icon);
+    updateLiquidGlassFilterForPreview(popup);
     window.requestAnimationFrame(() => {
       if (activeIcon === icon) {
         popup.classList.add("is-visible");
@@ -1168,6 +1776,7 @@ function initSdkIconPreview() {
   window.addEventListener("scroll", () => {
     if (activeIcon) {
       positionPreview(activeIcon);
+      updateLiquidGlassFilterForPreview(ensurePreview());
     }
   }, true);
 
@@ -1182,6 +1791,8 @@ function initSdkRulePreview() {
   let lastPointerType = "";
 
   const ensurePreview = () => {
+    ensureRulePreviewMaterial();
+
     if (preview) {
       return preview;
     }
@@ -1203,6 +1814,8 @@ function initSdkRulePreview() {
     preview.addEventListener("mouseleave", () => {
       scheduleHidePreview();
     });
+    preview.addEventListener("pointermove", updateLiquidGlassHighlightFromEvent);
+    preview.addEventListener("mousemove", updateLiquidGlassHighlightFromEvent);
     preview.addEventListener("focusin", () => {
       cancelScheduledHide();
     });
@@ -1225,16 +1838,27 @@ function initSdkRulePreview() {
     const popupHeight = popupRect.height || 180;
 
     let left = labelRect.left + labelRect.width / 2 - popupWidth / 2;
-    left = clamp(left, margin, window.innerWidth - popupWidth - margin);
+    const maxLeft = window.innerWidth - popupWidth - margin;
+    left = maxLeft < margin ? margin : clamp(left, margin, maxLeft);
 
     let top = labelRect.bottom + gap;
     if (top + popupHeight > window.innerHeight - margin) {
       top = labelRect.top - popupHeight - gap;
     }
-    top = clamp(top, margin, window.innerHeight - popupHeight - margin);
+    const maxTop = window.innerHeight - popupHeight - margin;
+    top = maxTop < margin ? margin : clamp(top, margin, maxTop);
 
     popup.style.setProperty("--rule-preview-x", `${left}px`);
     popup.style.setProperty("--rule-preview-y", `${top}px`);
+    setLiquidGlassHighlightFromClientPoint(popup, labelRect.left + labelRect.width / 2, labelRect.top + labelRect.height / 2);
+  };
+
+  const updateLiquidGlassHighlightFromEvent = (event) => {
+    if (!preview || preview.hidden) {
+      return;
+    }
+
+    setLiquidGlassHighlightFromClientPoint(preview, event.clientX, event.clientY);
   };
 
   const hidePreview = () => {
@@ -1310,6 +1934,7 @@ function initSdkRulePreview() {
     activeLabel = label;
     activePinned = pinned;
     positionPreview(label);
+    updateLiquidGlassFilterForPreview(popup);
     window.requestAnimationFrame(() => {
       if (activeLabel === label) {
         popup.classList.add("is-visible");
@@ -1324,6 +1949,7 @@ function initSdkRulePreview() {
 
     if (event.target.closest?.(".sdk-rule-preview")) {
       cancelScheduledHide();
+      updateLiquidGlassHighlightFromEvent(event);
       return;
     }
 
@@ -1335,7 +1961,13 @@ function initSdkRulePreview() {
       return;
     }
 
+    if (label === activeLabel) {
+      updateLiquidGlassHighlightFromEvent(event);
+      return;
+    }
+
     showPreview(label);
+    updateLiquidGlassHighlightFromEvent(event);
   };
 
   const handleLeaveEvent = (event) => {
@@ -1366,6 +1998,7 @@ function initSdkRulePreview() {
     },
     onHover: handleHoverEvent,
     onLeave: handleLeaveEvent,
+    trackMove: true,
   });
   document.addEventListener("click", (event) => {
     const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
@@ -1398,6 +2031,7 @@ function initSdkRulePreview() {
   window.addEventListener("scroll", () => {
     if (activeLabel) {
       positionPreview(activeLabel);
+      updateLiquidGlassFilterForPreview(ensurePreview());
     }
   }, true);
 
@@ -1413,6 +2047,8 @@ function initArchiveChartPreview() {
   let lastPoint = null;
 
   const ensurePreview = () => {
+    ensureRulePreviewMaterial();
+
     if (preview) {
       return preview;
     }
@@ -1455,6 +2091,7 @@ function initArchiveChartPreview() {
 
     popup.style.setProperty("--rule-preview-x", `${left}px`);
     popup.style.setProperty("--rule-preview-y", `${top}px`);
+    setLiquidGlassHighlightFromClientPoint(popup, x, y);
   };
 
   const hidePreview = () => {
@@ -1515,6 +2152,7 @@ function initArchiveChartPreview() {
       popup.classList.toggle("is-pinned", activePinned);
       segment.classList.add("is-active");
       positionPreview(segment, event);
+      updateLiquidGlassFilterForPreview(popup);
       return;
     }
 
@@ -1535,6 +2173,7 @@ function initArchiveChartPreview() {
     activeSegment.classList.add("is-active");
     activePinned = pinned;
     positionPreview(segment, event);
+    updateLiquidGlassFilterForPreview(popup);
     window.requestAnimationFrame(() => {
       if (activeSegment === segment) {
         popup.classList.add("is-visible");
@@ -1615,6 +2254,7 @@ function initArchiveChartPreview() {
   window.addEventListener("scroll", () => {
     if (activeSegment) {
       positionPreview(activeSegment);
+      updateLiquidGlassFilterForPreview(ensurePreview());
     }
   }, true);
 
