@@ -15,7 +15,7 @@ const extraSyntaxFiles = [
   resolve(projectDir, "vite.config.mjs"),
 ];
 
-await run("npm", ["run", "i18n:check", "--workspace", "@tgbot/shared"], repoDir);
+await runNpm(["run", "i18n:check", "--workspace", "@tgbot/shared"], repoDir);
 
 const syntaxFiles = (await collectSyntaxFiles(sourceRoots))
   .concat(extraSyntaxFiles)
@@ -68,6 +68,14 @@ function run(command, args, cwd) {
       rejectRun(new Error(`${formatCommand(command, args)} failed with ${signal || `exit code ${code}`}`));
     });
   });
+}
+
+function runNpm(args, cwd) {
+  if (process.platform !== "win32") {
+    return run("npm", args, cwd);
+  }
+
+  return run("cmd.exe", ["/d", "/s", "/c", ["npm", ...args].join(" ")], cwd);
 }
 
 function formatCommand(command, args) {

@@ -7,6 +7,7 @@ import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistory
 import { getFileAnalyticsFields, getReportAnalyticsFields } from "./app/analytics-fields.js";
 import { applyFilePickerAcceptCompatibility } from "./app/file-picker-support.js";
 import { getLiquidGlassBrowserConfigFallbackReason } from "./app/liquid-glass-support.js";
+import { isLikelyLcappsFile, readLcappsArchive } from "./app/lcapps-reader.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import {
   ANALYTICS_EVENT_QUEUE_LIMIT,
@@ -47,7 +48,7 @@ const LIQUID_GLASS_FILTER_MAP_ID = `${LIQUID_GLASS_FILTER_ID}-map`;
 const LIQUID_GLASS_DISPLACEMENT_ID = `${LIQUID_GLASS_FILTER_ID}-displacement`;
 const LIQUID_GLASS_RED_DISPLACEMENT_ID = `${LIQUID_GLASS_FILTER_ID}-red-displacement`;
 const LIQUID_GLASS_BLUE_DISPLACEMENT_ID = `${LIQUID_GLASS_FILTER_ID}-blue-displacement`;
-const LIQUID_GLASS_PREVIEW_SELECTOR = ".sdk-rule-preview, .sdk-icon-preview";
+const LIQUID_GLASS_PREVIEW_SELECTOR = ".sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble";
 const LIQUID_GLASS_CHANNEL_GAIN = 6;
 const LIQUID_GLASS_CONTROLS = Object.freeze({
   edgeIntensity: 0.01,
@@ -62,6 +63,7 @@ const LIQUID_GLASS_CONTROLS = Object.freeze({
   tintOpacity: 0.2,
   warp: false,
 });
+const LCAPPS_BUBBLE_BOUNCE_MS = 1040;
 const ARCHIVE_CHART_COLORS = [
   "#38bdf8",
   "#22c55e",
@@ -1132,6 +1134,37 @@ function bindEvents() {
     setSelectedFile(event.dataTransfer?.files?.[0] || null);
   });
 
+  elements.lcappsPickerClose?.addEventListener("click", () => {
+    closeLcappsPicker();
+  });
+
+  elements.lcappsPicker?.addEventListener("click", (event) => {
+    if (event.target === elements.lcappsPicker) {
+      closeLcappsPicker();
+    }
+  });
+
+  elements.lcappsSearch?.addEventListener("input", () => {
+    state.lcappsPicker.query = elements.lcappsSearch.value || "";
+    renderLcappsPicker();
+  });
+
+  elements.lcappsGrid?.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-lcapps-index]");
+    if (!button) {
+      return;
+    }
+
+    const index = Number.parseInt(button.dataset.lcappsIndex || "", 10);
+    if (Number.isFinite(index)) {
+      void selectLcappsReport(index);
+    }
+  });
+
+  elements.lcappsBubble?.addEventListener("click", () => {
+    reopenLcappsPicker();
+  });
+
   elements.clearButton.addEventListener("click", () => {
     if (state.appMode === "compare") {
       if (runtime.compareController) {
@@ -1189,6 +1222,12 @@ function bindEvents() {
   document.addEventListener("pointerup", clearTouchHistoryPointerState);
   document.addEventListener("pointercancel", clearTouchHistoryPointerState);
   window.addEventListener("blur", clearHistoryPointerState);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.lcappsPicker.open) {
+      closeLcappsPicker();
+    }
+  });
 
   document.addEventListener("pointerover", (event) => {
     const row = event.target.closest?.(".history-row");
@@ -2645,6 +2684,13 @@ function applyLocale() {
   elements.ariaI18nNodes.forEach((node) => {
     node.setAttribute("aria-label", t(node.dataset.ariaI18n));
   });
+
+  if (elements.lcappsSearch) {
+    elements.lcappsSearch.placeholder = t("lcappsSearch");
+    elements.lcappsSearch.setAttribute("aria-label", t("lcappsSearch"));
+  }
+  renderLcappsPicker();
+  renderLcappsBubble();
 }
 
 function renderLanguageOptions() {
@@ -2665,12 +2711,18 @@ function setSelectedFile(file) {
   updateClearButton();
 
   if (file) {
-    const isValid = isLikelyApk(file);
+    const isLcapps = isLikelyLcapps(file);
+    const isValid = isLcapps || isLikelyApk(file);
     trackWebEvent("webui.file.selected", {
       result: isValid ? "valid" : "invalid",
       is_valid: isValid,
+      file_kind: isLcapps ? "lcapps" : "android_package",
       ...getFileAnalyticsFields(file),
     });
+
+    if (isLcapps) {
+      void openLcappsPickerForFile(file);
+    }
   }
 }
 
@@ -2697,6 +2749,11 @@ async function analyzeSelectedFile() {
       result: "missing_file",
       error_name: "MissingFile",
     });
+    return;
+  }
+
+  if (isLikelyLcapps(file)) {
+    await openLcappsPickerForFile(file);
     return;
   }
 
@@ -2932,6 +2989,8 @@ function updateElapsed() {
 
 function resetState() {
   const hadContent = Boolean(state.selectedFile || state.report || state.activeAnalyzeJobId != null);
+  clearLcappsReportActivationTimer();
+  clearLcappsBubbleTransitionTimer();
   if (state.activeAnalyzeJobId != null) {
     state.jobs.delete(state.activeAnalyzeJobId);
     state.activeAnalyzeJobId = null;
@@ -2941,9 +3000,20 @@ function resetState() {
   hideError();
   state.selectedFile = null;
   state.report = null;
+  state.lcappsArchive = null;
+  state.lcappsPicker.open = false;
+  state.lcappsPicker.loading = false;
+  state.lcappsPicker.error = "";
+  state.lcappsPicker.query = "";
+  state.lcappsPicker.selectedReport = null;
+  runtime.lcappsPickerToken += 1;
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   elements.fileInput.value = "";
+  if (elements.lcappsSearch) {
+    elements.lcappsSearch.value = "";
+  }
+  finishLcappsPickerClose();
   elements.progress.hidden = true;
   elements.progress.classList.remove("is-complete");
   elements.progressTime.textContent = "0.0s";
@@ -3963,6 +4033,406 @@ function emptyList(message) {
   return `<p class="empty-list">${escapeHtml(message)}</p>`;
 }
 
+async function openLcappsPickerForFile(file) {
+  if (!file) {
+    return;
+  }
+
+  clearLcappsReportActivationTimer();
+  const token = runtime.lcappsPickerToken + 1;
+  runtime.lcappsPickerToken = token;
+  state.lcappsArchive = null;
+  state.lcappsPicker.open = true;
+  state.lcappsPicker.loading = true;
+  state.lcappsPicker.error = "";
+  state.lcappsPicker.query = "";
+  state.lcappsPicker.selectedReport = null;
+  if (elements.lcappsSearch) {
+    elements.lcappsSearch.value = "";
+  }
+  renderLcappsBubble();
+  showLcappsPicker();
+  renderLcappsPicker();
+  trackWebEvent("webui.lcapps.opened", {
+    result: "started",
+    input_source: "upload",
+    file_kind: "lcapps",
+    ...getFileAnalyticsFields(file),
+  });
+
+  try {
+    const archive = await readLcappsArchive(file, {
+      locale: state.locale,
+      nowIso: new Date().toISOString(),
+    });
+    if (runtime.lcappsPickerToken !== token) {
+      return;
+    }
+
+    state.lcappsArchive = archive;
+    state.lcappsPicker.loading = false;
+    state.lcappsPicker.error = "";
+    renderLcappsPicker();
+    focusLcappsPicker();
+    trackWebEvent("webui.lcapps.loaded", {
+      result: "success",
+      input_source: "upload",
+      file_kind: "lcapps",
+      value: archive.reports.length,
+      ...getFileAnalyticsFields(file),
+    });
+  } catch (error) {
+    if (runtime.lcappsPickerToken !== token) {
+      return;
+    }
+
+    state.lcappsPicker.loading = false;
+    state.lcappsPicker.error = getLcappsErrorMessage(error);
+    renderLcappsPicker();
+    focusLcappsPicker();
+    trackWebEvent("webui.lcapps.failed", {
+      result: "error",
+      input_source: "upload",
+      file_kind: "lcapps",
+      error_name: getErrorName(error),
+      ...getFileAnalyticsFields(file),
+    });
+  }
+}
+
+function reopenLcappsPicker() {
+  if (!state.lcappsArchive) {
+    return;
+  }
+
+  clearLcappsReportActivationTimer();
+  clearLcappsBubbleTransitionTimer();
+  hideLcappsBubble();
+  state.lcappsPicker.open = true;
+  state.lcappsPicker.loading = false;
+  state.lcappsPicker.error = "";
+  showLcappsPicker();
+  renderLcappsPicker();
+  focusLcappsPicker();
+  trackWebEvent("webui.lcapps.reopened", {
+    result: "success",
+    input_source: "bubble",
+    value: state.lcappsArchive.reports.length,
+  });
+}
+
+function showLcappsPicker() {
+  if (!elements.lcappsPicker) {
+    return;
+  }
+
+  clearLcappsBubbleTransitionTimer();
+  hideLcappsBubble();
+  elements.lcappsPicker.hidden = false;
+  elements.lcappsPicker.classList.add("is-open");
+  elements.lcappsPickerPanel?.classList.add("is-visible");
+  document.documentElement.classList.add("has-lcapps-picker");
+  ensureRulePreviewMaterial();
+  if (elements.lcappsPickerPanel) {
+    updateLiquidGlassFilterForPreview(elements.lcappsPickerPanel);
+  }
+}
+
+function focusLcappsPicker() {
+  window.requestAnimationFrame(() => {
+    elements.lcappsSearch?.focus({ preventScroll: true });
+    if (document.activeElement !== elements.lcappsSearch) {
+      elements.lcappsPickerPanel?.focus({ preventScroll: true });
+    }
+  });
+}
+
+function closeLcappsPicker(options = {}) {
+  if (!elements.lcappsPicker || elements.lcappsPicker.hidden) {
+    return;
+  }
+
+  state.lcappsPicker.open = false;
+  runtime.lcappsPickerToken += 1;
+  document.documentElement.classList.remove("has-lcapps-picker");
+  finishLcappsPickerClose({ renderBubble: false });
+  renderLcappsBubble({ bounce: options.bounceBubble });
+}
+
+function finishLcappsPickerClose(options = {}) {
+  elements.lcappsPicker?.classList.remove("is-open");
+  elements.lcappsPickerPanel?.classList.remove("is-visible");
+  if (elements.lcappsPicker) {
+    elements.lcappsPicker.hidden = true;
+  }
+  if (options.renderBubble !== false) {
+    renderLcappsBubble();
+  }
+}
+
+function renderLcappsPicker() {
+  if (!elements.lcappsPicker || !elements.lcappsPickerPanel) {
+    return;
+  }
+
+  const archive = state.lcappsArchive;
+  const loading = state.lcappsPicker.loading;
+  const error = state.lcappsPicker.error;
+  const query = state.lcappsPicker.query.trim();
+  const totalCount = archive?.reports.length || 0;
+  const matches = archive ? getFilteredLcappsReports(archive.reports, query) : [];
+
+  elements.lcappsPickerSubtitle.textContent = loading
+    ? t("lcappsLoading")
+    : archive
+      ? t("lcappsSubtitle", { count: totalCount, name: archive.fileName || t("unknown") })
+      : t("lcappsSubtitle", { count: 0, name: t("unknown") });
+
+  if (elements.lcappsSearch && elements.lcappsSearch.value !== state.lcappsPicker.query) {
+    elements.lcappsSearch.value = state.lcappsPicker.query;
+  }
+  if (elements.lcappsSearch) {
+    elements.lcappsSearch.disabled = loading || Boolean(error) || !archive;
+  }
+
+  if (loading) {
+    elements.lcappsStatus.hidden = false;
+    elements.lcappsStatus.innerHTML = renderLcappsStatus(t("lcappsLoading"), true);
+    elements.lcappsGrid.innerHTML = "";
+    return;
+  }
+
+  if (error) {
+    elements.lcappsStatus.hidden = false;
+    elements.lcappsStatus.innerHTML = renderLcappsStatus(error, false, "error");
+    elements.lcappsGrid.innerHTML = "";
+    return;
+  }
+
+  if (!archive) {
+    elements.lcappsStatus.hidden = false;
+    elements.lcappsStatus.innerHTML = renderLcappsStatus(t("lcappsEmpty"), false);
+    elements.lcappsGrid.innerHTML = "";
+    return;
+  }
+
+  if (matches.length === 0) {
+    elements.lcappsStatus.hidden = false;
+    elements.lcappsStatus.innerHTML = renderLcappsStatus(t("lcappsNoMatches"), false);
+    elements.lcappsGrid.innerHTML = "";
+    return;
+  }
+
+  elements.lcappsStatus.hidden = true;
+  elements.lcappsStatus.innerHTML = "";
+  elements.lcappsGrid.innerHTML = matches.map(({ report, index }) => renderLcappsAppCard(report, index)).join("");
+}
+
+function renderLcappsStatus(message, busy, tone = "") {
+  return [
+    `<div class="lcapps-status-card${tone ? ` lcapps-status-card--${escapeAttr(tone)}` : ""}"${busy ? ` aria-busy="true"` : ""}>`,
+    busy ? `<span class="lcapps-spinner" aria-hidden="true"></span>` : "",
+    `<span>${escapeHtml(message)}</span>`,
+    `</div>`,
+  ].join("");
+}
+
+function getFilteredLcappsReports(reports, query) {
+  const normalizedQuery = query.toLowerCase();
+  return reports
+    .map((report, index) => ({ report, index }))
+    .filter(({ report }) => {
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const info = report.apkInfo || {};
+      return [
+        info.appName,
+        info.packageName,
+        info.versionName,
+        info.versionCode,
+      ].some((value) => String(value || "").toLowerCase().includes(normalizedQuery));
+    });
+}
+
+function renderLcappsAppCard(report, index) {
+  const info = report.apkInfo || {};
+  const title = info.appName || info.packageName || t("unknown");
+  const packageName = info.packageName || t("unknown");
+  const version = info.versionName || t("unknown");
+  const targetSdk = info.targetSdk || t("unknown");
+  const stats = getStats(info);
+  const meta = [
+    `${t("versionName")}: ${version}`,
+    `${t("targetSdk")}: ${targetSdk}`,
+  ].join(" · ");
+  const subMeta = [
+    `${t("sdk")}: ${(info.sdkSummary?.native?.length || 0) + (info.sdkSummary?.components?.length || 0)}`,
+    `${t("components")}: ${stats.components}`,
+    `${t("permissions")}: ${stats.permissions}`,
+  ].join(" · ");
+
+  return [
+    `<button class="lcapps-app-card" type="button" data-lcapps-index="${escapeAttr(index)}">`,
+    renderLcappsAppIcon(info, "lcapps-app-icon"),
+    `<span class="lcapps-app-copy">`,
+    `<span class="lcapps-app-title">${escapeHtml(title)}</span>`,
+    `<span class="lcapps-app-package">${escapeHtml(packageName)}</span>`,
+    `<span class="lcapps-app-meta">${escapeHtml(meta)}</span>`,
+    `<span class="lcapps-app-meta">${escapeHtml(subMeta)}</span>`,
+    `</span>`,
+    `</button>`,
+  ].join("");
+}
+
+function renderLcappsAppIcon(info, className) {
+  const src = sanitizeImageSrc(info.icon?.dataUri || "");
+  const label = info.appName || info.packageName || t("appName");
+  if (src) {
+    return `<img class="${escapeAttr(className)}" src="${escapeAttr(src)}" alt="${escapeAttr(label)}">`;
+  }
+
+  return `<span class="${escapeAttr(`${className} ${className}--placeholder`)}" aria-hidden="true">${escapeHtml(getInitial(label))}</span>`;
+}
+
+async function selectLcappsReport(index) {
+  const archive = state.lcappsArchive;
+  const sourceReport = archive?.reports[index];
+  if (!sourceReport) {
+    return;
+  }
+
+  clearLcappsReportActivationTimer();
+  const report = cloneReportForHydration(sourceReport);
+  state.lcappsPicker.selectedReport = report;
+  closeLcappsPicker({ bounceBubble: true });
+  scheduleLcappsReportActivation(report);
+}
+
+function scheduleLcappsReportActivation(report) {
+  void activateSelectedLcappsReport(report);
+}
+
+function clearLcappsReportActivationTimer() {
+  if (!runtime.lcappsReportActivationTimer) {
+    return;
+  }
+
+  window.clearTimeout(runtime.lcappsReportActivationTimer);
+  runtime.lcappsReportActivationTimer = 0;
+}
+
+function clearLcappsBubbleTransitionTimer() {
+  if (!runtime.lcappsBubbleTransitionTimer) {
+    return;
+  }
+
+  window.clearTimeout(runtime.lcappsBubbleTransitionTimer);
+  runtime.lcappsBubbleTransitionTimer = 0;
+}
+
+function hideLcappsBubble() {
+  if (!elements.lcappsBubble || !elements.lcappsBubbleContent) {
+    return;
+  }
+
+  elements.lcappsBubble.classList.remove("is-bouncing");
+  elements.lcappsBubble.hidden = true;
+  elements.lcappsBubbleContent.innerHTML = "";
+}
+
+async function activateSelectedLcappsReport(report) {
+  if (state.lcappsPicker.selectedReport !== report) {
+    return;
+  }
+
+  activateLcappsReport(report);
+  try {
+    await hydrateReportSdkIconsForHistory(report);
+    if (state.report !== report) {
+      return;
+    }
+
+    exportJsonCache.delete(report);
+    renderReport();
+    scheduleReportSdkRuleDetailHydration(report);
+  } catch {
+    scheduleReportSdkRuleDetailHydration(report);
+  }
+}
+
+function activateLcappsReport(report) {
+  if (state.activeAnalyzeJobId != null) {
+    state.jobs.delete(state.activeAnalyzeJobId);
+    state.activeAnalyzeJobId = null;
+  }
+  scheduleWorkerIdleTermination();
+  finishAnalysis();
+  hideError();
+  state.report = report;
+  state.activeTab = "summary";
+  state.activeNativeAbi = "";
+  elements.progress.hidden = true;
+  elements.progress.classList.remove("is-complete");
+  elements.progressTime.textContent = "0.0s";
+  elements.progressLabel.textContent = t("progressReady");
+  updateClearButton();
+  renderReport();
+  renderLcappsBubble();
+  saveHistoryReport(report);
+  trackWebEvent("webui.lcapps.selected", {
+    result: "success",
+    input_source: "lcapps",
+    file_kind: "lcapps",
+    ...getReportAnalyticsFields(report),
+  });
+}
+
+function renderLcappsBubble(options = {}) {
+  if (!elements.lcappsBubble || !elements.lcappsBubbleContent) {
+    return;
+  }
+
+  const report = state.lcappsPicker.selectedReport;
+  if (!report || state.lcappsPicker.open) {
+    hideLcappsBubble();
+    return;
+  }
+
+  const info = report.apkInfo || {};
+  const title = info.appName || info.packageName || t("unknown");
+  elements.lcappsBubble.hidden = false;
+  elements.lcappsBubble.setAttribute("aria-label", t("lcappsReopenWithApp", { app: title }));
+  elements.lcappsBubble.title = t("lcappsReopen");
+  elements.lcappsBubbleContent.innerHTML = renderLcappsAppIcon(info, "lcapps-bubble-icon");
+  if (options.bounce && !hasReducedMotionPreference()) {
+    elements.lcappsBubble.classList.remove("is-bouncing");
+    void elements.lcappsBubble.offsetWidth;
+    elements.lcappsBubble.classList.add("is-bouncing");
+    runtime.lcappsBubbleTransitionTimer = window.setTimeout(() => {
+      runtime.lcappsBubbleTransitionTimer = 0;
+      elements.lcappsBubble?.classList.remove("is-bouncing");
+    }, LCAPPS_BUBBLE_BOUNCE_MS + 40);
+  }
+  ensureRulePreviewMaterial();
+  updateLiquidGlassFilterForPreview(elements.lcappsBubble);
+}
+
+function getLcappsErrorMessage(error) {
+  const key = String(error?.code || error?.message || "");
+  const supportedKeys = new Set([
+    "unsupportedDecompression",
+    "lcappsInvalidZip",
+    "lcappsUnsupportedZip64",
+    "lcappsMissingJson",
+    "lcappsInvalidJson",
+    "lcappsUnsupportedCompression",
+    "lcappsEmpty",
+  ]);
+  return supportedKeys.has(key) ? t(key) : t("lcappsReadFailed");
+}
+
 
 function buildFeatureLabel(name, version) {
   return version ? `${name} ${version}` : name;
@@ -3975,6 +4445,10 @@ function isLikelyApk(file) {
     [".apk", ".apks", ".apkm", ".xapk"].some((extension) => name.endsWith(extension)) ||
     type.includes("android.package-archive")
   );
+}
+
+function isLikelyLcapps(file) {
+  return isLikelyLcappsFile(file);
 }
 
 function downloadReport(report, json = "") {

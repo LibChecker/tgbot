@@ -319,7 +319,9 @@ body {
 :root[data-power-mode="constrained"] .drop-zone,
 :root[data-power-mode="constrained"] .compare-drop-zone,
 :root[data-power-mode="constrained"] .sdk-icon-preview,
-:root[data-power-mode="constrained"] .sdk-rule-preview {
+:root[data-power-mode="constrained"] .sdk-rule-preview,
+:root[data-power-mode="constrained"] .lcapps-picker__panel,
+:root[data-power-mode="constrained"] .lcapps-bubble {
   transition-duration: 1ms;
 }
 
@@ -1179,14 +1181,111 @@ svg {
 }
 
 .drop-zone-title {
+  --file-type-apk-bg: hsl(262 72% 94% / 0.92);
+  --file-type-apk-border: hsl(262 62% 64% / 0.46);
+  --file-type-apk-text: hsl(262 58% 38%);
+  --file-type-apks-bg: hsl(205 78% 94% / 0.9);
+  --file-type-apks-border: hsl(205 68% 57% / 0.44);
+  --file-type-apks-text: hsl(205 62% 34%);
+  --file-type-apkm-bg: hsl(154 64% 92% / 0.9);
+  --file-type-apkm-border: hsl(154 48% 50% / 0.44);
+  --file-type-apkm-text: hsl(154 58% 26%);
+  --file-type-xapk-bg: hsl(38 82% 92% / 0.9);
+  --file-type-xapk-border: hsl(38 74% 54% / 0.42);
+  --file-type-xapk-text: hsl(34 72% 30%);
+  --file-type-lcapps-bg: hsl(335 76% 94% / 0.9);
+  --file-type-lcapps-border: hsl(335 62% 58% / 0.42);
+  --file-type-lcapps-text: hsl(335 58% 34%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 9px;
   font-size: 1.05rem;
   font-weight: 800;
+  line-height: 1.35;
 }
 
 .drop-zone-meta {
   margin-top: 4px;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.file-type-labels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.file-type-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--file-type-border);
+  border-radius: 999px;
+  background: var(--file-type-bg);
+  color: var(--file-type-text);
+  padding: 0 9px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 54%, transparent) inset;
+}
+
+.file-type-label--apk {
+  --file-type-bg: var(--file-type-apk-bg);
+  --file-type-border: var(--file-type-apk-border);
+  --file-type-text: var(--file-type-apk-text);
+}
+
+.file-type-label--apks {
+  --file-type-bg: var(--file-type-apks-bg);
+  --file-type-border: var(--file-type-apks-border);
+  --file-type-text: var(--file-type-apks-text);
+}
+
+.file-type-label--apkm {
+  --file-type-bg: var(--file-type-apkm-bg);
+  --file-type-border: var(--file-type-apkm-border);
+  --file-type-text: var(--file-type-apkm-text);
+}
+
+.file-type-label--xapk {
+  --file-type-bg: var(--file-type-xapk-bg);
+  --file-type-border: var(--file-type-xapk-border);
+  --file-type-text: var(--file-type-xapk-text);
+}
+
+.file-type-label--lcapps {
+  --file-type-bg: var(--file-type-lcapps-bg);
+  --file-type-border: var(--file-type-lcapps-border);
+  --file-type-text: var(--file-type-lcapps-text);
+}
+
+:root[data-color-scheme="dark"] .drop-zone-title {
+  --file-type-apk-bg: hsl(262 24% 34% / 0.34);
+  --file-type-apk-border: hsl(262 28% 68% / 0.26);
+  --file-type-apk-text: hsl(262 34% 84%);
+  --file-type-apks-bg: hsl(205 24% 32% / 0.34);
+  --file-type-apks-border: hsl(205 28% 66% / 0.26);
+  --file-type-apks-text: hsl(205 34% 84%);
+  --file-type-apkm-bg: hsl(154 22% 30% / 0.34);
+  --file-type-apkm-border: hsl(154 26% 62% / 0.26);
+  --file-type-apkm-text: hsl(154 30% 82%);
+  --file-type-xapk-bg: hsl(38 22% 32% / 0.34);
+  --file-type-xapk-border: hsl(38 26% 64% / 0.26);
+  --file-type-xapk-text: hsl(38 32% 82%);
+  --file-type-lcapps-bg: hsl(335 22% 32% / 0.34);
+  --file-type-lcapps-border: hsl(335 26% 66% / 0.26);
+  --file-type-lcapps-text: hsl(335 32% 84%);
+}
+
+:root[data-color-scheme="dark"] .file-type-label {
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.06) inset;
 }
 
 .tool-panel-actions {
@@ -2668,7 +2767,7 @@ svg {
 }
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview) {
+  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble) {
     --liquid-glass-x: 64%;
     --liquid-glass-y: 18%;
     --liquid-glass-edge-width: 20px;
@@ -2701,7 +2800,7 @@ svg {
     backdrop-filter: blur(var(--liquid-glass-blur)) url("#apk-rule-preview-liquid-glass-refraction");
   }
 
-  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview)::before {
+  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble)::before {
     content: "";
     position: absolute;
     inset: 0;
@@ -2715,7 +2814,7 @@ svg {
     pointer-events: none;
   }
 
-  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview)::after {
+  :root[data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble)::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -2757,7 +2856,7 @@ svg {
     text-decoration-color: color-mix(in srgb, var(--rule-preview-glass-link) 58%, transparent);
   }
 
-  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview) {
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble) {
     --liquid-glass-tint-opacity: 0.08;
     --liquid-glass-bottom-tint-opacity: 0.05;
     --liquid-glass-highlight: rgba(255, 255, 255, 0.16);
@@ -2782,14 +2881,14 @@ svg {
       inset 0 -1px 0 rgba(255, 255, 255, 0.06);
   }
 
-  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview)::before {
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble)::before {
     background:
       radial-gradient(ellipse 74% 60% at var(--liquid-glass-x) var(--liquid-glass-y), rgba(255, 255, 255, 0.1), transparent 62%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 48%, rgba(0, 0, 0, 0.04));
     opacity: 0.72;
   }
 
-  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview)::after {
+  :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble)::after {
     background:
       linear-gradient(180deg, var(--liquid-glass-edge), transparent 18% 82%, rgba(255, 255, 255, 0.08)),
       linear-gradient(90deg, rgba(255, 255, 255, 0.14), transparent 14% 86%, rgba(255, 255, 255, 0.08));
@@ -2804,6 +2903,379 @@ svg {
 
   :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] .sdk-rule-preview .sdk-rule-preview-card {
     text-shadow: 0 1px 1px rgba(0, 0, 0, 0.32);
+  }
+}
+
+.lcapps-picker {
+  --lcapps-picker-gap: clamp(10px, 2.2vw, 24px);
+  --lcapps-bubble-size: 56px;
+  --lcapps-bubble-right: 10px;
+  --lcapps-bubble-bounce-y-1: 30px;
+  --lcapps-bubble-bounce-y-2: 21px;
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgb(12 8 18 / 0.18);
+  opacity: 1;
+  pointer-events: none;
+  transition: none;
+}
+
+.lcapps-picker.is-open {
+  pointer-events: auto;
+}
+
+.lcapps-picker[hidden] {
+  display: none;
+}
+
+.lcapps-picker__panel {
+  --liquid-glass-x: 62%;
+  --liquid-glass-y: 16%;
+  position: fixed;
+  top: var(--lcapps-picker-gap);
+  left: var(--lcapps-picker-gap);
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 14px;
+  width: calc(100vw - var(--lcapps-picker-gap) - var(--lcapps-picker-gap));
+  height: calc(100dvh - var(--lcapps-picker-gap) - var(--lcapps-picker-gap));
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(16px, 2.4vw, 24px);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--panel-bg) 92%, transparent);
+  box-shadow: 0 28px 70px rgb(22 12 38 / 0.34);
+  color: var(--text);
+  opacity: 1;
+  contain: layout paint style;
+  transform: none;
+  transform-origin: center center;
+  transition: none;
+  backface-visibility: hidden;
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.lcapps-picker__panel.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+.lcapps-picker__header,
+.lcapps-picker__toolbar,
+.lcapps-picker__status,
+.lcapps-picker__grid {
+  position: relative;
+  z-index: 2;
+}
+
+.lcapps-picker__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.lcapps-picker__title-block {
+  min-width: 0;
+}
+
+.lcapps-picker__title-block h2 {
+  margin: 0;
+  color: var(--heading-text);
+  font-size: clamp(1.45rem, 2.6vw, 2.25rem);
+  line-height: 1.16;
+  letter-spacing: 0;
+}
+
+.lcapps-picker__title-block p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lcapps-picker__close {
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.lcapps-picker__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lcapps-search-control {
+  position: relative;
+  display: block;
+  width: min(420px, 100%);
+  color: var(--muted);
+}
+
+.lcapps-search-control svg {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.lcapps-search-control input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  color: var(--text);
+  padding: 0 14px 0 40px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  outline: none;
+}
+
+.lcapps-search-control input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.lcapps-picker__status {
+  display: grid;
+}
+
+.lcapps-picker__status[hidden] {
+  display: none;
+}
+
+.lcapps-status-card {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 10px;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  color: var(--control-text);
+  padding: 0 13px;
+  font-size: 0.93rem;
+  font-weight: 800;
+}
+
+.lcapps-status-card--error {
+  border-color: color-mix(in srgb, var(--danger-text) 36%, var(--line));
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.lcapps-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: compare-spin 780ms linear infinite;
+}
+
+.lcapps-picker__grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 2px 6px;
+}
+
+.lcapps-app-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  color: inherit;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.lcapps-app-card:hover,
+.lcapps-app-card:focus-visible {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--surface-soft) 72%, var(--accent-soft));
+  box-shadow: 0 14px 34px rgb(22 12 38 / 0.14);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.lcapps-app-icon,
+.lcapps-bubble-icon {
+  display: grid;
+  place-items: center;
+  object-fit: contain;
+  border-radius: 50%;
+  filter: var(--icon-shadow);
+}
+
+.lcapps-app-icon {
+  width: 54px;
+  height: 54px;
+}
+
+.lcapps-app-icon--placeholder,
+.lcapps-bubble-icon--placeholder {
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--accent);
+  font-weight: 900;
+  filter: none;
+}
+
+.lcapps-app-icon--placeholder {
+  font-size: 1.25rem;
+}
+
+.lcapps-app-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lcapps-app-title {
+  min-width: 0;
+  color: var(--heading-text);
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.lcapps-app-package,
+.lcapps-app-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+}
+
+.lcapps-app-package {
+  color: var(--control-text);
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-weight: 700;
+}
+
+.lcapps-bubble {
+  --liquid-glass-x: 58%;
+  --liquid-glass-y: 20%;
+  position: fixed;
+  right: var(--lcapps-bubble-right, 10px);
+  top: 50%;
+  z-index: 1190;
+  display: grid;
+  place-items: center;
+  width: var(--lcapps-bubble-size, 56px);
+  height: var(--lcapps-bubble-size, 56px);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-bg) 84%, transparent);
+  color: var(--accent);
+  opacity: 1;
+  box-shadow: 0 18px 44px rgb(22 12 38 / 0.24);
+  transform: translate3d(0, -50%, 0);
+  cursor: pointer;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.lcapps-bubble[hidden] {
+  display: none;
+}
+
+.lcapps-bubble > span,
+.lcapps-bubble-icon {
+  position: relative;
+  z-index: 2;
+}
+
+.lcapps-bubble-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.lcapps-bubble-icon--placeholder {
+  font-size: 1rem;
+}
+
+.lcapps-bubble:hover {
+  border-color: var(--accent-border);
+  box-shadow: 0 20px 48px rgb(22 12 38 / 0.3);
+}
+
+.lcapps-bubble.is-bouncing {
+  pointer-events: none;
+  animation: lcapps-bubble-dock-bounce 1040ms both;
+}
+
+:root[data-rule-preview-material="liquid-glass"] .lcapps-bubble {
+  border-radius: 999px;
+}
+
+@keyframes lcapps-bubble-dock-bounce {
+  0% {
+    transform: translate3d(0, -50%, 0) scale(1);
+    animation-timing-function: cubic-bezier(0.2, 0, 0.38, 0.9);
+  }
+
+  9% {
+    transform: translate3d(0, calc(-50% + 3px), 0) scale(1.08, 0.92);
+    animation-timing-function: cubic-bezier(0.22, 0.95, 0.28, 1);
+  }
+
+  27% {
+    transform: translate3d(0, calc(-50% - var(--lcapps-bubble-bounce-y-1)), 0) scale(0.96, 1.06);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.64, 1);
+  }
+
+  43% {
+    transform: translate3d(0, -50%, 0) scale(1.1, 0.9);
+    animation-timing-function: cubic-bezier(0.22, 0.95, 0.28, 1);
+  }
+
+  59% {
+    transform: translate3d(0, calc(-50% - var(--lcapps-bubble-bounce-y-2)), 0) scale(0.98, 1.04);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.64, 1);
+  }
+
+  76% {
+    transform: translate3d(0, -50%, 0) scale(1.06, 0.94);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.22, 1);
+  }
+
+  88% {
+    transform: translate3d(0, calc(-50% - 4px), 0) scale(0.99, 1.01);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.64, 1);
+  }
+
+  100% {
+    transform: translate3d(0, -50%, 0) scale(1);
   }
 }
 
@@ -3155,6 +3627,19 @@ svg {
     border-left: 0;
     border-top: 1px solid var(--line);
   }
+
+  .lcapps-picker__header {
+    align-items: stretch;
+  }
+
+  .lcapps-picker__toolbar,
+  .lcapps-search-control {
+    width: 100%;
+  }
+
+  .lcapps-picker__grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr));
+  }
 }
 
 @media (max-width: 480px) {
@@ -3245,6 +3730,32 @@ svg {
     grid-template-columns: 1fr;
   }
 
+  .lcapps-picker {
+    --lcapps-picker-gap: 8px;
+  }
+
+  .lcapps-picker__panel {
+    gap: 12px;
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .lcapps-picker__header {
+    gap: 10px;
+  }
+
+  .lcapps-picker__title-block h2 {
+    font-size: 1.35rem;
+  }
+
+  .lcapps-picker__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lcapps-app-card {
+    padding: 11px;
+  }
+
 }
 
 @keyframes progress-slide {
@@ -3265,7 +3776,19 @@ svg {
 
 @media (prefers-reduced-motion: reduce) {
   .compare-spinner,
-  .history-loading-spinner {
+  .history-loading-spinner,
+  .lcapps-spinner {
+    animation: none;
+  }
+
+  .lcapps-picker,
+  .lcapps-picker__panel,
+  .lcapps-bubble,
+  .lcapps-app-card {
+    transition: none;
+  }
+
+  .lcapps-bubble.is-bouncing {
     animation: none;
   }
 }
