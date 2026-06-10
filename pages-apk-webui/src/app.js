@@ -4,7 +4,7 @@ import { clamp } from "./app/math.js";
 import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeImageSrc, stripDataUris } from "./app/format.js";
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
-import { getFileAnalyticsFields, getReportAnalyticsFields, initWebAnalytics, trackWebEvent } from "./app/analytics.js";
+import { getFileAnalyticsFields, getReportAnalyticsFields } from "./app/analytics-fields.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import { initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
@@ -16,6 +16,7 @@ const ARCHIVE_CHART_CENTER = 60;
 const ARCHIVE_CHART_RADIUS = 52;
 const ARCHIVE_CHART_LABEL_MIN_PERCENT = 6;
 const ARCHIVE_CHART_SEGMENT_LIFT = 5;
+const ANALYTICS_EVENT_QUEUE_LIMIT = 32;
 const ARCHIVE_CHART_COLORS = [
   "#38bdf8",
   "#22c55e",
@@ -83,6 +84,12 @@ let compareControllerPromise = null;
 let terminalSystemDetectorPromise = null;
 let appTitleColorMaskPromise = null;
 let reportSdkIconHydratorPromise = null;
+let analyticsModule = null;
+let analyticsModulePromise = null;
+let analyticsContextProvider = () => ({});
+let analyticsInitialized = false;
+let analyticsLoadScheduled = false;
+const pendingAnalyticsEvents = [];
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
@@ -127,6 +134,84 @@ const elements = {
 
 function t(key, variables = {}) {
   return translate(state.locale, key, variables);
+}
+
+function initWebAnalytics(contextProvider) {
+  if (typeof contextProvider === "function") {
+    analyticsContextProvider = contextProvider;
+  }
+  scheduleAnalyticsLoad();
+}
+
+function trackWebEvent(event, fields = {}) {
+  if (!event) {
+    return;
+  }
+
+  if (analyticsModule && analyticsInitialized) {
+    analyticsModule.trackWebEvent(event, fields);
+    return;
+  }
+
+  if (pendingAnalyticsEvents.length >= ANALYTICS_EVENT_QUEUE_LIMIT) {
+    pendingAnalyticsEvents.shift();
+  }
+  pendingAnalyticsEvents.push([event, fields]);
+  void loadWebAnalyticsModule().then(initializeAnalyticsModule).catch(() => {});
+}
+
+function scheduleAnalyticsLoad() {
+  if (analyticsModule || analyticsModulePromise || analyticsLoadScheduled) {
+    return;
+  }
+
+  analyticsLoadScheduled = true;
+  const load = () => {
+    analyticsLoadScheduled = false;
+    void loadWebAnalyticsModule().then(initializeAnalyticsModule).catch(() => {});
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(load, { timeout: 2000 });
+  } else {
+    window.setTimeout(load, 0);
+  }
+}
+
+function loadWebAnalyticsModule() {
+  if (analyticsModule) {
+    return Promise.resolve(analyticsModule);
+  }
+
+  if (!analyticsModulePromise) {
+    analyticsModulePromise = import("./app/analytics.js")
+      .then((module) => {
+        analyticsModule = module;
+        return module;
+      })
+      .catch((error) => {
+        analyticsModulePromise = null;
+        throw error;
+      });
+  }
+
+  return analyticsModulePromise;
+}
+
+function initializeAnalyticsModule(module) {
+  if (!analyticsInitialized) {
+    module.initWebAnalytics(analyticsContextProvider);
+    analyticsInitialized = true;
+  }
+
+  flushPendingAnalyticsEvents(module);
+}
+
+function flushPendingAnalyticsEvents(module) {
+  while (pendingAnalyticsEvents.length) {
+    const [event, fields] = pendingAnalyticsEvents.shift();
+    module.trackWebEvent(event, fields);
+  }
 }
 
 function createCompareController(CompareController) {
