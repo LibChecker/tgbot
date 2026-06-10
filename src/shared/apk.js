@@ -45,6 +45,28 @@ const COMPOSE_VERSION_ENTRY_CANDIDATES = [
   "META-INF/androidx.compose.foundation_foundation.version",
   "META-INF/androidx.compose.animation_animation.version",
 ];
+const DEX_ENTRY_PATTERN = /^classes\d*\.dex$/u;
+const QIHOO_NATIVE_LIBS = [
+  "libjiagu.so",
+  "libjiagu_a64.so",
+  "libjiagu_x86.so",
+  "libjiagu_x64.so",
+];
+const SECNEO_NATIVE_LIBS = [
+  "libDexHelper.so",
+  "libDexHelper-x86.so",
+  "libdexjni.so",
+];
+const KOTLIN_FEATURE_NEEDLE_BYTES = [
+  "Lkotlin/Metadata;",
+  "kotlin/Unit",
+  "kotlin/coroutines/",
+].map(asciiBytes);
+const COMPOSE_CLASS_PREFIX_BYTES = asciiBytes("Landroidx/compose/");
+const QIHOO_CLASS_PREFIX_BYTES = asciiBytes("Lcom/qihoo/util/");
+const TIANYU_CLASS_PREFIX_BYTES = asciiBytes("Lcom/tianyu/util/");
+const SECNEO_CLASS_PREFIX_BYTES = asciiBytes("Lcom/secneo/apkwrapper/");
+const FLUTTER_INJECTOR_CLASS_BYTES = asciiBytes("Lio/flutter/FlutterInjector;");
 const MAX_APP_ICON_BYTES = 128 * 1024;
 const ADAPTIVE_ICON_SIZE = 108;
 const ADAPTIVE_ICON_EXTRA_INSET_PERCENTAGE = 1 / 4;
@@ -90,12 +112,19 @@ async function readPackageContainerInfo(packageBytes, apkEntries) {
     throw new Error("Android 包中未找到可解析的 APK 文件");
   }
 
+  const nativeLibraries = collectContainedNativeLibraries(apkSources);
   const apkInfo = await readApkInfoFromZipSource(selectedSource, {
     scanDex: true,
+    nativeLibraries,
     iconSource: buildContainedIconSource(apkSources, selectedSource),
     iconResources: await readContainedIconResources(apkSources, selectedSource),
   });
-  const nativeLibraries = collectContainedNativeLibraries(apkSources);
+  const archiveApkEntries = [];
+  const archiveApkEntryDetails = [];
+  for (const apkEntry of apkEntries) {
+    archiveApkEntries.push(apkEntry.path);
+    archiveApkEntryDetails.push(buildArchiveApkEntryDetail(apkEntry, selectedSource.path));
+  }
 
   return {
     ...apkInfo,
@@ -104,8 +133,8 @@ async function readPackageContainerInfo(packageBytes, apkEntries) {
       type: "package-container",
       analyzedEntry: selectedSource.path,
       apkEntryCount: apkEntries.length,
-      apkEntries: apkEntries.map((item) => item.path),
-      apkEntryDetails: apkEntries.map((item) => buildArchiveApkEntryDetail(item, selectedSource.path)),
+      apkEntries: archiveApkEntries,
+      apkEntryDetails: archiveApkEntryDetails,
     },
   };
 }
@@ -147,12 +176,8 @@ async function extractContainedApkSource(packageBytes, apkEntry) {
 
 async function readContainedIconResources(apkSources, selectedSource) {
   const resources = [];
-  const orderedSources = [
-    selectedSource,
-    ...apkSources.filter((source) => source !== selectedSource),
-  ];
 
-  for (const source of orderedSources) {
+  for (const source of orderedApkSources(apkSources, selectedSource)) {
     const parsed = await readApkResources(source);
     if (parsed) {
       resources.push(parsed);
@@ -163,7 +188,12 @@ async function readContainedIconResources(apkSources, selectedSource) {
 }
 
 function combineResourceResolvers(resources) {
-  const resolvers = resources.filter(Boolean);
+  const resolvers = [];
+  for (const resource of resources) {
+    if (resource) {
+      resolvers.push(resource);
+    }
+  }
   if (resolvers.length <= 1) {
     return resolvers[0] || null;
   }
@@ -206,14 +236,13 @@ function combineResourceResolvers(resources) {
 }
 
 function buildContainedIconSource(apkSources, selectedSource) {
-  const sourcesByPath = new Map(apkSources.map((source) => [source.path, source]));
+  const sourcesByPath = new Map();
+  for (const source of apkSources) {
+    sourcesByPath.set(source.path, source);
+  }
   const zipEntries = new Map();
-  const orderedSources = [
-    selectedSource,
-    ...apkSources.filter((source) => source !== selectedSource),
-  ];
 
-  for (const source of orderedSources) {
+  for (const source of orderedApkSources(apkSources, selectedSource)) {
     for (const [path, entry] of source.zipEntries.entries()) {
       if (zipEntries.has(path)) {
         continue;
@@ -235,12 +264,31 @@ function buildContainedIconSource(apkSources, selectedSource) {
   };
 }
 
+function orderedApkSources(apkSources, selectedSource) {
+  const orderedSources = [selectedSource];
+  for (const source of apkSources) {
+    if (source !== selectedSource) {
+      orderedSources.push(source);
+    }
+  }
+  return orderedSources;
+}
+
 function selectContainedApkSource(apkSources) {
-  return [...apkSources]
-    .sort((left, right) => (
-      scoreContainedApkSource(left) - scoreContainedApkSource(right) ||
-      left.path.localeCompare(right.path)
-    ))[0] || null;
+  let selectedSource = null;
+  let selectedScore = Infinity;
+  for (const source of apkSources) {
+    const score = scoreContainedApkSource(source);
+    if (
+      !selectedSource ||
+      score < selectedScore ||
+      (score === selectedScore && source.path.localeCompare(selectedSource.path) < 0)
+    ) {
+      selectedSource = source;
+      selectedScore = score;
+    }
+  }
+  return selectedSource;
 }
 
 function scoreContainedApkSource(source) {
@@ -263,7 +311,7 @@ function scoreContainedApkSource(source) {
 
 function hasRootDexEntries(zipEntries) {
   for (const path of zipEntries.keys()) {
-    if (/^classes\d*\.dex$/u.test(path)) {
+    if (DEX_ENTRY_PATTERN.test(path)) {
       return true;
     }
   }
@@ -292,17 +340,20 @@ function isDirectApkZip(zipEntries) {
 }
 
 function collectContainedApkEntries(zipEntries) {
-  return [...zipEntries.entries()]
-    .filter(([path]) => isContainedApkPath(path))
-    .map(([path, entry]) => ({
-      path,
-      entry,
-      score: scoreContainedApkPath(path),
-    }))
-    .sort((left, right) => (
-      left.score - right.score ||
-      left.path.localeCompare(right.path)
-    ));
+  const entries = [];
+  for (const [path, entry] of zipEntries.entries()) {
+    if (isContainedApkPath(path)) {
+      entries.push({
+        path,
+        entry,
+        score: scoreContainedApkPath(path),
+      });
+    }
+  }
+  return entries.sort((left, right) => (
+    left.score - right.score ||
+    left.path.localeCompare(right.path)
+  ));
 }
 
 function isContainedApkPath(path) {
@@ -338,7 +389,24 @@ function scoreContainedApkPath(path) {
 
 function getContainedApkFileName(path) {
   const normalized = String(path || "").toLowerCase();
-  return normalized.split(/[\\/]/u).filter(Boolean).at(-1) || normalized;
+  let end = normalized.length - 1;
+  while (end >= 0 && isPathSeparator(normalized.charCodeAt(end))) {
+    end -= 1;
+  }
+  if (end < 0) {
+    return normalized;
+  }
+
+  let start = end;
+  while (start >= 0 && !isPathSeparator(normalized.charCodeAt(start))) {
+    start -= 1;
+  }
+
+  return normalized.slice(start + 1, end + 1) || normalized;
+}
+
+function isPathSeparator(charCode) {
+  return charCode === 47 || charCode === 92;
 }
 
 function isLikelySplitApkFileName(fileName) {
@@ -355,7 +423,11 @@ function isLikelySplitApkFileName(fileName) {
 export async function readApkInfoFromZipSource(source, options = {}) {
   const zipEntries = source.zipEntries;
   const nativeLibraries = collectNativeLibraries(zipEntries);
-  const buildFeatures = await detectBuildFeatures(source, options);
+  const nativeLibrariesForValidation = options.nativeLibraries || nativeLibraries;
+  const buildFeatures = await detectBuildFeatures(source, {
+    ...options,
+    nativeLibraries: nativeLibrariesForValidation,
+  });
   const signatures = await readApkSignatures(source, {
     maxSignatureEntryBytes: options.maxSignatureEntryBytes,
   });
@@ -417,6 +489,7 @@ async function detectBuildFeatures(source, options = {}) {
   const featureMarkers = shouldScanDex
     ? await scanDexFeatureMarkers(source, {
         skipComposeDexScan: composeMetadata.detected,
+        nativeValidationTargets: buildNativeValidationTargets(options.nativeLibraries),
       })
     : buildZipOnlyFeatureMarkers(zipEntries, composeMetadata.detected);
   const kotlinTooling = await readKotlinToolingMetadata(source);
@@ -458,51 +531,93 @@ async function readAppMetadata(source) {
 
 async function scanDexFeatureMarkers(source, options = {}) {
   const zipEntries = source.zipEntries;
+  const nativeValidationTargets = options.nativeValidationTargets || {};
   let kotlinDetected = hasKotlinModule(zipEntries);
   let composeDetected = Boolean(options.skipComposeDexScan);
   let qihooDetected = false;
   let secneoDetected = false;
   let flutterInjectorDetected = false;
 
-  const dexEntries = [...zipEntries.entries()]
-    .filter(([path]) => /^classes\d*\.dex$/u.test(path))
-    .sort(([left], [right]) => left.localeCompare(right));
-
-  const kotlinNeedles = [
-    "Lkotlin/Metadata;",
-    "kotlin/Unit",
-    "kotlin/coroutines/",
-  ];
+  const dexEntries = [];
+  for (const entry of zipEntries.entries()) {
+    if (DEX_ENTRY_PATTERN.test(entry[0])) {
+      dexEntries.push(entry);
+    }
+  }
+  dexEntries.sort(([left], [right]) => left.localeCompare(right));
 
   for (const [, entry] of dexEntries) {
-    if (kotlinDetected && composeDetected) {
+    if (
+      kotlinDetected &&
+      composeDetected &&
+      isNativeValidationScanComplete(nativeValidationTargets, {
+        qihooDetected,
+        secneoDetected,
+        flutterInjectorDetected,
+      })
+    ) {
       break;
     }
 
     const dexBytes = await extractSourceEntry(source, entry);
 
-    if (!kotlinDetected && containsAnyAscii(dexBytes, kotlinNeedles)) {
+    if (!kotlinDetected && dexStringDataContainsAnyByteSequence(dexBytes, KOTLIN_FEATURE_NEEDLE_BYTES)) {
       kotlinDetected = true;
     }
 
-    const definedClassDescriptors = parseDexDefinedClassDescriptorsSafe(dexBytes);
-    if (definedClassDescriptors.length > 0) {
-      if (!composeDetected && hasDescriptorWithPrefix(definedClassDescriptors, ["Landroidx/compose/"])) {
+    const shouldScanClassDescriptors =
+      !composeDetected ||
+      (nativeValidationTargets.qihoo && !qihooDetected) ||
+      (nativeValidationTargets.secneo && !secneoDetected) ||
+      (nativeValidationTargets.flutterInjector && !flutterInjectorDetected);
+    if (!shouldScanClassDescriptors) {
+      if (kotlinDetected && composeDetected) {
+        break;
+      }
+      continue;
+    }
+
+    visitDexDefinedClassDescriptorBytesSafe(dexBytes, (descriptorStart) => {
+      if (!composeDetected && byteSequenceMatchesDexStringAt(dexBytes, descriptorStart, COMPOSE_CLASS_PREFIX_BYTES)) {
         composeDetected = true;
       }
 
-      if (!qihooDetected && hasDescriptorWithPrefix(definedClassDescriptors, ["Lcom/qihoo/util/", "Lcom/tianyu/util/"])) {
+      if (
+        nativeValidationTargets.qihoo &&
+        !qihooDetected &&
+        (
+          byteSequenceMatchesDexStringAt(dexBytes, descriptorStart, QIHOO_CLASS_PREFIX_BYTES) ||
+          byteSequenceMatchesDexStringAt(dexBytes, descriptorStart, TIANYU_CLASS_PREFIX_BYTES)
+        )
+      ) {
         qihooDetected = true;
       }
 
-      if (!secneoDetected && hasDescriptorWithPrefix(definedClassDescriptors, ["Lcom/secneo/apkwrapper/"])) {
+      if (
+        nativeValidationTargets.secneo &&
+        !secneoDetected &&
+        byteSequenceMatchesDexStringAt(dexBytes, descriptorStart, SECNEO_CLASS_PREFIX_BYTES)
+      ) {
         secneoDetected = true;
       }
 
-      if (!flutterInjectorDetected && hasDescriptorWithPrefix(definedClassDescriptors, ["Lio/flutter/FlutterInjector;"])) {
+      if (
+        nativeValidationTargets.flutterInjector &&
+        !flutterInjectorDetected &&
+        byteSequenceMatchesDexStringAt(dexBytes, descriptorStart, FLUTTER_INJECTOR_CLASS_BYTES)
+      ) {
         flutterInjectorDetected = true;
       }
-    }
+
+      return !(
+        composeDetected &&
+        isNativeValidationScanComplete(nativeValidationTargets, {
+          qihooDetected,
+          secneoDetected,
+          flutterInjectorDetected,
+        })
+      );
+    });
   }
 
   return {
@@ -514,6 +629,39 @@ async function scanDexFeatureMarkers(source, options = {}) {
       flutterInjectorDetected,
     },
   };
+}
+
+function buildNativeValidationTargets(nativeLibraries = []) {
+  const libraries = Array.isArray(nativeLibraries) ? nativeLibraries : [];
+  const libraryNames = new Set();
+  for (const library of libraries) {
+    if (library.name) {
+      libraryNames.add(library.name);
+    }
+  }
+  return {
+    qihoo: hasAnyLibraryName(libraryNames, QIHOO_NATIVE_LIBS),
+    secneo: hasAnyLibraryName(libraryNames, SECNEO_NATIVE_LIBS),
+    flutterInjector: libraryNames.has("libapp.so") && !libraryNames.has("libflutter.so"),
+  };
+}
+
+function hasAnyLibraryName(libraryNames, candidates) {
+  for (const name of candidates) {
+    if (libraryNames.has(name)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isNativeValidationScanComplete(targets, detected) {
+  return (
+    (!targets.qihoo || detected.qihooDetected) &&
+    (!targets.secneo || detected.secneoDetected) &&
+    (!targets.flutterInjector || detected.flutterInjectorDetected)
+  );
 }
 
 function buildZipOnlyFeatureMarkers(zipEntries, composeDetected) {
@@ -829,7 +977,12 @@ function parseIconXmlReferencedResourceIds(xmlBytes) {
     offset += chunkSize;
   }
 
-  return uniqueResourceIds(references.sort((left, right) => left.priority - right.priority).map((item) => item.resourceId));
+  references.sort((left, right) => left.priority - right.priority);
+  const resourceIds = [];
+  for (const item of references) {
+    resourceIds.push(item.resourceId);
+  }
+  return uniqueResourceIds(resourceIds);
 }
 
 function collectIconElementReferenceItems(element) {
@@ -867,7 +1020,16 @@ function parseTextXmlReferencedResourceIds(text) {
 }
 
 function uniqueResourceIds(values) {
-  return [...new Set(values.filter((value) => value != null))];
+  const uniqueValues = [];
+  const seen = new Set();
+  for (const value of values) {
+    if (value == null || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    uniqueValues.push(value);
+  }
+  return uniqueValues;
 }
 
 async function renderAdaptiveIcon(xmlBytes, source, resources, candidate, seen) {
@@ -1159,7 +1321,11 @@ async function buildVectorDrawableSvgLayer(xmlBytes, source, resources, candidat
   const defs = [];
   const idPrefix = buildSvgIdPrefix(candidate?.path || "vector");
   const paths = [];
-  for (const element of elements.filter((item) => item.name === "path")) {
+  for (const element of elements) {
+    if (element.name !== "path") {
+      continue;
+    }
+
     const path = await buildSvgPathFromVectorElement(element, source, resources, defs, idPrefix);
     if (path) {
       paths.push(path);
@@ -1503,13 +1669,20 @@ function buildSvgGradientPaint(elements, defs, idPrefix) {
 }
 
 function getSvgGradientStops(elements, gradientElement) {
-  const itemStops = elements
-    .filter((element) => element.name === "item")
-    .map((element) => ({
+  const itemStops = [];
+  for (const element of elements) {
+    if (element.name !== "item") {
+      continue;
+    }
+
+    const stop = {
       color: resolveInlineColorAttribute(element.attributes.get("color")),
       offset: getNumericXmlAttribute(element, "offset"),
-    }))
-    .filter((stop) => stop.color && stop.offset != null);
+    };
+    if (stop.color && stop.offset != null) {
+      itemStops.push(stop);
+    }
+  }
 
   if (itemStops.length > 0) {
     return itemStops;
@@ -1559,9 +1732,11 @@ function buildSvgRadialGradient(id, gradientElement, stops) {
 }
 
 function renderSvgGradientStops(stops) {
-  return stops
-    .map((stop) => `<stop offset="${formatSvgNumber(stop.offset)}"${formatSvgStopColor(stop.color)}/>`)
-    .join("");
+  let html = "";
+  for (const stop of stops) {
+    html += `<stop offset="${formatSvgNumber(stop.offset)}"${formatSvgStopColor(stop.color)}/>`;
+  }
+  return html;
 }
 
 function formatSvgStopColor(color) {
@@ -1589,7 +1764,13 @@ function resolveInlineColorAttribute(attribute) {
 }
 
 function buildVectorElementTransform(element) {
-  const transforms = (element.groups || []).map(buildVectorGroupTransform).filter(Boolean);
+  const transforms = [];
+  for (const group of element.groups || []) {
+    const transform = buildVectorGroupTransform(group);
+    if (transform) {
+      transforms.push(transform);
+    }
+  }
   return transforms.join(" ");
 }
 
@@ -1909,31 +2090,25 @@ function hasKotlinModule(zipEntries) {
   return false;
 }
 
-function containsAnyAscii(bytes, needles) {
-  return needles.some((needle) => containsAscii(bytes, needle));
-}
-
-function containsAscii(bytes, needle) {
-  const encodedNeedle = asciiBytes(needle);
-  if (encodedNeedle.length === 0 || encodedNeedle.length > bytes.length) {
+function dexStringDataContainsAnyByteSequence(bytes, needles) {
+  if (!bytes?.length || !needles?.length) {
     return false;
   }
 
-  const lastStart = bytes.length - encodedNeedle.length;
-  for (let start = 0; start <= lastStart; start += 1) {
-    if (bytes[start] !== encodedNeedle[0]) {
-      continue;
+  const stringIdsSize = readUint32(bytes, 0x38);
+  const stringIdsOffset = readUint32(bytes, 0x3c);
+  if (!stringIdsSize || !stringIdsOffset) {
+    return false;
+  }
+
+  for (let index = 0; index < stringIdsSize; index += 1) {
+    const stringIdOffset = stringIdsOffset + index * 4;
+    if (stringIdOffset + 4 > bytes.length) {
+      break;
     }
 
-    let matched = true;
-    for (let index = 1; index < encodedNeedle.length; index += 1) {
-      if (bytes[start + index] !== encodedNeedle[index]) {
-        matched = false;
-        break;
-      }
-    }
-
-    if (matched) {
+    const stringDataOffset = readUint32(bytes, stringIdOffset);
+    if (dexStringDataContainsAnyNeedle(bytes, stringDataOffset, needles)) {
       return true;
     }
   }
@@ -1941,92 +2116,114 @@ function containsAscii(bytes, needle) {
   return false;
 }
 
-function dexDefinesClassWithPrefix(bytes, prefixes) {
-  try {
-    return hasDescriptorWithPrefix(parseDexDefinedClassDescriptors(bytes), prefixes);
-  } catch {
+function dexStringDataContainsAnyNeedle(bytes, stringDataOffset, needles) {
+  if (!stringDataOffset || stringDataOffset >= bytes.length) {
     return false;
   }
-}
 
-function parseDexDefinedClassDescriptorsSafe(bytes) {
-  try {
-    return parseDexDefinedClassDescriptors(bytes);
-  } catch {
-    return [];
-  }
-}
-
-function parseDexDefinedClassDescriptors(bytes) {
-  const strings = parseDexStrings(bytes);
-  if (strings.length === 0) {
-    return [];
+  const lengthInfo = readUleb128(bytes, stringDataOffset);
+  let start = lengthInfo.nextOffset;
+  while (bytes[start] === 91) {
+    start += 1;
   }
 
-  const typeDescriptors = parseDexTypeDescriptors(bytes, strings);
-  const classDefsSize = readUint32(bytes, 0x60);
-  const classDefsOffset = readUint32(bytes, 0x64);
-  const descriptors = [];
-
-  for (let index = 0; index < classDefsSize; index += 1) {
-    const classDefOffset = classDefsOffset + index * 32;
-    const classIndex = readUint32(bytes, classDefOffset);
-    const descriptor = typeDescriptors[classIndex];
-    if (descriptor) {
-      descriptors.push(descriptor);
+  for (const needle of needles) {
+    if (byteSequenceMatchesDexStringAt(bytes, start, needle)) {
+      return true;
     }
   }
 
-  return descriptors;
+  if (bytes[start] !== 76) {
+    return false;
+  }
+
+  const descriptorBodyStart = start + 1;
+  for (const needle of needles) {
+    if (byteSequenceMatchesDexStringAt(bytes, descriptorBodyStart, needle)) {
+      return true;
+    }
+  }
+  return false;
 }
 
-function hasDescriptorWithPrefix(descriptors, prefixes) {
-  return descriptors.some((descriptor) => prefixes.some((prefix) => descriptor.startsWith(prefix)));
+function byteSequenceMatchesDexStringAt(bytes, start, needle) {
+  if (!needle.length || start < 0 || start + needle.length > bytes.length) {
+    return false;
+  }
+
+  for (let index = 0; index < needle.length; index += 1) {
+    const value = bytes[start + index];
+    if (value === 0 || value !== needle[index]) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
-function parseDexStrings(bytes) {
-  const size = readUint32(bytes, 0x38);
-  const offset = readUint32(bytes, 0x3c);
-  if (!size || !offset) {
-    return [];
+function visitDexDefinedClassDescriptorBytesSafe(bytes, visit) {
+  try {
+    visitDexDefinedClassDescriptorBytes(bytes, visit);
+  } catch {
+    // Ignore malformed or unsupported dex files; feature detection is best-effort.
   }
-
-  const strings = new Array(size);
-  for (let index = 0; index < size; index += 1) {
-    const stringDataOffset = readUint32(bytes, offset + index * 4);
-    strings[index] = readDexString(bytes, stringDataOffset);
-  }
-
-  return strings;
 }
 
-function parseDexTypeDescriptors(bytes, strings) {
-  const size = readUint32(bytes, 0x40);
-  const offset = readUint32(bytes, 0x44);
-  if (!size || !offset) {
-    return [];
+function visitDexDefinedClassDescriptorBytes(bytes, visit) {
+  const stringIdsSize = readUint32(bytes, 0x38);
+  const stringIdsOffset = readUint32(bytes, 0x3c);
+  const typeIdsSize = readUint32(bytes, 0x40);
+  const typeIdsOffset = readUint32(bytes, 0x44);
+  const classDefsSize = readUint32(bytes, 0x60);
+  const classDefsOffset = readUint32(bytes, 0x64);
+  if (
+    !stringIdsSize ||
+    !stringIdsOffset ||
+    !typeIdsSize ||
+    !typeIdsOffset ||
+    !classDefsSize ||
+    !classDefsOffset
+  ) {
+    return;
   }
 
-  const descriptors = new Array(size);
-  for (let index = 0; index < size; index += 1) {
-    descriptors[index] = strings[readUint32(bytes, offset + index * 4)] || null;
+  for (let index = 0; index < classDefsSize; index += 1) {
+    const classDefOffset = classDefsOffset + index * 32;
+    if (classDefOffset + 4 > bytes.length) {
+      break;
+    }
+
+    const classIndex = readUint32(bytes, classDefOffset);
+    if (classIndex >= typeIdsSize) {
+      continue;
+    }
+
+    const typeIdOffset = typeIdsOffset + classIndex * 4;
+    if (typeIdOffset + 4 > bytes.length) {
+      continue;
+    }
+
+    const stringIndex = readUint32(bytes, typeIdOffset);
+    if (stringIndex >= stringIdsSize) {
+      continue;
+    }
+
+    const stringIdOffset = stringIdsOffset + stringIndex * 4;
+    if (stringIdOffset + 4 > bytes.length) {
+      continue;
+    }
+
+    const stringDataOffset = readUint32(bytes, stringIdOffset);
+    if (!stringDataOffset || stringDataOffset >= bytes.length) {
+      continue;
+    }
+
+    const descriptorStart = readUleb128(bytes, stringDataOffset).nextOffset;
+    const shouldContinue = visit(descriptorStart);
+    if (shouldContinue === false) {
+      break;
+    }
   }
-
-  return descriptors;
-}
-
-function readDexString(bytes, offset) {
-  if (!offset) {
-    return "";
-  }
-
-  const lengthInfo = readUleb128(bytes, offset);
-  let end = lengthInfo.nextOffset;
-  while (end < bytes.length && bytes[end] !== 0) {
-    end += 1;
-  }
-
-  return decodeUtf8(bytes.subarray(lengthInfo.nextOffset, end));
 }
 
 function readUleb128(bytes, offset) {
@@ -2679,7 +2876,7 @@ function parseResourcesTable(resourcesBuffer) {
     throw new Error("resources.arsc 不是有效的资源表");
   }
 
-  const globalStrings = [];
+  let globalStrings = null;
   const packages = new Map();
   const tableSize = readUint32(bytes, 4);
 
@@ -2692,25 +2889,41 @@ function parseResourcesTable(resourcesBuffer) {
       throw new Error("resources.arsc chunk 尺寸无效");
     }
 
-    if (chunkType === RES_STRING_POOL_TYPE && globalStrings.length === 0) {
-      globalStrings.push(...parseStringPool(bytes, offset));
+    if (chunkType === RES_STRING_POOL_TYPE && !globalStrings) {
+      globalStrings = parseLazyStringPool(bytes, offset);
     } else if (chunkType === RES_TABLE_PACKAGE_TYPE) {
-      const packageInfo = parseResourcePackage(bytes, offset, globalStrings);
+      const packageInfo = parseResourcePackage(bytes, offset, globalStrings || []);
       packages.set(packageInfo.id, packageInfo);
     }
 
     offset += chunkSize;
   }
 
+  const stringCache = new Map();
+  const filesCache = new Map();
+  const colorCache = new Map();
+
   return {
     resolveString(resourceId) {
-      return resolveResourceString(resourceId >>> 0, packages, bytes, new Set());
+      const normalizedId = resourceId >>> 0;
+      if (!stringCache.has(normalizedId)) {
+        stringCache.set(normalizedId, resolveResourceString(normalizedId, packages, bytes, new Set()));
+      }
+      return stringCache.get(normalizedId);
     },
     resolveFiles(resourceId) {
-      return resolveResourceFiles(resourceId >>> 0, packages, bytes, new Set());
+      const normalizedId = resourceId >>> 0;
+      if (!filesCache.has(normalizedId)) {
+        filesCache.set(normalizedId, resolveResourceFiles(normalizedId, packages, bytes, new Set()));
+      }
+      return filesCache.get(normalizedId);
     },
     resolveColor(resourceId) {
-      return resolveResourceColor(resourceId >>> 0, packages, bytes, new Set());
+      const normalizedId = resourceId >>> 0;
+      if (!colorCache.has(normalizedId)) {
+        colorCache.set(normalizedId, resolveResourceColor(normalizedId, packages, bytes, new Set()));
+      }
+      return colorCache.get(normalizedId);
     },
   };
 }
@@ -2723,8 +2936,8 @@ function parseResourcePackage(bytes, offset, globalStrings) {
   const keyStringsOffset = readUint32(bytes, offset + 276);
   const typeIdOffset = headerSize >= 288 ? readUint32(bytes, offset + 284) : 0;
 
-  const typeStrings = typeStringsOffset ? parseStringPool(bytes, offset + typeStringsOffset) : [];
-  const keyStrings = keyStringsOffset ? parseStringPool(bytes, offset + keyStringsOffset) : [];
+  const typeStrings = typeStringsOffset ? parseLazyStringPool(bytes, offset + typeStringsOffset) : [];
+  const keyStrings = keyStringsOffset ? parseLazyStringPool(bytes, offset + keyStringsOffset) : [];
   const types = new Map();
 
   let cursor = offset + headerSize;
@@ -2740,7 +2953,7 @@ function parseResourcePackage(bytes, offset, globalStrings) {
     if (chunkType === RES_TABLE_TYPE_TYPE) {
       const typeChunk = parseTypeChunk(bytes, cursor);
       const typeId = typeChunk.id + typeIdOffset;
-      typeChunk.typeName = typeStrings[typeChunk.id - 1] || null;
+      typeChunk.typeName = getString(typeStrings, typeChunk.id - 1);
       const bucket = types.get(typeId) || [];
       bucket.push(typeChunk);
       types.set(typeId, bucket);
@@ -2807,7 +3020,7 @@ function resolveResourceString(resourceId, packages, bytes, seen) {
     return null;
   }
 
-  const typeName = typeChunks[0]?.typeName || packageInfo.typeStrings[typeId - 1];
+  const typeName = typeChunks[0]?.typeName || getString(packageInfo.typeStrings, typeId - 1);
   if (typeName && typeName !== "string") {
     return null;
   }
@@ -2824,7 +3037,7 @@ function resolveResourceString(resourceId, packages, bytes, seen) {
     }
 
     if (value.dataType === TYPE_STRING) {
-      return packageInfo.globalStrings[value.data] || null;
+      return getString(packageInfo.globalStrings, value.data);
     }
 
     if (value.dataType === TYPE_REFERENCE || value.dataType === TYPE_DYNAMIC_REFERENCE) {
@@ -2864,7 +3077,7 @@ function resolveResourceFiles(resourceId, packages, bytes, seen) {
     return [];
   }
 
-  const typeName = typeChunks[0]?.typeName || packageInfo.typeStrings[typeId - 1];
+  const typeName = typeChunks[0]?.typeName || getString(packageInfo.typeStrings, typeId - 1);
   if (typeName && typeName !== "drawable" && typeName !== "mipmap") {
     return [];
   }
@@ -2882,7 +3095,7 @@ function resolveResourceFiles(resourceId, packages, bytes, seen) {
     }
 
     if (value.dataType === TYPE_STRING) {
-      const path = normalizeText(packageInfo.globalStrings[value.data]);
+      const path = normalizeText(getString(packageInfo.globalStrings, value.data));
       if (path) {
         files.push({
           path,
@@ -2936,7 +3149,7 @@ function resolveResourceColor(resourceId, packages, bytes, seen) {
     }
 
     if (value.dataType === TYPE_STRING) {
-      return normalizeColorText(packageInfo.globalStrings[value.data]);
+      return normalizeColorText(getString(packageInfo.globalStrings, value.data));
     }
 
     if (value.dataType === TYPE_REFERENCE || value.dataType === TYPE_DYNAMIC_REFERENCE) {
@@ -3142,6 +3355,38 @@ function parseStringPool(bytes, offset) {
   return strings;
 }
 
+function parseLazyStringPool(bytes, offset) {
+  const stringCount = readUint32(bytes, offset + 8);
+  const flags = readUint32(bytes, offset + 16);
+  const stringsStart = readUint32(bytes, offset + 20);
+  const isUtf8 = (flags & STRING_POOL_UTF8_FLAG) !== 0;
+  const headerSize = readUint16(bytes, offset + 2);
+  const indicesOffset = offset + headerSize;
+  const stringsBase = offset + stringsStart;
+  const cache = new Array(stringCount);
+
+  return {
+    length: stringCount,
+    get(index) {
+      if (index < 0 || index >= stringCount) {
+        return null;
+      }
+
+      const cached = cache[index];
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      const stringOffset = readUint32(bytes, indicesOffset + index * 4);
+      const value = isUtf8
+        ? readUtf8String(bytes, stringsBase + stringOffset)
+        : readUtf16String(bytes, stringsBase + stringOffset);
+      cache[index] = value;
+      return value;
+    },
+  };
+}
+
 function readUtf8String(bytes, offset) {
   const utf16Length = readLength8(bytes, offset);
   const utf8Length = readLength8(bytes, utf16Length.nextOffset);
@@ -3262,6 +3507,10 @@ function isDefaultResourceConfig(configBytes) {
 function getString(strings, index) {
   if (index === AXML_NO_INDEX || index < 0 || index >= strings.length) {
     return null;
+  }
+
+  if (typeof strings.get === "function") {
+    return strings.get(index);
   }
 
   return strings[index];
