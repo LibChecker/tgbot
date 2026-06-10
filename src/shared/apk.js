@@ -78,6 +78,7 @@ const ZIP_BUNDLE_METADATA_PREFIX_BYTES = asciiBytes("BUNDLE-METADATA/");
 const ZIP_KOTLIN_TOOLING_METADATA_BYTES = asciiBytes("kotlin-tooling-metadata.json");
 const ZIP_APK_SUFFIX_BYTES = asciiBytes(".apk");
 const ZIP_MACOSX_PREFIX_BYTES = asciiBytes("__macosx/");
+const CONTAINED_APK_EXTRACT_CONCURRENCY = 2;
 const MAX_APP_ICON_BYTES = 128 * 1024;
 const ADAPTIVE_ICON_SIZE = 108;
 const ADAPTIVE_ICON_EXTRA_INSET_PERCENTAGE = 1 / 4;
@@ -163,15 +164,37 @@ function buildArchiveApkEntryDetail(apkEntry, analyzedPath) {
 }
 
 async function extractContainedApkSources(packageBytes, apkEntries) {
-  const sources = [];
-  for (const apkEntry of apkEntries) {
-    try {
-      sources.push(await extractContainedApkSource(packageBytes, apkEntry));
-    } catch {
-      // Keep parsing other entries in APKS/APKM/XAPK containers when one split is unusable.
+  const sources = new Array(apkEntries.length);
+  let nextIndex = 0;
+
+  async function extractNextSource() {
+    while (nextIndex < apkEntries.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const apkEntry = apkEntries[index];
+
+      try {
+        sources[index] = await extractContainedApkSource(packageBytes, apkEntry);
+      } catch {
+        // Keep parsing other entries in APKS/APKM/XAPK containers when one split is unusable.
+      }
     }
   }
-  return sources;
+
+  const workerCount = Math.min(CONTAINED_APK_EXTRACT_CONCURRENCY, apkEntries.length);
+  const workers = [];
+  for (let index = 0; index < workerCount; index += 1) {
+    workers.push(extractNextSource());
+  }
+  await Promise.all(workers);
+
+  const extractedSources = [];
+  for (const source of sources) {
+    if (source) {
+      extractedSources.push(source);
+    }
+  }
+  return extractedSources;
 }
 
 async function extractContainedApkSource(packageBytes, apkEntry) {
