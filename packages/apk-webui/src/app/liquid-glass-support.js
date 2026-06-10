@@ -1,4 +1,5 @@
 const ANDROID_CHROMIUM_SVG_BACKDROP_FILTER_MAX_BROKEN_MAJOR = 115;
+const APPLE_MOBILE_SVG_BACKDROP_FILTER_FALLBACK_REASON = "apple-mobile-svg-backdrop-filter";
 const ANDROID_BROWSER_SHELLS_WITH_BROKEN_SVG_BACKDROP_FILTER = [
   /\bHeyTapBrowser\//iu,
   /\bOplusBrowser\//iu,
@@ -12,6 +13,11 @@ export function getLiquidGlassBrowserConfigFallbackReason(navigatorValue = globa
     getNavigatorText(navigatorValue?.platform),
     getNavigatorText(navigatorValue?.userAgentData?.platform),
   ].join(" ");
+  const maxTouchPoints = Number(navigatorValue?.maxTouchPoints || 0);
+
+  if (isAppleMobileBrowserConfig(userAgent, platform, maxTouchPoints)) {
+    return APPLE_MOBILE_SVG_BACKDROP_FILTER_FALLBACK_REASON;
+  }
 
   if (!isAndroidBrowserConfig(userAgent, platform)) {
     return "";
@@ -57,6 +63,13 @@ export function getChromiumMajorVersion(userAgent, navigatorValue = null) {
 
 function isAndroidBrowserConfig(userAgent, platform) {
   return /\bAndroid\b/iu.test(`${userAgent} ${platform}`);
+}
+
+function isAppleMobileBrowserConfig(userAgent, platform, maxTouchPoints) {
+  return (
+    /\b(?:iPhone|iPad|iPod)\b/iu.test(userAgent) ||
+    (/\bMacIntel\b/u.test(platform) && maxTouchPoints > 1)
+  );
 }
 
 function getNavigatorText(value) {
