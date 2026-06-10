@@ -5,6 +5,7 @@ import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeIm
 import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/report-model.js";
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
 import { getFileAnalyticsFields, getReportAnalyticsFields } from "./app/analytics-fields.js";
+import { applyFilePickerAcceptCompatibility } from "./app/file-picker-support.js";
 import { getLiquidGlassBrowserConfigFallbackReason } from "./app/liquid-glass-support.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
 import {
@@ -1008,6 +1009,7 @@ function resolveInitialLocale() {
 
 applyThemeChoice(state.themeChoice, { persist: false });
 initPowerModeAdaptation();
+applyFilePickerAcceptCompatibility([elements.fileInput, ...elements.compareFileInputs]);
 renderLanguageOptions();
 applyLocale();
 renderBrandTitle(elements.brandTitle, t("title"));
