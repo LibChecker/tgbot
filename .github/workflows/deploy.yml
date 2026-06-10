@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run deploy preflight
+      - name: Run check, build, and performance budgets
         run: npm run deploy:preflight -- --target="${DEPLOY_TARGET}"
 
   deploy_preview:

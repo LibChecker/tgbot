@@ -41,7 +41,7 @@ if (!existsSync(wranglerBin)) {
 if (!options["skip-preflight"]) {
   await run("npm", ["run", "check"]);
   await run("npm", ["run", "pages:build"]);
-  await run("npm", ["run", "size:check"]);
+  await run("npm", ["run", "perf:check"]);
   await runWorkerDryRun(target.workerEnv);
 }
 

@@ -10,7 +10,8 @@
     "deploy": "npm run deploy:production",
     "deploy:preview": "npm run build && wrangler pages deploy dist --project-name=tgbot-apk-webui --branch=preview",
     "deploy:production": "npm run build && wrangler pages deploy dist --project-name=tgbot-apk-webui --branch=main",
-    "size:check": "node ../../scripts/check-size-budgets.mjs"
+    "perf:check": "node ../../scripts/check-size-budgets.mjs",
+    "size:check": "npm run perf:check"
   },
   "devDependencies": {
     "vite": "^8.0.16",

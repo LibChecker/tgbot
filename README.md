@@ -110,7 +110,15 @@ npm run pages:deploy:preview
 npm run pages:deploy:production
 ```
 
-The root Cloudflare deploy commands are preferred because they always run `check`, WebUI build, WebUI size budgets, and Worker dry-run size budgets before deployment. Pages preview deploys use the current branch name, while production deploys use the `main` branch.
+The root Cloudflare deploy commands are preferred because they always run `check`, WebUI build, WebUI performance budgets, and Worker dry-run size budgets before deployment. Pages preview deploys use the current branch name, while production deploys use the `main` branch.
+
+The CI performance budget is intentionally lightweight and does not need a browser. It checks the built WebUI `dist/` output for:
+
+- initial JS gzip size
+- first-screen unique request count
+- analyzer worker entry size and gzip size
+- LibChecker rules/icons staying lazy-loaded from the first screen
+- LibChecker rules-core, rules-detail, and SDK icons having exactly one materialized large chunk each
 
 ## Scripts
 
@@ -118,7 +126,7 @@ The root Cloudflare deploy commands are preferred because they always run `check
 | --- | --- | --- |
 | `npm run dev` | tgbot | Start the Worker locally. |
 | `npm run deploy` | Cloudflare | Alias for production deploy. |
-| `npm run deploy:preflight` | Cloudflare | Run checks, WebUI build, WebUI size budgets, and Worker dry-run budget. |
+| `npm run deploy:preflight` | Cloudflare | Run checks, WebUI build, WebUI performance budgets, and Worker dry-run budget. |
 | `npm run deploy:preview` | Cloudflare | Deploy preview Worker and Pages. |
 | `npm run deploy:production` | Cloudflare | Deploy production Worker and Pages. |
 | `npm run deploy:setup` | Cloudflare | Deploy production, set webhook, and sync bot commands. |
@@ -136,7 +144,8 @@ The root Cloudflare deploy commands are preferred because they always run `check
 | `npm run pages:deploy` | Web UI | Alias for production Pages deploy. |
 | `npm run pages:deploy:preview` | Web UI | Deploy a Pages preview branch. |
 | `npm run pages:deploy:production` | Web UI | Deploy the production Pages branch. |
-| `npm run size:check` | Web UI | Validate WebUI dist size budgets. |
+| `npm run perf:check` | Web UI | Validate WebUI dist performance budgets for CI. |
+| `npm run size:check` | Web UI | Alias for `perf:check`. |
 | `npm run check` | all | Validate shared modules, Worker, scripts, generated files, and Web UI. |
 
 The repository root is the npm workspace root. Root scripts are compatibility shims that delegate to `@tgbot/bot-worker`, `@tgbot/apk-webui`, and `@tgbot/shared`.
