@@ -131,6 +131,9 @@ const elements = {
   compareDropZones: [...document.querySelectorAll("[data-compare-drop]")],
   compareHistorySelects: [...document.querySelectorAll("[data-compare-history]")],
   compareClearButtons: [...document.querySelectorAll("[data-compare-clear]")],
+  i18nNodes: [...document.querySelectorAll("[data-i18n]")],
+  titleI18nNodes: [...document.querySelectorAll("[data-title-i18n]")],
+  ariaI18nNodes: [...document.querySelectorAll("[data-aria-i18n]")],
 };
 
 function t(key, variables = {}) {
@@ -1994,17 +1997,17 @@ function applyLocale() {
   document.documentElement.lang = state.locale;
   document.title = t("title");
 
-  document.querySelectorAll("[data-i18n]").forEach((node) => {
+  elements.i18nNodes.forEach((node) => {
     node.textContent = t(node.dataset.i18n);
   });
 
-  document.querySelectorAll("[data-title-i18n]").forEach((node) => {
+  elements.titleI18nNodes.forEach((node) => {
     const value = t(node.dataset.titleI18n);
     node.title = value;
     node.setAttribute("aria-label", value);
   });
 
-  document.querySelectorAll("[data-aria-i18n]").forEach((node) => {
+  elements.ariaI18nNodes.forEach((node) => {
     node.setAttribute("aria-label", t(node.dataset.ariaI18n));
   });
 }
