@@ -57,11 +57,9 @@ const SECNEO_NATIVE_LIBS = [
   "libDexHelper-x86.so",
   "libdexjni.so",
 ];
-const KOTLIN_FEATURE_NEEDLE_BYTES = [
-  "Lkotlin/Metadata;",
-  "kotlin/Unit",
-  "kotlin/coroutines/",
-].map(asciiBytes);
+const KOTLIN_METADATA_CLASS_BYTES = asciiBytes("Lkotlin/Metadata;");
+const KOTLIN_UNIT_BYTES = asciiBytes("kotlin/Unit");
+const KOTLIN_COROUTINES_BYTES = asciiBytes("kotlin/coroutines/");
 const COMPOSE_CLASS_PREFIX_BYTES = asciiBytes("Landroidx/compose/");
 const QIHOO_CLASS_PREFIX_BYTES = asciiBytes("Lcom/qihoo/util/");
 const TIANYU_CLASS_PREFIX_BYTES = asciiBytes("Lcom/tianyu/util/");
@@ -595,7 +593,7 @@ async function scanDexFeatureMarkers(source, options = {}) {
 
     const dexBytes = await extractSourceEntry(source, entry);
 
-    if (!kotlinDetected && dexStringDataContainsAnyByteSequence(dexBytes, KOTLIN_FEATURE_NEEDLE_BYTES)) {
+    if (!kotlinDetected && dexStringDataContainsKotlinMarker(dexBytes)) {
       kotlinDetected = true;
     }
 
@@ -2124,8 +2122,8 @@ function hasKotlinModule(zipEntries) {
   return false;
 }
 
-function dexStringDataContainsAnyByteSequence(bytes, needles) {
-  if (!bytes?.length || !needles?.length) {
+function dexStringDataContainsKotlinMarker(bytes) {
+  if (!bytes?.length) {
     return false;
   }
 
@@ -2142,7 +2140,7 @@ function dexStringDataContainsAnyByteSequence(bytes, needles) {
     }
 
     const stringDataOffset = readUint32(bytes, stringIdOffset);
-    if (dexStringDataContainsAnyNeedle(bytes, stringDataOffset, needles)) {
+    if (dexStringDataContainsKotlinMarkerAt(bytes, stringDataOffset)) {
       return true;
     }
   }
@@ -2150,7 +2148,7 @@ function dexStringDataContainsAnyByteSequence(bytes, needles) {
   return false;
 }
 
-function dexStringDataContainsAnyNeedle(bytes, stringDataOffset, needles) {
+function dexStringDataContainsKotlinMarkerAt(bytes, stringDataOffset) {
   if (!stringDataOffset || stringDataOffset >= bytes.length) {
     return false;
   }
@@ -2161,23 +2159,23 @@ function dexStringDataContainsAnyNeedle(bytes, stringDataOffset, needles) {
     start += 1;
   }
 
-  for (const needle of needles) {
-    if (byteSequenceMatchesDexStringAt(bytes, start, needle)) {
-      return true;
-    }
+  const firstByte = bytes[start];
+  if (firstByte === 107) {
+    return (
+      byteSequenceMatchesDexStringAt(bytes, start, KOTLIN_UNIT_BYTES) ||
+      byteSequenceMatchesDexStringAt(bytes, start, KOTLIN_COROUTINES_BYTES)
+    );
   }
 
-  if (bytes[start] !== 76) {
+  if (firstByte !== 76) {
     return false;
   }
 
-  const descriptorBodyStart = start + 1;
-  for (const needle of needles) {
-    if (byteSequenceMatchesDexStringAt(bytes, descriptorBodyStart, needle)) {
-      return true;
-    }
-  }
-  return false;
+  return (
+    byteSequenceMatchesDexStringAt(bytes, start, KOTLIN_METADATA_CLASS_BYTES) ||
+    byteSequenceMatchesDexStringAt(bytes, start + 1, KOTLIN_UNIT_BYTES) ||
+    byteSequenceMatchesDexStringAt(bytes, start + 1, KOTLIN_COROUTINES_BYTES)
+  );
 }
 
 function byteSequenceMatchesDexStringAt(bytes, start, needle) {
@@ -2534,13 +2532,13 @@ async function extractZipEntry(zipBytes, entry) {
   }
 
   if (entry.compressionMethod === ZIP_COMPRESSION_DEFLATE) {
-    return inflateRaw(compressedData);
+    return inflateRaw(compressedData, entry.uncompressedSize);
   }
 
   throw new Error(`不支持的 ZIP 压缩方式: ${entry.compressionMethod}`);
 }
 
-async function inflateRaw(bytes) {
+async function inflateRaw(bytes, expectedSize = 0) {
   if (bytes.byteLength === 0) {
     return new Uint8Array();
   }
@@ -2551,11 +2549,67 @@ async function inflateRaw(bytes) {
       controller.close();
     },
   });
-  const decompressed = new Response(
+  return collectReadableBytes(
     stream.pipeThrough(new DecompressionStream("deflate-raw")),
+    expectedSize,
   );
-  const buffer = await decompressed.arrayBuffer();
-  return new Uint8Array(buffer);
+}
+
+async function collectReadableBytes(stream, expectedSize = 0) {
+  const reader = stream.getReader();
+  const usePreallocatedOutput = Number.isFinite(expectedSize) && expectedSize > 0;
+  const output = usePreallocatedOutput ? new Uint8Array(expectedSize) : null;
+  const chunks = [];
+  let written = 0;
+  let totalSize = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    if (!value?.byteLength) {
+      continue;
+    }
+
+    if (output && chunks.length === 0 && written + value.byteLength <= output.byteLength) {
+      output.set(value, written);
+      written += value.byteLength;
+      continue;
+    }
+
+    if (output && chunks.length === 0 && written > 0) {
+      chunks.push(output.subarray(0, written));
+      totalSize = written;
+    }
+    chunks.push(value);
+    totalSize += value.byteLength;
+  }
+
+  if (chunks.length === 0 && output) {
+    return written === output.byteLength ? output : output.slice(0, written);
+  }
+
+  return concatByteChunks(chunks, totalSize);
+}
+
+function concatByteChunks(chunks, totalSize) {
+  if (chunks.length === 0 || totalSize <= 0) {
+    return new Uint8Array();
+  }
+
+  if (chunks.length === 1 && chunks[0].byteLength === totalSize) {
+    return chunks[0];
+  }
+
+  const output = new Uint8Array(totalSize);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
 }
 
 function parseAndroidManifest(manifestBuffer) {
