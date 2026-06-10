@@ -7,7 +7,6 @@ import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistory
 import { getFileAnalyticsFields, getReportAnalyticsFields, initWebAnalytics, trackWebEvent } from "./app/analytics.js";
 import { hydrateReportSdkIcons } from "./app/sdk-icon-cache.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
-import { detectTerminalSystem } from "./app/system.js";
 import { initAppTitleColorMask, initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
 const VALID_APP_MODES = new Set(["analyze", "compare"]);
@@ -82,6 +81,7 @@ const dateTimeFormatters = new Map();
 const exportJsonCache = new WeakMap();
 let compareController = null;
 let compareControllerPromise = null;
+let terminalSystemDetectorPromise = null;
 
 const elements = {
   modeButtons: [...document.querySelectorAll("[data-app-mode]")],
@@ -221,6 +221,20 @@ function renderComparePageIfLoaded() {
 
 function renderCompareHistoryOptionsIfLoaded() {
   compareController?.renderHistoryOptions();
+}
+
+async function detectCurrentTerminalSystem() {
+  if (!terminalSystemDetectorPromise) {
+    terminalSystemDetectorPromise = import("./app/system.js")
+      .then(({ detectTerminalSystem }) => detectTerminalSystem)
+      .catch((error) => {
+        terminalSystemDetectorPromise = null;
+        throw error;
+      });
+  }
+
+  const detectTerminalSystem = await terminalSystemDetectorPromise;
+  return detectTerminalSystem();
 }
 
 function resolveInitialLocale() {
@@ -1912,7 +1926,7 @@ async function analyzeSelectedFile() {
     ...getFileAnalyticsFields(file),
   });
 
-  const terminalSystem = await detectTerminalSystem();
+  const terminalSystem = await detectCurrentTerminalSystem();
 
   if (!state.jobs.has(jobId)) {
     return;

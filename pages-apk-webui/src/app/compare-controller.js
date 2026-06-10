@@ -5,11 +5,11 @@ import { COMPONENT_SECTIONS, getStats } from "./report-model.js";
 import { buildHistorySummary } from "./history.js";
 import { hydrateReportSdkIcons } from "./sdk-icon-cache.js";
 import { renderSdkInline as renderSdkInlineBase } from "./sdk-icon-renderer.js";
-import { detectTerminalSystem } from "./system.js";
 
 const COMPARE_SLOT_KEYS = ["left", "right"];
 const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
 const pointerCoordinateUpdaters = new WeakMap();
+let terminalSystemDetectorPromise = null;
 
 export class CompareController {
   constructor(options) {
@@ -322,7 +322,7 @@ export class CompareController {
       ...this.getFileAnalyticsFields(file),
     });
 
-    const terminalSystem = await detectTerminalSystem();
+    const terminalSystem = await detectCurrentTerminalSystem();
     if (slot.jobId !== jobId || !this.hasJob(jobId)) {
       return;
     }
@@ -958,6 +958,20 @@ export class CompareController {
       ...fields,
     });
   }
+}
+
+async function detectCurrentTerminalSystem() {
+  if (!terminalSystemDetectorPromise) {
+    terminalSystemDetectorPromise = import("./system.js")
+      .then(({ detectTerminalSystem }) => detectTerminalSystem)
+      .catch((error) => {
+        terminalSystemDetectorPromise = null;
+        throw error;
+      });
+  }
+
+  const detectTerminalSystem = await terminalSystemDetectorPromise;
+  return detectTerminalSystem();
 }
 
 function createCompareSlotState() {
