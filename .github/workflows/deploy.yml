@@ -1,4 +1,4 @@
-name: Deploy Worker and WebUI
+name: Deploy Cloudflare
 
 on:
   pull_request:
@@ -10,14 +10,25 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      target:
+        description: Cloudflare deployment target
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
 
 concurrency:
-  group: tgbot-worker-${{ github.ref }}
+  group: tgbot-cloudflare-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
-  check:
+  preflight:
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_TARGET: ${{ github.event_name == 'push' && 'production' || github.event_name == 'workflow_dispatch' && github.event.inputs.target || 'preview' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -31,13 +42,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run syntax checks
-        run: npm run check
+      - name: Run deploy preflight
+        run: npm run deploy:preflight -- --target="${DEPLOY_TARGET}"
 
-  deploy:
-    name: Deploy Worker
-    needs: check
-    if: github.event_name != 'pull_request'
+  deploy_preview:
+    name: Deploy preview
+    needs: preflight
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'preview')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -47,7 +60,6 @@ jobs:
       ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
       TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
-      WORKER_URL: ${{ vars.WORKER_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -61,31 +73,37 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate deployment secrets
+      - name: Validate preview deployment secrets
         run: |
           node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets: ' + missing.join(', ')); process.exit(1); }"
 
-      - name: Deploy latest Worker code
-        run: npm run deploy
+      - name: Build WebUI assets
+        run: npm run pages:build
 
-      - name: Sync Worker secrets
+      - name: Deploy preview Worker and Pages
+        run: npm run deploy:preview -- --skip-preflight
+
+      - name: Sync preview Worker secrets
         run: |
           node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || undefined, TELEGRAPH_ACCESS_TOKEN: process.env.TELEGRAPH_ACCESS_TOKEN || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
-          npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml
+          npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml --env preview
           rm .cloudflare-secrets.json
 
-      - name: Register Telegram webhook
-        run: npm run webhook:set -- --direct-telegram
-
-  deploy_pages:
-    name: Deploy WebUI Pages
-    needs: check
-    if: github.event_name != 'pull_request'
+  deploy_production:
+    name: Deploy production
+    needs: preflight
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+      TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+      TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -99,9 +117,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate Pages deployment secrets
+      - name: Validate production deployment secrets
         run: |
-          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets: ' + missing.join(', ')); process.exit(1); }"
+          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets: ' + missing.join(', ')); process.exit(1); }"
 
-      - name: Deploy WebUI Pages
-        run: npm run pages:deploy
+      - name: Build WebUI assets
+        run: npm run pages:build
+
+      - name: Deploy production Worker and Pages
+        run: npm run deploy:production -- --skip-preflight
+
+      - name: Sync production Worker secrets
+        run: |
+          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || undefined, TELEGRAPH_ACCESS_TOKEN: process.env.TELEGRAPH_ACCESS_TOKEN || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
+          npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml --env production
+          rm .cloudflare-secrets.json
+
+      - name: Register Telegram webhook
+        run: npm run webhook:set -- --direct-telegram

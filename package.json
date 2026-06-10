@@ -8,11 +8,12 @@
   ],
   "scripts": {
     "predev": "npm run generated:generate",
-    "predeploy": "npm run generated:generate",
-    "predeploy:setup": "npm run generated:generate",
     "dev": "npm run dev --workspace @tgbot/bot-worker",
-    "deploy": "npm run deploy --workspace @tgbot/bot-worker",
-    "deploy:setup": "npm run deploy:setup --workspace @tgbot/bot-worker",
+    "deploy": "npm run deploy:production",
+    "deploy:preflight": "node scripts/deploy-cloudflare.mjs --preflight-only",
+    "deploy:preview": "node scripts/deploy-cloudflare.mjs --target=preview",
+    "deploy:production": "node scripts/deploy-cloudflare.mjs --target=production",
+    "deploy:setup": "npm run deploy:production && npm run webhook:set -- --direct-telegram && npm run commands:set",
     "webhook:set": "npm run webhook:set --workspace @tgbot/bot-worker --",
     "webhook:info": "npm run webhook:info --workspace @tgbot/bot-worker --",
     "webhook:delete": "npm run webhook:delete --workspace @tgbot/bot-worker --",
@@ -27,7 +28,11 @@
     "pages:build": "npm run build --workspace @tgbot/apk-webui",
     "pages:check": "npm run check --workspace @tgbot/apk-webui",
     "pages:dev": "npm run dev --workspace @tgbot/apk-webui",
-    "pages:deploy": "npm run deploy --workspace @tgbot/apk-webui",
-    "check": "npm run check --workspace @tgbot/shared && npm run check --workspace @tgbot/bot-worker && npm run check --workspace @tgbot/apk-webui"
+    "pages:deploy": "npm run deploy:production --workspace @tgbot/apk-webui",
+    "pages:deploy:preview": "npm run deploy:preview --workspace @tgbot/apk-webui",
+    "pages:deploy:production": "npm run deploy:production --workspace @tgbot/apk-webui",
+    "size:check": "node scripts/check-size-budgets.mjs",
+    "check:deploy": "node --check scripts/check-size-budgets.mjs && node --check scripts/deploy-cloudflare.mjs",
+    "check": "npm run check --workspace @tgbot/shared && npm run check --workspace @tgbot/bot-worker && npm run check --workspace @tgbot/apk-webui && npm run check:deploy"
   }
 }

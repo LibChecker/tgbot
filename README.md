@@ -75,30 +75,53 @@ npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wran
 
 `TELEGRAM_WEBHOOK_SECRET` and `TELEGRAPH_ACCESS_TOKEN` are optional, but recommended for production.
 
-Deploy the Worker and register the Telegram webhook:
+Run the deploy preflight locally before shipping:
+
+```bash
+npm run deploy:preflight -- --target=preview
+npm run deploy:preflight -- --target=production
+```
+
+Deploy preview or production:
+
+```bash
+npm run deploy:preview
+npm run deploy:production
+```
+
+Deploy production and register the Telegram webhook:
 
 ```bash
 npm run deploy:setup
 ```
 
-The public Worker URL is configured in `packages/bot-worker/wrangler.toml` through `PUBLIC_WEBHOOK_URL`.
+The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.toml`:
+
+- `preview`: deploys `tgbot-preview` on `workers.dev`, uses `Libchecker_TG_Bot_Preview`, and does not register a Telegram webhook.
+- `production`: deploys `tgbot` to `lcbot.absinthe.life`, uses `Libchecker_TG_Bot`, and sets `PUBLIC_WEBHOOK_URL=https://lcbot.absinthe.life`.
 
 ## Web UI Deployment
 
-Build and deploy the Pages app:
+Build and deploy the Pages app directly:
 
 ```bash
 npm run pages:build
-npm run pages:deploy
+npm run pages:deploy:preview
+npm run pages:deploy:production
 ```
+
+The root Cloudflare deploy commands are preferred because they always run `check`, WebUI build, WebUI size budgets, and Worker dry-run size budgets before deployment. Pages preview deploys use the current branch name, while production deploys use the `main` branch.
 
 ## Scripts
 
 | Command | Area | Description |
 | --- | --- | --- |
 | `npm run dev` | tgbot | Start the Worker locally. |
-| `npm run deploy` | tgbot | Deploy the Worker. |
-| `npm run deploy:setup` | tgbot | Deploy, set webhook, and sync bot commands. |
+| `npm run deploy` | Cloudflare | Alias for production deploy. |
+| `npm run deploy:preflight` | Cloudflare | Run checks, WebUI build, WebUI size budgets, and Worker dry-run budget. |
+| `npm run deploy:preview` | Cloudflare | Deploy preview Worker and Pages. |
+| `npm run deploy:production` | Cloudflare | Deploy production Worker and Pages. |
+| `npm run deploy:setup` | Cloudflare | Deploy production, set webhook, and sync bot commands. |
 | `npm run webhook:info` | tgbot | Show Telegram webhook status. |
 | `npm run webhook:set` | tgbot | Register the Telegram webhook. |
 | `npm run webhook:delete` | tgbot | Delete the Telegram webhook. |
@@ -110,7 +133,10 @@ npm run pages:deploy
 | `npm run rules:update` | shared | Refresh generated LibChecker rules. |
 | `npm run pages:dev` | Web UI | Run the Pages app locally. |
 | `npm run pages:build` | Web UI | Build the Pages app. |
-| `npm run pages:deploy` | Web UI | Deploy the Pages app. |
+| `npm run pages:deploy` | Web UI | Alias for production Pages deploy. |
+| `npm run pages:deploy:preview` | Web UI | Deploy a Pages preview branch. |
+| `npm run pages:deploy:production` | Web UI | Deploy the production Pages branch. |
+| `npm run size:check` | Web UI | Validate WebUI dist size budgets. |
 | `npm run check` | all | Validate shared modules, Worker, scripts, generated files, and Web UI. |
 
 The repository root is the npm workspace root. Root scripts are compatibility shims that delegate to `@tgbot/bot-worker`, `@tgbot/apk-webui`, and `@tgbot/shared`.
