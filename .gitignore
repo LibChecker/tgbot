@@ -18,4 +18,4 @@ __pycache__/
 .cloudflare-secrets.json
 
 # Generated runtime bundles.
-/src/shared/generated/
+/packages/shared/src/generated/

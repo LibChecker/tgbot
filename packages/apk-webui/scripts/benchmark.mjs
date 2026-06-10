@@ -9,7 +9,7 @@ import { gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repoDir = resolve(projectDir, "..");
+const repoDir = resolve(projectDir, "../..");
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
   [".html", "text/html; charset=utf-8"],
@@ -124,7 +124,7 @@ function printHelp() {
     "",
     "Options:",
     "  --label <name>      Label used in the result JSON",
-    "  --dist <path>       Dist directory relative to pages-apk-webui",
+    "  --dist <path>       Dist directory relative to packages/apk-webui",
     "  --output <path>     Output JSON path relative to the repository root",
     "  --sample <path>     APK/APKS sample path; may be repeated",
     "",

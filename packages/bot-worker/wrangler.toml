@@ -1,5 +1,5 @@
 name = "tgbot"
-main = "src/bot/index.js"
+main = "src/index.js"
 compatibility_date = "2026-04-12"
 routes = [
   { pattern = "lcbot.absinthe.life", custom_domain = true }

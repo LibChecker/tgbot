@@ -1,4 +1,4 @@
-import { LIBCHECKER_SDK_ICON_SVGS } from "../shared/generated/libchecker-sdk-icons.js";
+import { LIBCHECKER_SDK_ICON_SVGS } from "../../shared/src/generated/libchecker-sdk-icons.js";
 
 const SVG_HEADERS = {
   "content-type": "image/svg+xml; charset=UTF-8",

@@ -5,4 +5,4 @@ export {
   getSupportedLocales,
   normalizeLocale,
   resolveTelegramLocale,
-} from "../shared/i18n.js";
+} from "../../shared/src/i18n.js";

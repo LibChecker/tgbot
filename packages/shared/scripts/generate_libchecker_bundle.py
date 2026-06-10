@@ -14,7 +14,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-OUTPUT_DIR = Path("src/shared/generated")
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
+OUTPUT_DIR = PACKAGE_DIR / "src" / "generated"
 RULES_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules.js"
 ICONS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-sdk-icons.js"
 
@@ -133,7 +134,7 @@ def parse_rules_ref(args: list[str]) -> str:
         if arg.startswith("--ref="):
             return arg.split("=", 1)[1]
 
-    raise SystemExit("Usage: python scripts/generate_libchecker_bundle.py [--ref <branch|tag|commit>]")
+    raise SystemExit("Usage: python packages/shared/scripts/generate_libchecker_bundle.py [--ref <branch|tag|commit>]")
 
 
 def build_rules_bundle_root(rules_ref: str) -> str:

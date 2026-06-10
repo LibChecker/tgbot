@@ -4,7 +4,7 @@ import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repoDir = resolve(projectDir, "..");
+const repoDir = resolve(projectDir, "../..");
 const nodeBin = process.execPath;
 const sourceRoots = [
   resolve(projectDir, "functions"),
@@ -15,7 +15,7 @@ const extraSyntaxFiles = [
   resolve(projectDir, "vite.config.mjs"),
 ];
 
-await run(nodeBin, [resolve(repoDir, "scripts/generate_i18n_catalogs.mjs"), "--check"], repoDir);
+await run("npm", ["run", "i18n:check", "--workspace", "@tgbot/shared"], repoDir);
 
 const syntaxFiles = (await collectSyntaxFiles(sourceRoots))
   .concat(extraSyntaxFiles)

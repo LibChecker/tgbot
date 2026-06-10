@@ -71,11 +71,11 @@ jobs:
       - name: Sync Worker secrets
         run: |
           node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || undefined, TELEGRAPH_ACCESS_TOKEN: process.env.TELEGRAPH_ACCESS_TOKEN || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
-          npx wrangler secret bulk .cloudflare-secrets.json
+          npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml
           rm .cloudflare-secrets.json
 
       - name: Register Telegram webhook
-        run: node scripts/manage-webhook.mjs set --direct-telegram
+        run: npm run webhook:set -- --direct-telegram
 
   deploy_pages:
     name: Deploy WebUI Pages

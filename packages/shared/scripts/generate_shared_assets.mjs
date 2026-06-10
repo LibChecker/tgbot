@@ -4,18 +4,19 @@ import { access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repoDir = resolve(packageDir, "../..");
 const refresh = process.argv.includes("--refresh");
-const generatedDir = resolve(repoDir, "src/shared/generated");
+const generatedDir = resolve(packageDir, "src/generated");
 const libcheckerOutputs = [
   resolve(generatedDir, "libchecker-rules.js"),
   resolve(generatedDir, "libchecker-sdk-icons.js"),
 ];
 
-await run(process.execPath, [resolve(repoDir, "scripts/generate_i18n_catalogs.mjs")], repoDir);
+await run(process.execPath, [resolve(packageDir, "scripts/generate_i18n_catalogs.mjs")], repoDir);
 
 if (refresh || !(await filesExist(libcheckerOutputs))) {
-  await runPythonScript([resolve(repoDir, "scripts/generate_libchecker_bundle.py")], repoDir);
+  await runPythonScript([resolve(packageDir, "scripts/generate_libchecker_bundle.py")], repoDir);
 } else {
   console.log("LibChecker generated bundles already exist.");
 }

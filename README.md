@@ -4,9 +4,9 @@ This repository contains two deployable parts:
 
 | Part | Path | Platform | Purpose |
 | --- | --- | --- | --- |
-| tgbot | `src/bot/` | Cloudflare Workers | Telegram bot, APK link preview, upload page, report rendering, webhook/admin APIs. |
-| Web UI | `pages-apk-webui/` | Cloudflare Pages | Standalone browser APK analyzer powered by the same parser and LibChecker rules. |
-| Shared analyzer | `src/shared/` | Worker and Pages | APK parser, signature parser, SDK marker runtime, and generated local bundles. |
+| tgbot | `packages/bot-worker/` | Cloudflare Workers | Telegram bot, APK link preview, upload page, report rendering, webhook/admin APIs. |
+| Web UI | `packages/apk-webui/` | Cloudflare Pages | Standalone browser APK analyzer powered by the same parser and LibChecker rules. |
+| Shared analyzer | `packages/shared/` | Worker and Pages | APK parser, signature parser, SDK marker runtime, and generated local bundles. |
 
 ## tgbot
 
@@ -67,10 +67,10 @@ npm run pages:dev
 Configure Worker secrets:
 
 ```bash
-npx wrangler secret put BOT_TOKEN
-npx wrangler secret put ADMIN_TOKEN
-npx wrangler secret put TELEGRAM_WEBHOOK_SECRET
-npx wrangler secret put TELEGRAPH_ACCESS_TOKEN
+npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml
+npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml
+npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml
 ```
 
 `TELEGRAM_WEBHOOK_SECRET` and `TELEGRAPH_ACCESS_TOKEN` are optional, but recommended for production.
@@ -81,7 +81,7 @@ Deploy the Worker and register the Telegram webhook:
 npm run deploy:setup
 ```
 
-The public Worker URL is configured in `wrangler.toml` through `PUBLIC_WEBHOOK_URL`.
+The public Worker URL is configured in `packages/bot-worker/wrangler.toml` through `PUBLIC_WEBHOOK_URL`.
 
 ## Web UI Deployment
 
@@ -103,7 +103,7 @@ npm run pages:deploy
 | `npm run webhook:set` | tgbot | Register the Telegram webhook. |
 | `npm run webhook:delete` | tgbot | Delete the Telegram webhook. |
 | `npm run commands:set` | tgbot | Sync Telegram bot commands. |
-| `npm run generated:generate` | shared | Generate ignored runtime bundles under `src/shared/generated/`. |
+| `npm run generated:generate` | shared | Generate ignored runtime bundles under `packages/shared/src/generated/`. |
 | `npm run generated:refresh` | shared | Regenerate all ignored runtime bundles, including LibChecker rules and icons. |
 | `npm run i18n:generate` | shared | Generate runtime i18n catalogs from `locales/*.json`. |
 | `npm run i18n:check` | shared | Validate locale catalogs and any existing generated i18n catalog. |
@@ -111,9 +111,9 @@ npm run pages:deploy
 | `npm run pages:dev` | Web UI | Run the Pages app locally. |
 | `npm run pages:build` | Web UI | Build the Pages app. |
 | `npm run pages:deploy` | Web UI | Deploy the Pages app. |
-| `npm run check` | shared | Validate Worker, scripts, generated files, and Web UI. |
+| `npm run check` | all | Validate shared modules, Worker, scripts, generated files, and Web UI. |
 
-The repository root is the npm workspace root. The root `pages:*` scripts delegate to the `@tgbot/apk-webui` workspace so existing commands keep working while Web UI-only dependencies stay scoped to the Web UI package.
+The repository root is the npm workspace root. Root scripts are compatibility shims that delegate to `@tgbot/bot-worker`, `@tgbot/apk-webui`, and `@tgbot/shared`.
 
 ## Localization
 
@@ -122,7 +122,7 @@ User-facing copy lives in `locales/*.json`. These files are the translation sour
 - `locales/en.json` is the default runtime catalog.
 - `locales/zh-Hans.json` is the Simplified Chinese catalog.
 - `crowdin.yml` maps Crowdin translations to `locales/%locale%.json`.
-- Runtime modules import ignored files under `src/shared/generated/`; do not edit generated files by hand.
+- Runtime modules import ignored files under `packages/shared/src/generated/`; do not edit generated files by hand.
 
 When contributing through GitHub PRs or Crowdin, edit or add locale JSON files only. Keep the same key tree as `locales/en.json`, and keep placeholders such as `{count}` or `{appName}` unchanged.
 
@@ -133,7 +133,7 @@ npm run i18n:generate
 npm run check
 ```
 
-`src/shared/generated/` is ignored by git. The dev, build, deploy, and check scripts generate the runtime bundles before they are needed.
+`packages/shared/src/generated/` is ignored by git. The dev, build, deploy, and check scripts generate the runtime bundles before they are needed.
 
 ## Admin API
 
@@ -168,21 +168,28 @@ Optional repository variable:
 ## Project Layout
 
 ```text
-src/
-  bot/               tgbot Worker source
-    index.js         Worker entry, Telegram webhook, admin API
-    apk-url-preview.js APK link preview parser
-    report-viewer.js Worker-hosted report pages
-    upload-view.js   Worker-hosted upload page
-    observability.js Logs and Analytics Engine events
-  shared/            Shared APK analyzer source
-    apk.js           APK, manifest, resources, and icon parser
-    apk-signatures.js APK signing block, X.509, and digest parser
-    i18n.js          Shared localization runtime
-    sdk-markers.js   LibChecker SDK marker annotator
-    generated/       Ignored generated i18n, LibChecker rule, and icon bundles
+packages/
+  bot-worker/        Cloudflare Worker workspace package
+    src/
+      index.js       Worker entry, Telegram webhook, admin API
+      apk-url-preview.js APK link preview parser
+      report-viewer.js Worker-hosted report pages
+      upload-view.js Worker-hosted upload page
+      observability.js Logs and Analytics Engine events
+    scripts/         Worker admin and webhook helpers
+    wrangler.toml    Worker deployment config
+  apk-webui/         Web UI Pages workspace package
+    src/             Browser UI and analyzer worker
+    functions/       Pages Functions endpoints
+    scripts/         Web UI build, check, and benchmark helpers
+    wrangler.jsonc   Pages deployment config
+  shared/            Shared analyzer workspace package
+    src/
+      apk.js         APK, manifest, resources, and icon parser
+      apk-signatures.js APK signing block, X.509, and digest parser
+      i18n.js        Shared localization runtime
+      sdk-markers.js LibChecker SDK marker annotator
+      generated/     Ignored generated i18n, LibChecker rule, and icon bundles
+    scripts/         Shared asset generation helpers
 locales/             Translation JSON catalogs
-pages-apk-webui/     Web UI Pages app workspace package
-scripts/             Shared maintenance and webhook scripts
-wrangler.toml        Worker deployment config
 ```

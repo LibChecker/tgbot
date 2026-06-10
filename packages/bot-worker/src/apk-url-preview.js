@@ -1,4 +1,4 @@
-import { readApkInfoFromZipSource } from "../shared/apk.js";
+import { readApkInfoFromZipSource } from "../../shared/src/apk.js";
 
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;

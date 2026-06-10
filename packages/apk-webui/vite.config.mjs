@@ -3,17 +3,17 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, minify } from "vite";
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
-const repoDir = resolve(projectDir, "..");
 const srcDir = resolve(projectDir, "src");
+const sharedDir = resolve(projectDir, "../shared/src");
 
 function manualChunks(id) {
-  if (id.includes("/src/shared/generated/libchecker-sdk-icons.js")) {
+  if (id.includes("/packages/shared/src/generated/libchecker-sdk-icons.js")) {
     return "libchecker-sdk-icons";
   }
-  if (id.includes("/src/shared/generated/libchecker-rules.js")) {
+  if (id.includes("/packages/shared/src/generated/libchecker-rules.js")) {
     return "libchecker-rules";
   }
-  if (id.includes("/src/shared/apk")) {
+  if (id.includes("/packages/shared/src/apk")) {
     return "apk-analyzer";
   }
   return null;
@@ -28,7 +28,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@shared": resolve(repoDir, "src/shared"),
+      "@shared": sharedDir,
     },
   },
   server: {

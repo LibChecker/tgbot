@@ -1,0 +1,24 @@
+{
+  "name": "@tgbot/bot-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "npm run generated:generate --workspace @tgbot/shared",
+    "predeploy": "npm run generated:generate --workspace @tgbot/shared",
+    "predeploy:setup": "npm run generated:generate --workspace @tgbot/shared",
+    "dev": "wrangler dev --config wrangler.toml",
+    "deploy": "wrangler deploy --config wrangler.toml",
+    "deploy:setup": "wrangler deploy --config wrangler.toml && node scripts/manage-webhook.mjs set && node scripts/manage-webhook.mjs commands:set",
+    "webhook:set": "node scripts/manage-webhook.mjs set",
+    "webhook:info": "node scripts/manage-webhook.mjs info",
+    "webhook:delete": "node scripts/manage-webhook.mjs delete",
+    "commands:set": "node scripts/manage-webhook.mjs commands:set",
+    "commands:info": "node scripts/manage-webhook.mjs commands:info",
+    "commands:delete": "node scripts/manage-webhook.mjs commands:delete",
+    "check": "node --check src/index.js && node --check src/apk-url-preview.js && node --check src/i18n.js && node --check src/icons.js && node --check src/observability.js && node --check src/report-viewer.js && node --check src/telegraph.js && node --check src/upload-view.js && node --check scripts/manage-webhook.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

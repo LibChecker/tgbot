@@ -1,4 +1,4 @@
-import { readAndroidPackageInfo } from "../shared/apk.js";
+import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { readApkInfoFromUrl } from "./apk-url-preview.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
@@ -10,8 +10,8 @@ import {
   logWarnEvent,
 } from "./observability.js";
 import { handleReportRequest } from "./report-viewer.js";
-import { annotateSdkMarkers } from "../shared/sdk-markers.js";
-import { LIBCHECKER_RULES } from "../shared/generated/libchecker-rules.js";
+import { annotateSdkMarkers } from "../../shared/src/sdk-markers.js";
+import { LIBCHECKER_RULES } from "../../shared/src/generated/libchecker-rules.js";
 import { createApkTelegraphPage } from "./telegraph.js";
 import { htmlResponse, renderUploadPage } from "./upload-view.js";
 

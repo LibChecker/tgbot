@@ -1,0 +1,16 @@
+{
+  "name": "@tgbot/apk-webui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run generated:generate --workspace @tgbot/shared && node scripts/build.mjs",
+    "check": "npm run generated:generate --workspace @tgbot/shared && node scripts/check.mjs",
+    "dev": "npm run generated:generate --workspace @tgbot/shared && vite --config vite.config.mjs",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name=tgbot-apk-webui"
+  },
+  "devDependencies": {
+    "vite": "^8.0.16",
+    "wrangler": "^4.0.0"
+  }
+}
