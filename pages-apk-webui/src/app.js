@@ -6,7 +6,7 @@ import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./app/re
 import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
 import { getFileAnalyticsFields, getReportAnalyticsFields } from "./app/analytics-fields.js";
 import { getRegisteredSdkRuleDetail, renderSdkChip as renderSdkChipBase, renderSdkIcon, renderSdkInline as renderSdkInlineBase, renderSdkRuleLabel } from "./app/sdk-icon-renderer.js";
-import { initBrandTitleColorMask, renderBrandTitle } from "./app/title-effects.js";
+import { renderBrandTitle } from "./app/title-effects.js";
 const VALID_TABS = new Set(["summary", "sdk", "native", "components", "permissions", "signatures", "metadata", "raw"]);
 const VALID_APP_MODES = new Set(["analyze", "compare"]);
 const THEME_STORAGE_KEY = "apk-webui-theme";
@@ -82,6 +82,7 @@ const exportJsonCache = new WeakMap();
 let compareController = null;
 let compareControllerPromise = null;
 let terminalSystemDetectorPromise = null;
+let brandTitleColorMaskPromise = null;
 let appTitleColorMaskPromise = null;
 let reportSdkIconHydratorPromise = null;
 let analyticsModule = null;
@@ -196,6 +197,39 @@ function loadWebAnalyticsModule() {
   }
 
   return analyticsModulePromise;
+}
+
+function initBrandTitleColorMaskWhenIdle(node) {
+  if (!node) {
+    return;
+  }
+
+  const init = () => {
+    void loadBrandTitleColorMask().then((initBrandTitleColorMask) => {
+      if (node.isConnected) {
+        initBrandTitleColorMask(node);
+      }
+    }).catch(() => {});
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(init, { timeout: 1200 });
+  } else {
+    window.setTimeout(init, 0);
+  }
+}
+
+function loadBrandTitleColorMask() {
+  if (!brandTitleColorMaskPromise) {
+    brandTitleColorMaskPromise = import("./app/brand-title-mask.js")
+      .then(({ initBrandTitleColorMask }) => initBrandTitleColorMask)
+      .catch((error) => {
+        brandTitleColorMaskPromise = null;
+        throw error;
+      });
+  }
+
+  return brandTitleColorMaskPromise;
 }
 
 function initializeAnalyticsModule(module) {
@@ -379,7 +413,7 @@ applyThemeChoice(state.themeChoice, { persist: false });
 renderLanguageOptions();
 applyLocale();
 renderBrandTitle(elements.brandTitle, t("title"));
-initBrandTitleColorMask(elements.brandTitle);
+initBrandTitleColorMaskWhenIdle(elements.brandTitle);
 renderHistoryList();
 updateHistoryCollapse();
 updateAppMode();
