@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light dark">
-    <title>Android 包本地分析</title>
+    <title>LibChecker WebUI</title>
     <link rel="icon" type="image/svg+xml" href="./assets/icon_round.svg">
     <script>
       (() => {
@@ -52,17 +52,17 @@
               <path fill="currentColor" d="M12 .5A11.5 11.5 0 0 0 8.36 22.9c.58.1.79-.25.79-.56v-2.01c-3.2.7-3.88-1.36-3.88-1.36-.53-1.33-1.28-1.68-1.28-1.68-1.04-.72.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.75 2.69 1.24 3.34.95.1-.74.4-1.24.73-1.53-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.19-1.49 3.15-1.18 3.15-1.18.63 1.59.24 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.02c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"></path>
             </svg>
           </a>
-          <div class="mode-chip-group" id="mode-chip-group" role="radiogroup" aria-label="模式" data-aria-i18n="modeLabel">
-            <button class="mode-chip is-active" type="button" role="radio" aria-checked="true" data-app-mode="analyze" data-i18n="modeAnalyze">分析</button>
-            <button class="mode-chip" type="button" role="radio" aria-checked="false" data-app-mode="compare" data-i18n="modeCompare">对比</button>
+          <div class="mode-chip-group" id="mode-chip-group" role="radiogroup" aria-label="Mode" data-aria-i18n="modeLabel">
+            <button class="mode-chip is-active" type="button" role="radio" aria-checked="true" data-app-mode="analyze" data-i18n="modeAnalyze">Analyze</button>
+            <button class="mode-chip" type="button" role="radio" aria-checked="false" data-app-mode="compare" data-i18n="modeCompare">Compare</button>
           </div>
-          <div class="theme-chip-group" id="theme-chip-group" role="radiogroup" aria-label="主题" data-aria-i18n="themeLabel">
-            <button class="theme-chip" type="button" role="radio" aria-checked="false" data-theme-choice="dark" data-i18n="themeDark">深色</button>
-            <button class="theme-chip" type="button" role="radio" aria-checked="false" data-theme-choice="light" data-i18n="themeLight">浅色</button>
-            <button class="theme-chip" type="button" role="radio" aria-checked="true" data-theme-choice="system" data-i18n="themeSystem">系统</button>
+          <div class="theme-chip-group" id="theme-chip-group" role="radiogroup" aria-label="Theme" data-aria-i18n="themeLabel">
+            <button class="theme-chip" type="button" role="radio" aria-checked="false" data-theme-choice="dark" data-i18n="themeDark">Dark</button>
+            <button class="theme-chip" type="button" role="radio" aria-checked="false" data-theme-choice="light" data-i18n="themeLight">Light</button>
+            <button class="theme-chip" type="button" role="radio" aria-checked="true" data-theme-choice="system" data-i18n="themeSystem">System</button>
           </div>
           <label class="select-control">
-            <span class="sr-only" data-i18n="languageLabel">语言</span>
+            <span class="sr-only" data-i18n="languageLabel">Language</span>
             <svg class="select-control__icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); pointer-events: none;" aria-hidden="true">
               <circle cx="12" cy="12" r="8.5"></circle>
               <path d="M3.75 12h16.5"></path>
@@ -71,7 +71,7 @@
             </svg>
             <select id="language-select"></select>
           </label>
-          <button class="icon-button" id="clear-button" type="button" disabled aria-label="清空" data-title-i18n="clear">
+          <button class="icon-button" id="clear-button" type="button" disabled aria-label="Clear" data-title-i18n="clear">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M8.7 7.3a1 1 0 0 0-1.4 1.4l3.29 3.3-3.3 3.3a1 1 0 1 0 1.42 1.4l3.29-3.29 3.3 3.3a1 1 0 0 0 1.4-1.42L13.42 12l3.3-3.3a1 1 0 1 0-1.42-1.4L12 10.58 8.7 7.3Z"></path>
             </svg>
@@ -90,7 +90,7 @@
             </span>
             <span>
               <span class="drop-zone-title">
-                <span data-i18n="filePrompt">选择或拖入</span>
+                <span data-i18n="filePrompt">Choose or drop</span>
                 <span class="file-type-labels" aria-label="APK, APKS, APKM, XAPK, LCAPPS">
                   <span class="file-type-label file-type-label--apk">APK</span>
                   <span class="file-type-label file-type-label--apks">APKS</span>
@@ -99,18 +99,18 @@
                   <span class="file-type-label file-type-label--lcapps">LCAPPS</span>
                 </span>
               </span>
-              <span class="drop-zone-meta" id="file-meta" data-i18n="fileIdle">未选择文件</span>
+              <span class="drop-zone-meta" id="file-meta" data-i18n="fileIdle">No file selected</span>
             </span>
           </label>
           <div class="tool-panel-actions">
             <button class="primary-button" id="analyze-button" type="submit" disabled>
-              <span data-i18n="analyze">开始分析</span>
+              <span data-i18n="analyze">Analyze</span>
             </button>
-            <p class="local-note" data-i18n="localNote">文件只在当前浏览器中解析</p>
+            <p class="local-note" data-i18n="localNote">The file is analyzed in this browser.</p>
           </div>
           <div class="progress" id="progress" hidden aria-live="polite">
             <div class="progress-header">
-              <span id="progress-label" data-i18n="progressReady">等待文件</span>
+              <span id="progress-label" data-i18n="progressReady">Waiting for file</span>
               <span id="progress-time">0.0s</span>
             </div>
             <div class="progress-track">
@@ -123,17 +123,17 @@
         <section class="history-panel" id="history-panel">
           <div class="history-panel-header">
             <div class="history-heading">
-              <button class="icon-button history-toggle" id="history-toggle-button" type="button" aria-expanded="true" aria-controls="history-content" aria-label="收起历史" data-title-i18n="historyCollapse">
+              <button class="icon-button history-toggle" id="history-toggle-button" type="button" aria-expanded="true" aria-controls="history-content" aria-label="Collapse History" data-title-i18n="historyCollapse">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M7.3 9.3a1 1 0 0 1 1.4 0L12 12.58l3.3-3.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z"></path>
                 </svg>
               </button>
               <div>
-              <h2 data-i18n="historyTitle">历史记录</h2>
-              <p data-i18n="historyNote">保存在当前浏览器中，点击记录可重新打开结果</p>
+              <h2 data-i18n="historyTitle">History</h2>
+              <p data-i18n="historyNote">Saved in this browser. Click an item to reopen the report.</p>
               </div>
             </div>
-            <button class="secondary-button" id="clear-history-button" type="button" data-i18n="clearHistory">清空历史</button>
+            <button class="secondary-button" id="clear-history-button" type="button" data-i18n="clearHistory">Clear History</button>
           </div>
           <div class="history-content" id="history-content">
             <div class="history-list" id="history-list"></div>
@@ -147,8 +147,8 @@
             </svg>
           </div>
           <div class="empty-state-copy">
-            <h2 data-i18n="emptyTitle">等待文件</h2>
-            <p data-i18n="emptyBody">分析完成后会在这里展示摘要、SDK 标记、组件、权限、签名和元数据</p>
+            <h2 data-i18n="emptyTitle">Waiting for file</h2>
+            <p data-i18n="emptyBody">The report will show summary, SDK markers, components, permissions, signatures, and meta-data.</p>
           </div>
         </section>
 
@@ -156,13 +156,13 @@
           <div class="result-main">
             <div class="report-hero" id="report-hero"></div>
             <nav class="tabs" id="tabs" role="tablist" aria-label="Report tabs">
-              <button type="button" class="tab is-active" data-tab="summary" role="tab" aria-selected="true" data-i18n="tabSummary">摘要</button>
+              <button type="button" class="tab is-active" data-tab="summary" role="tab" aria-selected="true" data-i18n="tabSummary">Summary</button>
               <button type="button" class="tab" data-tab="sdk" role="tab" aria-selected="false" data-i18n="tabSdk">SDK</button>
-              <button type="button" class="tab" data-tab="native" role="tab" aria-selected="false" data-i18n="tabNative">原生库</button>
-              <button type="button" class="tab" data-tab="components" role="tab" aria-selected="false" data-i18n="tabComponents">组件</button>
-              <button type="button" class="tab" data-tab="permissions" role="tab" aria-selected="false" data-i18n="tabPermissions">权限</button>
-              <button type="button" class="tab" data-tab="signatures" role="tab" aria-selected="false" data-i18n="tabSignatures">签名</button>
-              <button type="button" class="tab" data-tab="metadata" role="tab" aria-selected="false" data-i18n="tabMeta">元数据</button>
+              <button type="button" class="tab" data-tab="native" role="tab" aria-selected="false" data-i18n="tabNative">Native</button>
+              <button type="button" class="tab" data-tab="components" role="tab" aria-selected="false" data-i18n="tabComponents">Components</button>
+              <button type="button" class="tab" data-tab="permissions" role="tab" aria-selected="false" data-i18n="tabPermissions">Permissions</button>
+              <button type="button" class="tab" data-tab="signatures" role="tab" aria-selected="false" data-i18n="tabSignatures">Signatures</button>
+              <button type="button" class="tab" data-tab="metadata" role="tab" aria-selected="false" data-i18n="tabMeta">Meta-Data</button>
               <button type="button" class="tab" data-tab="raw" role="tab" aria-selected="false" data-i18n="tabRaw">JSON</button>
             </nav>
           </div>
@@ -175,10 +175,10 @@
             <article class="compare-slot" data-compare-slot="left">
               <div class="compare-slot-header">
                 <div>
-                  <h2 data-i18n="compareSlotLeft">左侧文件</h2>
-                  <p data-i18n="compareSlotNote">拖入文件，或从历史记录选择</p>
+                  <h2 data-i18n="compareSlotLeft">Left file</h2>
+                  <p data-i18n="compareSlotNote">Drag and drop file, or pick one from history</p>
                 </div>
-                <button class="icon-button compare-slot-clear" type="button" data-compare-clear="left" aria-label="清空左侧" data-title-i18n="compareClearLeft">
+                <button class="icon-button compare-slot-clear" type="button" data-compare-clear="left" aria-label="Clear left" data-title-i18n="compareClearLeft">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M8.7 7.3a1 1 0 0 0-1.4 1.4l3.29 3.3-3.3 3.3a1 1 0 1 0 1.42 1.4l3.29-3.29 3.3 3.3a1 1 0 0 0 1.4-1.42L13.42 12l3.3-3.3a1 1 0 1 0-1.42-1.4L12 10.58 8.7 7.3Z"></path>
                   </svg>
@@ -192,12 +192,12 @@
                   </svg>
                 </span>
                 <span>
-                  <span class="drop-zone-title" data-i18n="compareDropPrompt">点击上传或拖入文件</span>
-                  <span class="drop-zone-meta" data-compare-file-meta="left" data-i18n="compareSlotEmpty">未选择文件</span>
+                  <span class="drop-zone-title" data-i18n="compareDropPrompt">Click to upload or drop a file</span>
+                  <span class="drop-zone-meta" data-compare-file-meta="left" data-i18n="compareSlotEmpty">No file selected</span>
                 </span>
               </label>
               <label class="compare-history-control">
-                <span data-i18n="compareHistoryLabel">历史记录</span>
+                <span data-i18n="compareHistoryLabel">History</span>
                 <select data-compare-history="left"></select>
               </label>
               <div class="compare-slot-report" data-compare-slot-report="left"></div>
@@ -206,10 +206,10 @@
             <article class="compare-slot" data-compare-slot="right">
               <div class="compare-slot-header">
                 <div>
-                  <h2 data-i18n="compareSlotRight">右侧文件</h2>
-                  <p data-i18n="compareSlotNote">拖入文件，或从历史记录选择</p>
+                  <h2 data-i18n="compareSlotRight">Right file</h2>
+                  <p data-i18n="compareSlotNote">Drag and drop file, or pick one from history</p>
                 </div>
-                <button class="icon-button compare-slot-clear" type="button" data-compare-clear="right" aria-label="清空右侧" data-title-i18n="compareClearRight">
+                <button class="icon-button compare-slot-clear" type="button" data-compare-clear="right" aria-label="Clear right" data-title-i18n="compareClearRight">
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M8.7 7.3a1 1 0 0 0-1.4 1.4l3.29 3.3-3.3 3.3a1 1 0 1 0 1.42 1.4l3.29-3.29 3.3 3.3a1 1 0 0 0 1.4-1.42L13.42 12l3.3-3.3a1 1 0 1 0-1.42-1.4L12 10.58 8.7 7.3Z"></path>
                   </svg>
@@ -223,12 +223,12 @@
                   </svg>
                 </span>
                 <span>
-                  <span class="drop-zone-title" data-i18n="compareDropPrompt">点击上传或拖入文件</span>
-                  <span class="drop-zone-meta" data-compare-file-meta="right" data-i18n="compareSlotEmpty">未选择文件</span>
+                  <span class="drop-zone-title" data-i18n="compareDropPrompt">Click to upload or drop a file</span>
+                  <span class="drop-zone-meta" data-compare-file-meta="right" data-i18n="compareSlotEmpty">No file selected</span>
                 </span>
               </label>
               <label class="compare-history-control">
-                <span data-i18n="compareHistoryLabel">历史记录</span>
+                <span data-i18n="compareHistoryLabel">History</span>
                 <select data-compare-history="right"></select>
               </label>
               <div class="compare-slot-report" data-compare-slot-report="right"></div>
@@ -243,10 +243,10 @@
       <section class="lcapps-picker__panel" id="lcapps-picker-panel" role="dialog" aria-modal="true" aria-labelledby="lcapps-picker-title" tabindex="-1">
         <header class="lcapps-picker__header">
           <div class="lcapps-picker__title-block">
-            <h2 id="lcapps-picker-title" data-i18n="lcappsTitle">选择应用</h2>
+            <h2 id="lcapps-picker-title" data-i18n="lcappsTitle">Choose App</h2>
             <p id="lcapps-picker-subtitle"></p>
           </div>
-          <button class="icon-button lcapps-picker__close" id="lcapps-picker-close" type="button" aria-label="关闭" data-title-i18n="lcappsClose">
+          <button class="icon-button lcapps-picker__close" id="lcapps-picker-close" type="button" aria-label="Close" data-title-i18n="lcappsClose">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M8.7 7.3a1 1 0 0 0-1.4 1.4l3.29 3.3-3.3 3.3a1 1 0 1 0 1.42 1.4l3.29-3.29 3.3 3.3a1 1 0 0 0 1.4-1.42L13.42 12l3.3-3.3a1 1 0 1 0-1.42-1.4L12 10.58 8.7 7.3Z"></path>
             </svg>
@@ -264,7 +264,7 @@
         <div class="lcapps-picker__grid" id="lcapps-grid"></div>
       </section>
     </div>
-    <button class="lcapps-bubble" id="lcapps-bubble" type="button" hidden aria-label="重新打开应用列表" data-title-i18n="lcappsReopen">
+    <button class="lcapps-bubble" id="lcapps-bubble" type="button" hidden aria-label="Reopen app list" data-title-i18n="lcappsReopen">
       <span id="lcapps-bubble-content" aria-hidden="true"></span>
     </button>
     <script type="module" src="./app.js"></script>
