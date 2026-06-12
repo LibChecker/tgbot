@@ -2450,11 +2450,7 @@ svg {
 .archive-chart-label {
   fill: #ffffff;
   font-weight: 900;
-  paint-order: stroke;
   pointer-events: none;
-  stroke: rgb(0 0 0 / 0.18);
-  stroke-linejoin: round;
-  stroke-width: 3px;
   text-anchor: middle;
   dominant-baseline: central;
 }
