@@ -86,6 +86,10 @@ const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
 const tapPopupMedia = window.matchMedia("(hover: none), (pointer: coarse)");
 const supportsPointerEvents = typeof window.PointerEvent === "function";
+const POINTER_SPOTLIGHT_MIN_ALPHA = 0.16;
+const POINTER_SPOTLIGHT_MAX_ALPHA = 0.42;
+const POINTER_SPOTLIGHT_DISTANCE_FOR_MAX_ALPHA = 340;
+const POINTER_SPOTLIGHT_REST_DISTANCE = 0.35;
 
 
 const state = createAppState({
@@ -1761,6 +1765,8 @@ function createPointerCoordinateUpdater(node, { xProperty, yProperty }) {
   let rect = null;
   let pendingClientX = 0;
   let pendingClientY = 0;
+  let currentX = null;
+  let currentY = null;
   let lastX = "";
   let lastY = "";
 
@@ -1776,10 +1782,24 @@ function createPointerCoordinateUpdater(node, { xProperty, yProperty }) {
     eventType === "dragover"
   );
 
+  const shouldResetPosition = (eventType) => (
+    eventType === "pointerdown" ||
+    eventType === "pointerenter" ||
+    eventType === "pointerover"
+  );
+
+  const scheduleFrame = () => {
+    if (!frameId) {
+      frameId = window.requestAnimationFrame(apply);
+    }
+  };
+
   const apply = () => {
     frameId = 0;
     if (!node.isConnected) {
       rect = null;
+      currentX = null;
+      currentY = null;
       return;
     }
 
@@ -1787,10 +1807,27 @@ function createPointerCoordinateUpdater(node, { xProperty, yProperty }) {
       readRect();
     }
 
-    const x = clamp(pendingClientX - rect.left, 0, rect.width);
-    const y = clamp(pendingClientY - rect.top, 0, rect.height);
-    const nextX = `${x.toFixed(1)}px`;
-    const nextY = `${y.toFixed(1)}px`;
+    const targetX = clamp(pendingClientX - rect.left, 0, rect.width);
+    const targetY = clamp(pendingClientY - rect.top, 0, rect.height);
+
+    if (currentX == null || currentY == null) {
+      currentX = targetX;
+      currentY = targetY;
+    } else {
+      const deltaX = targetX - currentX;
+      const deltaY = targetY - currentY;
+      const distance = Math.hypot(deltaX, deltaY);
+      const alpha = clamp(
+        distance / POINTER_SPOTLIGHT_DISTANCE_FOR_MAX_ALPHA,
+        POINTER_SPOTLIGHT_MIN_ALPHA,
+        POINTER_SPOTLIGHT_MAX_ALPHA,
+      );
+      currentX += deltaX * alpha;
+      currentY += deltaY * alpha;
+    }
+
+    const nextX = `${currentX.toFixed(1)}px`;
+    const nextY = `${currentY.toFixed(1)}px`;
 
     if (nextX !== lastX) {
       node.style.setProperty(xProperty, nextX);
@@ -1799,6 +1836,10 @@ function createPointerCoordinateUpdater(node, { xProperty, yProperty }) {
     if (nextY !== lastY) {
       node.style.setProperty(yProperty, nextY);
       lastY = nextY;
+    }
+
+    if (Math.hypot(targetX - currentX, targetY - currentY) > POINTER_SPOTLIGHT_REST_DISTANCE) {
+      scheduleFrame();
     }
   };
 
@@ -1811,9 +1852,11 @@ function createPointerCoordinateUpdater(node, { xProperty, yProperty }) {
       if (shouldRefreshRect(eventType)) {
         readRect();
       }
-      if (!frameId) {
-        frameId = window.requestAnimationFrame(apply);
+      if (shouldResetPosition(eventType)) {
+        currentX = null;
+        currentY = null;
       }
+      scheduleFrame();
     },
     reset() {
       if (frameId) {
@@ -1821,6 +1864,8 @@ function createPointerCoordinateUpdater(node, { xProperty, yProperty }) {
         frameId = 0;
       }
       rect = null;
+      currentX = null;
+      currentY = null;
       lastX = "";
       lastY = "";
     },

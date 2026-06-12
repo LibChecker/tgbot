@@ -1488,10 +1488,11 @@ svg {
   z-index: 1;
   top: var(--drop-y);
   left: var(--drop-x);
-  width: min(340px, 88vw);
-  height: min(300px, 82vw);
-  background: radial-gradient(ellipse, var(--drop-glass-core) 0%, var(--drop-glass-sheen) 46%, var(--drop-glass-glow) 72%, transparent 100%);
-  filter: blur(44px);
+  width: min(480px, 70vw);
+  height: min(360px, 58vw);
+  background: color-mix(in srgb, var(--drop-glass-sheen) 38%, var(--drop-glass-core) 62%);
+  filter: blur(74px);
+  mix-blend-mode: screen;
   transform: translate(-50%, -50%) scale(var(--drop-highlight-scale));
   transition: opacity 180ms ease, transform 180ms ease;
 }
@@ -1951,11 +1952,12 @@ svg {
   z-index: 1;
   top: var(--drop-y);
   left: var(--drop-x);
-  width: min(340px, 88vw);
-  height: min(300px, 82vw);
+  width: min(480px, 70vw);
+  height: min(360px, 58vw);
   border-radius: inherit;
-  background: radial-gradient(ellipse, var(--drop-glass-core) 0%, var(--drop-glass-sheen) 46%, var(--drop-glass-glow) 72%, transparent 100%);
-  filter: blur(44px);
+  background: color-mix(in srgb, var(--drop-glass-sheen) 38%, var(--drop-glass-core) 62%);
+  filter: blur(74px);
+  mix-blend-mode: screen;
   opacity: var(--drop-highlight-opacity);
   pointer-events: none;
   transform: translate(-50%, -50%) scale(var(--drop-highlight-scale));
@@ -3310,10 +3312,13 @@ svg {
     z-index: 0;
     border-radius: inherit;
     background:
-      radial-gradient(ellipse 74% 60% at var(--liquid-glass-x) var(--liquid-glass-y), var(--liquid-glass-highlight), transparent 62%),
+      radial-gradient(circle at var(--liquid-glass-x) var(--liquid-glass-y), color-mix(in srgb, var(--liquid-glass-highlight) 52%, transparent) 0%, color-mix(in srgb, var(--liquid-glass-highlight) 30%, transparent) 26%, color-mix(in srgb, var(--liquid-glass-highlight) 10%, transparent) 56%, transparent 88%),
+      radial-gradient(circle at 24% 28%, color-mix(in srgb, var(--liquid-glass-highlight) 22%, transparent) 0%, transparent 56%),
+      radial-gradient(circle at 78% 72%, color-mix(in srgb, var(--liquid-glass-highlight) 16%, transparent) 0%, transparent 58%),
+      linear-gradient(116deg, transparent 12%, color-mix(in srgb, var(--liquid-glass-highlight) 12%, transparent) 46%, transparent 82%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 48%, rgba(0, 0, 0, 0.03));
     mix-blend-mode: screen;
-    opacity: 0.78;
+    opacity: 0.64;
     pointer-events: none;
   }
 
@@ -3386,9 +3391,12 @@ svg {
 
   :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble)::before {
     background:
-      radial-gradient(ellipse 74% 60% at var(--liquid-glass-x) var(--liquid-glass-y), rgba(255, 255, 255, 0.1), transparent 62%),
+      radial-gradient(circle at var(--liquid-glass-x) var(--liquid-glass-y), rgb(255 255 255 / 0.066) 0%, rgb(255 255 255 / 0.038) 26%, rgb(255 255 255 / 0.014) 56%, transparent 88%),
+      radial-gradient(circle at 24% 28%, rgb(255 255 255 / 0.028) 0%, transparent 56%),
+      radial-gradient(circle at 78% 72%, rgb(255 255 255 / 0.022) 0%, transparent 58%),
+      linear-gradient(116deg, transparent 12%, rgb(255 255 255 / 0.018) 46%, transparent 82%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 48%, rgba(0, 0, 0, 0.04));
-    opacity: 0.72;
+    opacity: 0.6;
   }
 
   :root[data-color-scheme="dark"][data-rule-preview-material="liquid-glass"] :is(.sdk-rule-preview, .sdk-icon-preview, .lcapps-picker__panel, .lcapps-bubble)::after {
