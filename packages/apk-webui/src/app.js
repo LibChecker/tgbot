@@ -3398,17 +3398,20 @@ function renderHistoryItem(entry) {
   const title = summary.appName || summary.packageName || t("unknown");
   const icon = renderHistoryIcon(summary);
   const packageName = summary.packageName || t("unknown");
-  const version = summary.versionName ? `${t("versionName")}: ${summary.versionName}` : t("unknown");
-  const targetSdk = summary.targetSdk || t("unknown");
   const file = summary.fileName || t("unknown");
   const size = formatBytes(summary.fileSizeBytes || 0);
   const date = formatDate(summary.analyzedAt || entry.savedAt);
   const stats = summary.stats || {};
-  const statText = [
-    `${t("sdk")}: ${summary.sdkCount || 0}`,
-    `${t("nativeLibraries")}: ${stats.nativeLibraries || 0}`,
-    `${t("components")}: ${stats.components || 0}`,
-  ].join(" · ");
+  const versionBadges = [
+    historyBadge(t("historyVersionName"), summary.versionName || t("unknown")),
+    historyBadge(t("historyVersionCode"), summary.versionCode || t("unknown")),
+    historyBadge(t("targetSdk"), summary.targetSdk || t("unknown")),
+  ].join("");
+  const statItems = [
+    historyStat(t("sdk"), summary.sdkCount || 0),
+    historyStat(t("nativeLibraries"), stats.nativeLibraries || 0),
+    historyStat(t("components"), stats.components || 0),
+  ].join("");
 
   return [
     `<article class="history-row${isLoading ? " is-loading" : ""}" aria-busy="${isLoading ? "true" : "false"}">`,
@@ -3417,9 +3420,15 @@ function renderHistoryItem(entry) {
     `<span class="history-copy">`,
     `<span class="history-title">${escapeHtml(title)}</span>`,
     `<span class="history-package">${escapeHtml(packageName)}</span>`,
-    `<span class="history-meta">${escapeHtml(t("historyItemMeta", { version, targetSdk }))}</span>`,
-    `<span class="history-meta">${escapeHtml(t("historyFileMeta", { file, size, date }))}</span>`,
-    `<span class="history-meta">${escapeHtml(statText)}</span>`,
+    `<span class="history-badges">${versionBadges}</span>`,
+    `<span class="history-stats">${statItems}</span>`,
+    `<span class="history-file-line">`,
+    `<span>${escapeHtml(file)}</span>`,
+    `<span aria-hidden="true">·</span>`,
+    `<span>${escapeHtml(size)}</span>`,
+    `<span aria-hidden="true">·</span>`,
+    `<span>${escapeHtml(date)}</span>`,
+    `</span>`,
     `<span class="history-loading" aria-live="polite">`,
     `<span class="history-loading-spinner" aria-hidden="true"></span>`,
     `<span>${escapeHtml(t("historyOpening"))}</span>`,
@@ -3428,10 +3437,32 @@ function renderHistoryItem(entry) {
     `</button>`,
     `<button class="icon-button history-delete" type="button" data-history-action="delete" data-history-id="${escapeAttr(entry.id)}" aria-label="${escapeAttr(t("historyDelete"))}" title="${escapeAttr(t("historyDelete"))}" aria-disabled="${isHistoryLoading ? "true" : "false"}">`,
     `<svg viewBox="0 0 24 24" aria-hidden="true">`,
-    `<path d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1Zm1 2h4V5h-4Zm-3 2v12h10V7H7Zm3 3a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0v-4a1 1 0 0 1 1-1Zm4 0a1 1 0 0 1 1 1v4a1 1 0 1 1-2 0v-4a1 1 0 0 1 1-1Z"></path>`,
+    `<path d="M3 6h18"></path>`,
+    `<path d="M8 6V4.8A1.8 1.8 0 0 1 9.8 3h4.4A1.8 1.8 0 0 1 16 4.8V6"></path>`,
+    `<path d="M6.5 6.5 7.2 19a2 2 0 0 0 2 1.9h5.6a2 2 0 0 0 2-1.9l.7-12.5"></path>`,
+    `<path d="M10 10v6"></path>`,
+    `<path d="M14 10v6"></path>`,
     `</svg>`,
     `</button>`,
     `</article>`,
+  ].join("");
+}
+
+function historyBadge(label, value) {
+  return [
+    `<span class="history-badge">`,
+    `<span class="history-badge-label">${escapeHtml(label)}</span>`,
+    `<span class="history-badge-value">${escapeHtml(String(value || t("unknown")))}</span>`,
+    `</span>`,
+  ].join("");
+}
+
+function historyStat(label, value) {
+  return [
+    `<span class="history-stat">`,
+    `<span class="history-stat-value">${escapeHtml(String(value ?? 0))}</span>`,
+    `<span class="history-stat-label">${escapeHtml(label)}</span>`,
+    `</span>`,
   ].join("");
 }
 

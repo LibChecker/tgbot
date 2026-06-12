@@ -153,6 +153,8 @@
     "clearHistory": "Clear History",
     "historyItemMeta": "{version} · Target SDK {targetSdk}",
     "historyFileMeta": "{file} · {size} · {date}",
+    "historyVersionName": "Version Name",
+    "historyVersionCode": "Version Code",
     "emptyTitle": "Waiting for file",
     "emptyBody": "The report will show summary, SDK markers, components, permissions, signatures, and meta-data.",
     "tabSummary": "Summary",

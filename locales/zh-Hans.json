@@ -153,6 +153,8 @@
     "clearHistory": "清空历史",
     "historyItemMeta": "{version} · Target SDK {targetSdk}",
     "historyFileMeta": "{file} · {size} · {date}",
+    "historyVersionName": "版本名称",
+    "historyVersionCode": "版本号",
     "emptyTitle": "等待文件",
     "emptyBody": "分析完成后会在这里展示摘要、SDK 标记、组件、权限、签名和元数据",
     "tabSummary": "摘要",
