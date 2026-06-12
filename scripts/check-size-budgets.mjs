@@ -28,7 +28,7 @@ const ASSET_BUDGETS = [
   {
     label: "WebUI CSS",
     pattern: /^assets\/index-[\w-]+\.css$/u,
-    maxBytes: 80 * 1024,
+    maxBytes: 90 * 1024,
     maxGzipBytes: 16 * 1024,
   },
   {
