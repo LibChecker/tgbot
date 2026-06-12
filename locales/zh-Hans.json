@@ -187,6 +187,8 @@
     "packageName": "包名",
     "versionName": "versionName",
     "versionCode": "versionCode",
+    "heroVersionName": "版本名称",
+    "heroVersionCode": "版本号",
     "targetSdk": "Target SDK",
     "minSdk": "Min SDK",
     "compileSdk": "Compile SDK",
