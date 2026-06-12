@@ -38,7 +38,10 @@ export function createAppState({ locale, themeChoice, history, historyCollapsed 
 export function createThemeDragState() {
   return {
     active: false,
+    dragging: false,
     pointerId: null,
+    startClientX: 0,
+    startClientY: 0,
     pendingChoice: "",
     suppressClick: false,
     buttonCenters: [],
@@ -48,7 +51,10 @@ export function createThemeDragState() {
 export function createModeDragState() {
   return {
     active: false,
+    dragging: false,
     pointerId: null,
+    startClientX: 0,
+    startClientY: 0,
     pendingMode: "",
     suppressClick: false,
     buttonCenters: [],

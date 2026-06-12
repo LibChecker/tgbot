@@ -52,6 +52,7 @@ const ANALYTICS_IDLE_LOAD_DELAY_MS = 4000;
 const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
 const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
 const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
+const SEGMENT_DRAG_START_THRESHOLD_PX = 4;
 const LIQUID_GLASS_CONTROLS = Object.freeze({
   edgeIntensity: 0.01,
   rimIntensity: 0.05,
@@ -1093,34 +1094,14 @@ initWebAnalytics(() => ({
 }));
 
 function bindEvents() {
-  elements.modeButtons.forEach((button) => {
-    button.addEventListener("click", (event) => {
-      if (modeDrag.suppressClick) {
-        event.preventDefault();
-        modeDrag.suppressClick = false;
-        return;
-      }
-
-      setAppMode(button.dataset.appMode);
-    });
-  });
+  elements.modeChipGroup.addEventListener("click", handleModeChipGroupClick);
   elements.modeChipGroup.addEventListener("pointerdown", beginModeDrag);
   elements.modeChipGroup.addEventListener("pointermove", updateModeDrag);
   elements.modeChipGroup.addEventListener("pointerup", endModeDrag);
   elements.modeChipGroup.addEventListener("pointercancel", cancelModeDrag);
   elements.modeChipGroup.addEventListener("lostpointercapture", cancelModeDrag);
 
-  elements.themeButtons.forEach((button) => {
-    button.addEventListener("click", (event) => {
-      if (themeDrag.suppressClick) {
-        event.preventDefault();
-        themeDrag.suppressClick = false;
-        return;
-      }
-
-      applyThemeChoice(button.dataset.themeChoice);
-    });
-  });
+  elements.themeChipGroup.addEventListener("click", handleThemeChipGroupClick);
   elements.themeChipGroup.addEventListener("pointerdown", beginThemeDrag);
   elements.themeChipGroup.addEventListener("pointermove", updateThemeDrag);
   elements.themeChipGroup.addEventListener("pointerup", endThemeDrag);
@@ -1225,7 +1206,7 @@ function bindEvents() {
     reopenLcappsPicker();
   });
 
-  elements.clearButton.addEventListener("click", () => {
+  elements.clearButton?.addEventListener("click", () => {
     if (state.appMode === "compare") {
       if (runtime.compareController) {
         runtime.compareController.reset();
@@ -1341,6 +1322,38 @@ function bindEvents() {
   });
 }
 
+function handleModeChipGroupClick(event) {
+  if (event.defaultPrevented) {
+    return;
+  }
+
+  if (modeDrag.suppressClick) {
+    event.preventDefault();
+    modeDrag.suppressClick = false;
+    return;
+  }
+
+  const button = getSegmentButtonFromClick(event, elements.modeChipGroup, ".mode-chip");
+  const appMode = button?.dataset.appMode || getAppModeAtClientX(event.clientX);
+  setAppMode(appMode);
+}
+
+function handleThemeChipGroupClick(event) {
+  if (event.defaultPrevented) {
+    return;
+  }
+
+  if (themeDrag.suppressClick) {
+    event.preventDefault();
+    themeDrag.suppressClick = false;
+    return;
+  }
+
+  const button = getSegmentButtonFromClick(event, elements.themeChipGroup, ".theme-chip");
+  const themeChoice = button?.dataset.themeChoice || getThemeChoiceAtClientX(event.clientX);
+  applyThemeChoice(themeChoice);
+}
+
 function initPreviewInteractionsWhenIdle() {
   const init = () => {
     initSdkIconPreview();
@@ -1362,16 +1375,18 @@ function beginModeDrag(event) {
   }
 
   modeDrag.active = true;
+  modeDrag.dragging = false;
   modeDrag.pointerId = event.pointerId;
-  modeDrag.suppressClick = true;
+  modeDrag.startClientX = event.clientX;
+  modeDrag.startClientY = event.clientY;
+  modeDrag.pendingMode = "";
+  modeDrag.suppressClick = false;
   modeDrag.buttonCenters = measureChoiceCenters(elements.modeButtons, "appMode");
-  elements.modeChipGroup.classList.add("is-dragging");
   try {
     elements.modeChipGroup.setPointerCapture?.(event.pointerId);
   } catch {
     // Pointer capture is an enhancement; nearest-mode dragging still works without it.
   }
-  previewModeFromPointer(event);
 }
 
 function updateModeDrag(event) {
@@ -1379,6 +1394,9 @@ function updateModeDrag(event) {
     return;
   }
 
+  if (!maybeStartSegmentDrag(event, modeDrag, elements.modeChipGroup)) {
+    return;
+  }
   previewModeFromPointer(event);
 }
 
@@ -1387,9 +1405,11 @@ function endModeDrag(event) {
     return;
   }
 
-  previewModeFromPointer(event);
-  if (modeDrag.pendingMode) {
-    setAppMode(modeDrag.pendingMode);
+  if (maybeStartSegmentDrag(event, modeDrag, elements.modeChipGroup)) {
+    previewModeFromPointer(event);
+    if (modeDrag.pendingMode) {
+      setAppMode(modeDrag.pendingMode);
+    }
   }
   finishModeDrag(event.pointerId);
 }
@@ -1403,13 +1423,19 @@ function cancelModeDrag(event) {
 }
 
 function finishModeDrag(pointerId) {
+  const wasDragging = modeDrag.dragging;
   elements.modeChipGroup.classList.remove("is-dragging");
   modeDrag.active = false;
+  modeDrag.dragging = false;
   modeDrag.pointerId = null;
+  modeDrag.startClientX = 0;
+  modeDrag.startClientY = 0;
   modeDrag.pendingMode = "";
   modeDrag.buttonCenters = [];
   clearModePendingButtons();
-  updateModeIndicator();
+  if (wasDragging) {
+    updateModeIndicator();
+  }
   try {
     if (elements.modeChipGroup.hasPointerCapture?.(pointerId)) {
       elements.modeChipGroup.releasePointerCapture(pointerId);
@@ -1417,6 +1443,11 @@ function finishModeDrag(pointerId) {
   } catch {
     // The pointer may already have been released by the browser.
   }
+  if (!wasDragging) {
+    modeDrag.suppressClick = false;
+    return;
+  }
+
   window.setTimeout(() => {
     modeDrag.suppressClick = false;
   }, 0);
@@ -1424,6 +1455,13 @@ function finishModeDrag(pointerId) {
 
 function previewModeFromPointer(event) {
   const appMode = getAppModeAtClientX(event.clientX);
+  updateSegmentIndicatorFromPointer(
+    elements.modeChipGroup,
+    modeDrag.buttonCenters,
+    appMode,
+    event.clientX,
+    "mode",
+  );
   if (!appMode || appMode === modeDrag.pendingMode) {
     return;
   }
@@ -1432,7 +1470,6 @@ function previewModeFromPointer(event) {
   elements.modeButtons.forEach((button) => {
     button.classList.toggle("is-pending", button.dataset.appMode === appMode);
   });
-  updateModeIndicator(appMode);
 }
 
 function getAppModeAtClientX(clientX) {
@@ -1445,16 +1482,18 @@ function beginThemeDrag(event) {
   }
 
   themeDrag.active = true;
+  themeDrag.dragging = false;
   themeDrag.pointerId = event.pointerId;
-  themeDrag.suppressClick = true;
+  themeDrag.startClientX = event.clientX;
+  themeDrag.startClientY = event.clientY;
+  themeDrag.pendingChoice = "";
+  themeDrag.suppressClick = false;
   themeDrag.buttonCenters = measureChoiceCenters(elements.themeButtons, "themeChoice");
-  elements.themeChipGroup.classList.add("is-dragging");
   try {
     elements.themeChipGroup.setPointerCapture?.(event.pointerId);
   } catch {
     // Pointer capture is an enhancement; nearest-choice dragging still works without it.
   }
-  previewThemeChoiceFromPointer(event);
 }
 
 function updateThemeDrag(event) {
@@ -1462,6 +1501,9 @@ function updateThemeDrag(event) {
     return;
   }
 
+  if (!maybeStartSegmentDrag(event, themeDrag, elements.themeChipGroup)) {
+    return;
+  }
   previewThemeChoiceFromPointer(event);
 }
 
@@ -1470,9 +1512,11 @@ function endThemeDrag(event) {
     return;
   }
 
-  previewThemeChoiceFromPointer(event);
-  if (themeDrag.pendingChoice) {
-    applyThemeChoice(themeDrag.pendingChoice);
+  if (maybeStartSegmentDrag(event, themeDrag, elements.themeChipGroup)) {
+    previewThemeChoiceFromPointer(event);
+    if (themeDrag.pendingChoice) {
+      applyThemeChoice(themeDrag.pendingChoice);
+    }
   }
   finishThemeDrag(event.pointerId);
 }
@@ -1486,13 +1530,19 @@ function cancelThemeDrag(event) {
 }
 
 function finishThemeDrag(pointerId) {
+  const wasDragging = themeDrag.dragging;
   elements.themeChipGroup.classList.remove("is-dragging");
   themeDrag.active = false;
+  themeDrag.dragging = false;
   themeDrag.pointerId = null;
+  themeDrag.startClientX = 0;
+  themeDrag.startClientY = 0;
   themeDrag.pendingChoice = "";
   themeDrag.buttonCenters = [];
   clearThemePendingButtons();
-  updateThemeIndicator();
+  if (wasDragging) {
+    updateThemeIndicator();
+  }
   try {
     if (elements.themeChipGroup.hasPointerCapture?.(pointerId)) {
       elements.themeChipGroup.releasePointerCapture(pointerId);
@@ -1500,6 +1550,11 @@ function finishThemeDrag(pointerId) {
   } catch {
     // The pointer may already have been released by the browser.
   }
+  if (!wasDragging) {
+    themeDrag.suppressClick = false;
+    return;
+  }
+
   window.setTimeout(() => {
     themeDrag.suppressClick = false;
   }, 0);
@@ -1507,6 +1562,13 @@ function finishThemeDrag(pointerId) {
 
 function previewThemeChoiceFromPointer(event) {
   const themeChoice = getThemeChoiceAtClientX(event.clientX);
+  updateSegmentIndicatorFromPointer(
+    elements.themeChipGroup,
+    themeDrag.buttonCenters,
+    themeChoice,
+    event.clientX,
+    "theme",
+  );
   if (!themeChoice || themeChoice === themeDrag.pendingChoice) {
     return;
   }
@@ -1515,11 +1577,30 @@ function previewThemeChoiceFromPointer(event) {
   elements.themeButtons.forEach((button) => {
     button.classList.toggle("is-pending", button.dataset.themeChoice === themeChoice);
   });
-  updateThemeIndicator(themeChoice);
 }
 
 function getThemeChoiceAtClientX(clientX) {
   return getNearestChoiceAtClientX(clientX, themeDrag.buttonCenters, elements.themeButtons, "themeChoice");
+}
+
+function maybeStartSegmentDrag(event, dragState, group) {
+  if (dragState.dragging) {
+    return true;
+  }
+
+  const deltaX = event.clientX - dragState.startClientX;
+  const deltaY = event.clientY - dragState.startClientY;
+  if (
+    Math.abs(deltaX) < SEGMENT_DRAG_START_THRESHOLD_PX ||
+    Math.abs(deltaX) < Math.abs(deltaY)
+  ) {
+    return false;
+  }
+
+  dragState.dragging = true;
+  dragState.suppressClick = true;
+  group.classList.add("is-dragging");
+  return true;
 }
 
 function measureChoiceCenters(buttons, datasetKey) {
@@ -1528,8 +1609,48 @@ function measureChoiceCenters(buttons, datasetKey) {
     return {
       value: button.dataset[datasetKey] || "",
       centerX: rect.left + rect.width / 2,
+      width: rect.width,
     };
   });
+}
+
+function updateSegmentIndicatorFromPointer(group, measuredChoices, value, clientX, prefix) {
+  if (!group || !value) {
+    return;
+  }
+
+  const groupRect = group.getBoundingClientRect();
+  const groupStyle = getComputedStyle(group);
+  const inset = Number.parseFloat(groupStyle.getPropertyValue("--topbar-segment-inset")) || 0;
+  const activeChoice = measuredChoices.find((choice) => choice.value === value);
+  const thumbWidth = activeChoice?.width ||
+    Number.parseFloat(groupStyle.getPropertyValue(`--${prefix}-indicator-width`)) ||
+    0;
+  if (thumbWidth <= 0) {
+    return;
+  }
+
+  const minX = inset;
+  const maxX = Math.max(minX, groupRect.width - inset - thumbWidth);
+  const pointerX = clientX - groupRect.left - thumbWidth / 2;
+  const x = clamp(pointerX, minX, maxX);
+  group.style.setProperty(`--${prefix}-indicator-x`, `${x.toFixed(1)}px`);
+  group.style.setProperty(`--${prefix}-indicator-width`, `${thumbWidth.toFixed(1)}px`);
+}
+
+function getSegmentButtonFromClick(event, group, selector) {
+  const targetButton = event.target instanceof Element
+    ? event.target.closest(selector)
+    : null;
+  if (targetButton && group.contains(targetButton)) {
+    return targetButton;
+  }
+
+  const hitTarget = document.elementFromPoint(event.clientX, event.clientY);
+  const hitButton = hitTarget instanceof Element
+    ? hitTarget.closest(selector)
+    : null;
+  return hitButton && group.contains(hitButton) ? hitButton : null;
 }
 
 function getNearestChoiceAtClientX(clientX, measuredChoices, fallbackButtons, datasetKey) {
@@ -2604,6 +2725,10 @@ function updateAppMode() {
 }
 
 function updateClearButton() {
+  if (!elements.clearButton) {
+    return;
+  }
+
   if (state.appMode === "compare") {
     elements.clearButton.disabled = !runtime.compareController?.hasContent();
     return;
@@ -2628,12 +2753,15 @@ function updateModeIndicator(appMode = state.appMode) {
 
     const groupRect = elements.modeChipGroup.getBoundingClientRect();
     const buttonRect = activeButton.getBoundingClientRect();
-    const groupStyle = getComputedStyle(elements.modeChipGroup);
-    const borderLeft = Number.parseFloat(groupStyle.borderLeftWidth) || 0;
-    elements.modeChipGroup.style.setProperty("--mode-indicator-x", `${(buttonRect.left - groupRect.left - borderLeft).toFixed(1)}px`);
-    elements.modeChipGroup.style.setProperty("--mode-indicator-width", `${buttonRect.width.toFixed(1)}px`);
-    elements.modeChipGroup.style.setProperty("--mode-indicator-height", `${buttonRect.height.toFixed(1)}px`);
+    setSegmentIndicatorGeometry(elements.modeChipGroup, groupRect, buttonRect, "mode");
   });
+}
+
+function setSegmentIndicatorGeometry(group, groupRect, buttonRect, prefix) {
+  const x = buttonRect.left - groupRect.left;
+  group.style.setProperty(`--${prefix}-indicator-x`, `${Math.max(0, x).toFixed(1)}px`);
+  group.style.setProperty(`--${prefix}-indicator-width`, `${buttonRect.width.toFixed(1)}px`);
+  group.style.setProperty(`--${prefix}-indicator-height`, `${buttonRect.height.toFixed(1)}px`);
 }
 
 function clearModePendingButtons() {
@@ -2704,11 +2832,7 @@ function updateThemeIndicator(themeChoice = state.themeChoice) {
 
     const groupRect = elements.themeChipGroup.getBoundingClientRect();
     const buttonRect = activeButton.getBoundingClientRect();
-    const groupStyle = getComputedStyle(elements.themeChipGroup);
-    const borderLeft = Number.parseFloat(groupStyle.borderLeftWidth) || 0;
-    elements.themeChipGroup.style.setProperty("--theme-indicator-x", `${(buttonRect.left - groupRect.left - borderLeft).toFixed(1)}px`);
-    elements.themeChipGroup.style.setProperty("--theme-indicator-width", `${buttonRect.width.toFixed(1)}px`);
-    elements.themeChipGroup.style.setProperty("--theme-indicator-height", `${buttonRect.height.toFixed(1)}px`);
+    setSegmentIndicatorGeometry(elements.themeChipGroup, groupRect, buttonRect, "theme");
   });
 }
 
