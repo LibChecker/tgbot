@@ -1916,7 +1916,7 @@ function initSdkIconPreview() {
     setLiquidGlassHighlightFromClientPoint(popup, iconRect.left + iconRect.width / 2, iconRect.top + iconRect.height / 2);
   };
 
-  const hidePreview = () => {
+  const hidePreview = ({ immediate = false } = {}) => {
     if (!preview) {
       return;
     }
@@ -1924,6 +1924,11 @@ function initSdkIconPreview() {
     preview.classList.remove("is-visible", "is-mono", "is-pinned");
     activeIcon = null;
     activePinned = false;
+    if (immediate) {
+      preview.hidden = true;
+      return;
+    }
+
     window.setTimeout(() => {
       if (!activeIcon && preview) {
         preview.hidden = true;
@@ -2020,12 +2025,7 @@ function initSdkIconPreview() {
     }
   });
 
-  window.addEventListener("scroll", () => {
-    if (activeIcon) {
-      positionPreview(activeIcon);
-      updateLiquidGlassFilterForPreview(ensurePreview());
-    }
-  }, true);
+  window.addEventListener("scroll", () => hidePreview({ immediate: true }), true);
 
   window.addEventListener("resize", hidePreview);
 }
@@ -2108,7 +2108,7 @@ function initSdkRulePreview() {
     setLiquidGlassHighlightFromClientPoint(preview, event.clientX, event.clientY);
   };
 
-  const hidePreview = () => {
+  const hidePreview = ({ immediate = false } = {}) => {
     if (!preview) {
       return;
     }
@@ -2118,6 +2118,11 @@ function initSdkRulePreview() {
     preview.setAttribute("aria-hidden", "true");
     activeLabel = null;
     activePinned = false;
+    if (immediate) {
+      preview.hidden = true;
+      return;
+    }
+
     window.setTimeout(() => {
       if (!activeLabel && preview) {
         preview.hidden = true;
@@ -2275,12 +2280,7 @@ function initSdkRulePreview() {
     }
   });
 
-  window.addEventListener("scroll", () => {
-    if (activeLabel) {
-      positionPreview(activeLabel);
-      updateLiquidGlassFilterForPreview(ensurePreview());
-    }
-  }, true);
+  window.addEventListener("scroll", () => hidePreview({ immediate: true }), true);
 
   window.addEventListener("resize", hidePreview);
 }
