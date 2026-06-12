@@ -1096,17 +1096,16 @@ initWebAnalytics(() => ({
 function bindEvents() {
   elements.modeChipGroup.addEventListener("click", handleModeChipGroupClick);
   elements.modeChipGroup.addEventListener("pointerdown", beginModeDrag);
-  elements.modeChipGroup.addEventListener("pointermove", updateModeDrag);
-  elements.modeChipGroup.addEventListener("pointerup", endModeDrag);
-  elements.modeChipGroup.addEventListener("pointercancel", cancelModeDrag);
-  elements.modeChipGroup.addEventListener("lostpointercapture", cancelModeDrag);
 
   elements.themeChipGroup.addEventListener("click", handleThemeChipGroupClick);
   elements.themeChipGroup.addEventListener("pointerdown", beginThemeDrag);
-  elements.themeChipGroup.addEventListener("pointermove", updateThemeDrag);
-  elements.themeChipGroup.addEventListener("pointerup", endThemeDrag);
-  elements.themeChipGroup.addEventListener("pointercancel", cancelThemeDrag);
-  elements.themeChipGroup.addEventListener("lostpointercapture", cancelThemeDrag);
+
+  document.addEventListener("pointermove", updateModeDrag);
+  document.addEventListener("pointerup", endModeDrag);
+  document.addEventListener("pointercancel", cancelModeDrag);
+  document.addEventListener("pointermove", updateThemeDrag);
+  document.addEventListener("pointerup", endThemeDrag);
+  document.addEventListener("pointercancel", cancelThemeDrag);
 
   systemThemeMedia.addEventListener("change", () => {
     if (state.themeChoice === "system") {
@@ -4183,7 +4182,7 @@ function renderSdkRuleLabel(sdk, unknownLabel = "Unknown") {
 function renderAppIcon(info) {
   const src = sanitizeImageSrc(info.icon?.dataUri || "");
   if (src) {
-    return `<img class="app-icon" src="${escapeAttr(src)}" alt="${escapeAttr(info.appName || t("appName"))}">`;
+    return `<span class="app-icon-frame"><img class="app-icon" src="${escapeAttr(src)}" alt="${escapeAttr(info.appName || t("appName"))}"></span>`;
   }
 
   return `<div class="app-icon-placeholder" aria-hidden="true">${escapeHtml(getInitial(info.appName || info.packageName))}</div>`;

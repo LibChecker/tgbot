@@ -60,6 +60,7 @@
   --count-text: #005ecb;
   --shadow: 0 18px 42px rgba(0, 0, 0, 0.08);
   --icon-shadow: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.1));
+  --app-icon-shadow: 0 10px 18px rgba(0, 0, 0, 0.1);
   --drop-glass-core: rgba(0, 113, 227, 0.12);
   --drop-glass-sheen: rgba(255, 255, 255, 0.46);
   --drop-glass-glow: rgba(52, 199, 89, 0.06);
@@ -142,6 +143,7 @@
   --count-text: #8ec5ff;
   --shadow: 0 20px 48px rgba(0, 0, 0, 0.28);
   --icon-shadow: drop-shadow(0 14px 22px rgba(0, 0, 0, 0.28));
+  --app-icon-shadow: 0 14px 22px rgba(0, 0, 0, 0.28);
   --drop-glass-core: rgba(10, 132, 255, 0.16);
   --drop-glass-sheen: rgba(255, 255, 255, 0.08);
   --drop-glass-glow: rgba(48, 209, 88, 0.08);
@@ -1922,7 +1924,7 @@ svg {
   background: color-mix(in srgb, var(--surface-soft) 82%, transparent);
 }
 
-.compare-app-card .app-icon,
+.compare-app-card .app-icon-frame,
 .compare-app-card .app-icon-placeholder {
   width: 64px;
   height: 64px;
@@ -2242,7 +2244,7 @@ svg {
   min-width: 0;
 }
 
-.app-icon,
+.app-icon-frame,
 .app-icon-placeholder {
   width: clamp(72px, 10vw, 104px);
   height: clamp(72px, 10vw, 104px);
@@ -2250,9 +2252,31 @@ svg {
   border-radius: 50%;
 }
 
+.app-icon-frame {
+  display: block;
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  box-shadow: var(--app-icon-shadow);
+  contain: paint;
+  -webkit-mask-image: radial-gradient(circle closest-side at center, #000 98.5%, transparent 100%);
+  mask-image: radial-gradient(circle closest-side at center, #000 98.5%, transparent 100%);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  transform: translateZ(0);
+}
+
 .app-icon {
-  object-fit: contain;
-  filter: var(--icon-shadow);
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: auto;
+  transform: scale(1.012);
+  transform-origin: center;
+  backface-visibility: hidden;
 }
 
 .app-icon-placeholder {
@@ -2614,7 +2638,7 @@ svg {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--card-bg);
-  box-shadow: 0 1px 0 color-mix(in srgb, #ffffff 18%, transparent) inset;
+  box-shadow: none;
 }
 
 .history-row {
@@ -2776,15 +2800,17 @@ svg {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface-soft) 82%, transparent);
+  gap: 10px;
+  min-height: 40px;
+  margin-bottom: 12px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
   color: var(--heading-text);
   cursor: pointer;
   list-style: none;
+  transition: background 160ms ease, color 160ms ease;
 }
 
 .component-group-summary::marker,
@@ -2795,13 +2821,14 @@ svg {
 
 .component-group-summary::before {
   content: "";
-  flex: 0 0 8px;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  opacity: 0.62;
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  margin-left: 3px;
+  border-right: 2px solid color-mix(in srgb, currentColor 58%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, currentColor 58%, transparent);
   transform: rotate(-45deg);
+  transition: transform 180ms var(--topbar-segment-settle), border-color 160ms ease;
 }
 
 .component-group-block[open] > .component-group-summary::before {
@@ -2815,21 +2842,38 @@ svg {
 .component-group-title {
   min-width: 0;
   flex: 1 1 auto;
-  font-size: 1rem;
-  font-weight: 700;
+  color: var(--heading-text);
+  font-size: 1.05rem;
+  font-weight: 720;
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
 .component-group-count {
   flex: 0 0 auto;
-  min-width: 32px;
-  padding: 0.16rem 0.52rem;
+  min-width: 0;
+  padding: 0.18rem 0.56rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
   border-radius: 999px;
-  background: var(--count-bg);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--count-text);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 650;
   text-align: center;
+}
+
+.component-group-summary:hover {
+  background: color-mix(in srgb, var(--surface-soft) 44%, transparent);
+}
+
+.component-group-summary:hover::before {
+  border-color: color-mix(in srgb, currentColor 74%, transparent);
+}
+
+.component-group-summary:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--surface-soft) 58%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .list-stack,
@@ -3384,11 +3428,14 @@ svg {
 }
 
 .lcapps-spinner {
+  flex: 0 0 16px;
+  display: block;
+  box-sizing: border-box;
   width: 16px;
   height: 16px;
   border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-top-color: var(--accent);
-  border-radius: 999px;
+  border-radius: 50%;
   animation: compare-spin 780ms linear infinite;
 }
 
@@ -3848,8 +3895,8 @@ svg {
 
 @media (max-width: 900px) {
   :root {
-    --topbar-height: 94px;
-    --topbar-gap-after: 16px;
+    --topbar-height: 52px;
+    --topbar-gap-after: 14px;
     --page-width: min(calc(100% - 16px), 100%);
   }
 
@@ -3859,24 +3906,38 @@ svg {
   }
 
   .topbar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 8px;
-    padding-bottom: 9px;
+    align-items: center;
+    flex-direction: row;
+    gap: 10px;
   }
 
   .brand {
-    width: 100%;
+    flex: 0 0 auto;
+    max-width: none;
+    min-width: max-content;
+  }
+
+  .brand-title.is-dot-rendered,
+  .brand-title.is-text-rendered,
+  .brand-title__layer {
+    flex-wrap: nowrap;
   }
 
   .topbar-actions {
-    width: 100%;
+    flex: 1 1 auto;
+    width: auto;
     flex-wrap: nowrap;
     justify-content: flex-start;
+    gap: 6px;
     overflow-x: auto;
-    padding-bottom: 1px;
+    overflow-y: hidden;
+    padding: 1px 18px 1px 1px;
     scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 22px), transparent 100%);
   }
 
   .topbar-actions::-webkit-scrollbar {
@@ -3888,6 +3949,7 @@ svg {
   .select-control,
   .topbar .icon-button {
     flex: 0 0 auto;
+    scroll-snap-align: start;
   }
 
   .tool-panel {
@@ -3977,7 +4039,7 @@ svg {
 
 @media (max-width: 480px) {
   :root {
-    --topbar-height: 94px;
+    --topbar-height: 52px;
   }
 
   .brand-mark {
@@ -4008,11 +4070,13 @@ svg {
   }
 
   .select-control {
-    width: min(100%, 180px);
+    width: auto;
   }
 
   .select-control select {
-    width: 100%;
+    width: auto;
+    min-width: 118px;
+    padding-right: 30px;
   }
 
   .theme-chip-group {
@@ -4054,7 +4118,7 @@ svg {
     justify-items: center;
   }
 
-  .app-icon,
+  .app-icon-frame,
   .app-icon-placeholder {
     width: 68px;
     height: 68px;

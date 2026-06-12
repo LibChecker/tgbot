@@ -951,7 +951,7 @@ export class CompareController {
   renderAppIcon(info) {
     const src = sanitizeImageSrc(info.icon?.dataUri || "");
     if (src) {
-      return `<img class="app-icon" src="${escapeAttr(src)}" alt="${escapeAttr(info.appName || this.t("appName"))}">`;
+      return `<span class="app-icon-frame"><img class="app-icon" src="${escapeAttr(src)}" alt="${escapeAttr(info.appName || this.t("appName"))}"></span>`;
     }
 
     return `<div class="app-icon-placeholder" aria-hidden="true">${escapeHtml(getInitial(info.appName || info.packageName))}</div>`;
