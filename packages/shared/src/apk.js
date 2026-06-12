@@ -79,6 +79,13 @@ const ZIP_BUNDLE_METADATA_PREFIX_BYTES = asciiBytes("BUNDLE-METADATA/");
 const ZIP_KOTLIN_TOOLING_METADATA_BYTES = asciiBytes("kotlin-tooling-metadata.json");
 const ZIP_APK_SUFFIX_BYTES = asciiBytes(".apk");
 const ZIP_MACOSX_PREFIX_BYTES = asciiBytes("__macosx/");
+const ZIP_RESOURCE_ENTRY_SUFFIX_BYTES = [
+  asciiBytes(".png"),
+  asciiBytes(".webp"),
+  asciiBytes(".jpg"),
+  asciiBytes(".jpeg"),
+  asciiBytes(".xml"),
+];
 const CONTAINED_APK_EXTRACT_CONCURRENCY = 4;
 const MAX_APP_ICON_BYTES = 128 * 1024;
 const ADAPTIVE_ICON_SIZE = 108;
@@ -2436,6 +2443,7 @@ function shouldDecodeZipEntryName(bytes, start, length) {
     ) ||
     bytesStartWithAscii(bytes, start, length, ZIP_LIB_PREFIX_BYTES) ||
     bytesStartWithAscii(bytes, start, length, ZIP_RES_PREFIX_BYTES) ||
+    isPotentialResourceEntryName(bytes, start, length) ||
     bytesStartWithAscii(bytes, start, length, ZIP_META_INF_PREFIX_BYTES) ||
     bytesStartWithAscii(bytes, start, length, ZIP_BUNDLE_METADATA_PREFIX_BYTES) ||
     bytesMatchAscii(bytes, start, length, ZIP_KOTLIN_TOOLING_METADATA_BYTES) ||
@@ -2453,10 +2461,26 @@ function shouldKeepZipEntry(path) {
     DEX_ENTRY_PATTERN.test(path) ||
     path.startsWith("lib/") ||
     path.startsWith("res/") ||
+    isPotentialResourceEntryPath(path) ||
     path.startsWith("META-INF/") ||
     path.startsWith("BUNDLE-METADATA/") ||
     path === "kotlin-tooling-metadata.json" ||
     isContainedApkPath(path)
+  );
+}
+
+function isPotentialResourceEntryName(bytes, start, length) {
+  return (
+    !bytesStartWithAsciiIgnoreCase(bytes, start, length, ZIP_MACOSX_PREFIX_BYTES) &&
+    bytesEndWithAnyAsciiIgnoreCase(bytes, start, length, ZIP_RESOURCE_ENTRY_SUFFIX_BYTES)
+  );
+}
+
+function isPotentialResourceEntryPath(path) {
+  const normalized = String(path || "").replaceAll("\\", "/");
+  return (
+    !normalized.toLowerCase().startsWith("__macosx/") &&
+    (isImageResourcePath(normalized) || isXmlResourcePath(normalized))
   );
 }
 
@@ -2516,6 +2540,15 @@ function bytesEndWithAsciiIgnoreCase(bytes, start, length, expected) {
     }
   }
   return true;
+}
+
+function bytesEndWithAnyAsciiIgnoreCase(bytes, start, length, suffixes) {
+  for (const suffix of suffixes) {
+    if (bytesEndWithAsciiIgnoreCase(bytes, start, length, suffix)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function toAsciiLowerByte(value) {
