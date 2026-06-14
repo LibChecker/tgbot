@@ -88,7 +88,10 @@ export function createRuntimeState() {
     lcappsReaderModulePromise: null,
     sdkIconRendererModule: null,
     sdkIconRendererModulePromise: null,
+    reportRendererModule: null,
+    reportRendererModulePromise: null,
     reportSdkMetadataModulePromise: null,
+    reportPreviewInteractionsPromise: null,
     lcappsSdkAnnotationModulePromise: null,
     reportSdkMetadataHydrationToken: 0,
     lcappsPickerToken: 0,
@@ -105,5 +108,4 @@ export function createRuntimeState() {
 
 export const pointerCoordinateUpdaters = new WeakMap();
 export const dateTimeFormatters = new Map();
-export const exportJsonCache = new WeakMap();
 export const pendingAnalyticsEvents = [];
