@@ -46,6 +46,9 @@ const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
 const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
 const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
 const SEGMENT_DRAG_START_THRESHOLD_PX = 4;
+const SEGMENT_TOUCH_DRAG_START_THRESHOLD_PX = 16;
+const TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX = 12;
+const TOPBAR_SCROLL_EPSILON_PX = 1;
 const LIQUID_GLASS_CONTROLS = Object.freeze({
   edgeIntensity: 0.01,
   rimIntensity: 0.05,
@@ -62,6 +65,7 @@ const LIQUID_GLASS_CONTROLS = Object.freeze({
 const LCAPPS_BUBBLE_BOUNCE_MS = 1040;
 const systemThemeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 const fineHoverMedia = window.matchMedia("(hover: hover) and (pointer: fine)");
+const mobileTopbarMedia = window.matchMedia("(max-width: 700px)");
 const POINTER_SPOTLIGHT_MIN_ALPHA = 0.16;
 const POINTER_SPOTLIGHT_MAX_ALPHA = 0.42;
 const POINTER_SPOTLIGHT_DISTANCE_FOR_MAX_ALPHA = 340;
@@ -1418,17 +1422,20 @@ function beginModeDrag(event) {
 
   modeDrag.active = true;
   modeDrag.dragging = false;
+  modeDrag.scrolling = false;
   modeDrag.pointerId = event.pointerId;
   modeDrag.startClientX = event.clientX;
   modeDrag.startClientY = event.clientY;
+  modeDrag.scrollStartLeft = elements.topbarActions?.scrollLeft || 0;
+  modeDrag.startedOnActiveSegment = isPointerOnActiveSegmentButton(
+    event,
+    elements.modeChipGroup,
+    ".mode-chip",
+  );
   modeDrag.pendingMode = "";
   modeDrag.suppressClick = false;
   modeDrag.buttonCenters = measureChoiceCenters(elements.modeButtons, "appMode");
-  try {
-    elements.modeChipGroup.setPointerCapture?.(event.pointerId);
-  } catch {
-    // Pointer capture is an enhancement; nearest-mode dragging still works without it.
-  }
+  captureSegmentPointer(elements.modeChipGroup, event);
 }
 
 function updateModeDrag(event) {
@@ -1469,9 +1476,12 @@ function finishModeDrag(pointerId) {
   elements.modeChipGroup.classList.remove("is-dragging");
   modeDrag.active = false;
   modeDrag.dragging = false;
+  modeDrag.scrolling = false;
   modeDrag.pointerId = null;
   modeDrag.startClientX = 0;
   modeDrag.startClientY = 0;
+  modeDrag.scrollStartLeft = 0;
+  modeDrag.startedOnActiveSegment = false;
   modeDrag.pendingMode = "";
   modeDrag.buttonCenters = [];
   clearModePendingButtons();
@@ -1486,6 +1496,12 @@ function finishModeDrag(pointerId) {
     // The pointer may already have been released by the browser.
   }
   if (!wasDragging) {
+    if (modeDrag.suppressClick) {
+      window.setTimeout(() => {
+        modeDrag.suppressClick = false;
+      }, 0);
+      return;
+    }
     modeDrag.suppressClick = false;
     return;
   }
@@ -1525,17 +1541,20 @@ function beginThemeDrag(event) {
 
   themeDrag.active = true;
   themeDrag.dragging = false;
+  themeDrag.scrolling = false;
   themeDrag.pointerId = event.pointerId;
   themeDrag.startClientX = event.clientX;
   themeDrag.startClientY = event.clientY;
+  themeDrag.scrollStartLeft = elements.topbarActions?.scrollLeft || 0;
+  themeDrag.startedOnActiveSegment = isPointerOnActiveSegmentButton(
+    event,
+    elements.themeChipGroup,
+    ".theme-chip",
+  );
   themeDrag.pendingChoice = "";
   themeDrag.suppressClick = false;
   themeDrag.buttonCenters = measureChoiceCenters(elements.themeButtons, "themeChoice");
-  try {
-    elements.themeChipGroup.setPointerCapture?.(event.pointerId);
-  } catch {
-    // Pointer capture is an enhancement; nearest-choice dragging still works without it.
-  }
+  captureSegmentPointer(elements.themeChipGroup, event);
 }
 
 function updateThemeDrag(event) {
@@ -1576,9 +1595,12 @@ function finishThemeDrag(pointerId) {
   elements.themeChipGroup.classList.remove("is-dragging");
   themeDrag.active = false;
   themeDrag.dragging = false;
+  themeDrag.scrolling = false;
   themeDrag.pointerId = null;
   themeDrag.startClientX = 0;
   themeDrag.startClientY = 0;
+  themeDrag.scrollStartLeft = 0;
+  themeDrag.startedOnActiveSegment = false;
   themeDrag.pendingChoice = "";
   themeDrag.buttonCenters = [];
   clearThemePendingButtons();
@@ -1593,6 +1615,12 @@ function finishThemeDrag(pointerId) {
     // The pointer may already have been released by the browser.
   }
   if (!wasDragging) {
+    if (themeDrag.suppressClick) {
+      window.setTimeout(() => {
+        themeDrag.suppressClick = false;
+      }, 0);
+      return;
+    }
     themeDrag.suppressClick = false;
     return;
   }
@@ -1627,22 +1655,87 @@ function getThemeChoiceAtClientX(clientX) {
 
 function maybeStartSegmentDrag(event, dragState, group) {
   if (dragState.dragging) {
+    event.preventDefault();
     return true;
+  }
+
+  if (dragState.scrolling) {
+    scrollTopbarActionsFromSegmentPointer(event, dragState);
+    return false;
   }
 
   const deltaX = event.clientX - dragState.startClientX;
   const deltaY = event.clientY - dragState.startClientY;
+  const absDeltaX = Math.abs(deltaX);
+  const absDeltaY = Math.abs(deltaY);
   if (
-    Math.abs(deltaX) < SEGMENT_DRAG_START_THRESHOLD_PX ||
-    Math.abs(deltaX) < Math.abs(deltaY)
+    absDeltaX < SEGMENT_DRAG_START_THRESHOLD_PX ||
+    absDeltaX < absDeltaY
   ) {
+    return false;
+  }
+
+  if (shouldStartTopbarSegmentScroll(event, dragState, absDeltaX)) {
+    startTopbarSegmentScroll(event, dragState);
+    return false;
+  }
+
+  const dragThreshold = isMobileTopbarSegmentPointer(event)
+    ? SEGMENT_TOUCH_DRAG_START_THRESHOLD_PX
+    : SEGMENT_DRAG_START_THRESHOLD_PX;
+  if (absDeltaX < dragThreshold) {
     return false;
   }
 
   dragState.dragging = true;
   dragState.suppressClick = true;
   group.classList.add("is-dragging");
+  captureSegmentPointer(group, event);
+  event.preventDefault();
   return true;
+}
+
+function captureSegmentPointer(group, event) {
+  try {
+    group.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Pointer capture is an enhancement; document-level dragging still works without it.
+  }
+}
+
+function shouldStartTopbarSegmentScroll(event, dragState, absDeltaX) {
+  return !dragState.startedOnActiveSegment &&
+    absDeltaX >= TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX &&
+    isMobileTopbarSegmentPointer(event) &&
+    isScrollableTopbarActions(elements.topbarActions);
+}
+
+function startTopbarSegmentScroll(event, dragState) {
+  dragState.scrolling = true;
+  dragState.suppressClick = true;
+  scrollTopbarActionsFromSegmentPointer(event, dragState);
+}
+
+function scrollTopbarActionsFromSegmentPointer(event, dragState) {
+  const scroller = elements.topbarActions;
+  if (!scroller) {
+    return;
+  }
+
+  scroller.scrollLeft = dragState.scrollStartLeft - (event.clientX - dragState.startClientX);
+}
+
+function isMobileTopbarSegmentPointer(event) {
+  return event.pointerType === "touch" || event.pointerType === "pen" || mobileTopbarMedia.matches;
+}
+
+function isScrollableTopbarActions(scroller) {
+  return Boolean(scroller && scroller.scrollWidth - scroller.clientWidth > TOPBAR_SCROLL_EPSILON_PX);
+}
+
+function isPointerOnActiveSegmentButton(event, group, selector) {
+  const button = getSegmentButtonFromClick(event, group, selector);
+  return Boolean(button?.classList.contains("is-active"));
 }
 
 function measureChoiceCenters(buttons, datasetKey) {

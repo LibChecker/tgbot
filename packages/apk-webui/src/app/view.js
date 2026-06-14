@@ -2,6 +2,7 @@ export function collectAppElements(root = document) {
   return {
     modeButtons: [...root.querySelectorAll("[data-app-mode]")],
     modeChipGroup: root.querySelector("#mode-chip-group"),
+    topbarActions: root.querySelector(".topbar-actions"),
     themeButtons: [...root.querySelectorAll(".theme-chip[data-theme-choice]")],
     themeChipGroup: root.querySelector("#theme-chip-group"),
     languageSelect: root.querySelector("#language-select"),
