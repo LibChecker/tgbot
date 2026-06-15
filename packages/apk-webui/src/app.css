@@ -1412,13 +1412,13 @@ svg {
 
 .history-loading-spinner {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
-  box-sizing: border-box;
-  border: 2px solid color-mix(in srgb, currentColor 26%, transparent);
-  border-top-color: currentColor;
-  border-radius: 50%;
+  fill: currentColor;
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, currentColor 24%, transparent));
+  transform-box: fill-box;
+  transform-origin: center;
   animation: compare-spin 760ms linear infinite;
 }
 
