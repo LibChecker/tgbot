@@ -39,6 +39,7 @@ export function createAppState({ locale, themeChoice, history, historyCollapsed,
     analyzeBusy: false,
     startedAt: 0,
     timer: null,
+    progressValue: null,
   };
 }
 

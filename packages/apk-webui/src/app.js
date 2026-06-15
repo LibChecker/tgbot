@@ -58,6 +58,17 @@ const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
 const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
 const HISTORY_SAVE_IDLE_TIMEOUT_MS = 1600;
 const URL_REPORT_ENDPOINT = "/url-report";
+const URL_REPORT_PROGRESS_KEYS = Object.freeze({
+  accepted: "progressPreparingLink",
+  url_preview: "progressPreparingLink",
+  url_parse: "progressPreparingLink",
+  remote_metadata: "progressRemoteMetadata",
+  zip_tail: "progressZipTail",
+  central_directory: "progressCentralDirectory",
+  apk_metadata: "progressApkMetadata",
+  sdk_annotation: "progressSdkAnnotation",
+  report_build: "progressReportBuild",
+});
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "0.1.000";
 const RUNTIME_LOG_EXPORT_TITLE = "LibChecker WebUI Runtime Logs";
 const MAX_RUNTIME_LOGS = 200;
@@ -2875,7 +2886,7 @@ async function analyzeSelectedFile() {
   preloadReportRenderer();
   preloadReportPreviewInteractions();
   setBusy(true);
-  showProgress("progressReading");
+  showProgress("progressReading", { progress: 0 });
   startTimer();
   trackWebEvent("webui.analysis.started", {
     result: "started",
@@ -2942,7 +2953,7 @@ async function analyzeDownloadUrl() {
   state.linkStatusKey = "linkFetching";
   renderLinkStatus();
   setBusy(true);
-  showProgress("progressDownloading");
+  showProgress("progressDownloading", { progress: 0.04 });
   startTimer();
   trackWebEvent("webui.link_analysis.started", {
     result: "started",
@@ -2962,6 +2973,7 @@ async function analyzeDownloadUrl() {
     const response = await fetch(URL_REPORT_ENDPOINT, {
       method: "POST",
       headers: {
+        "accept": "application/x-ndjson, application/json",
         "content-type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
@@ -2973,7 +2985,11 @@ async function analyzeDownloadUrl() {
     });
     linkTimings.fetch_headers_ms = getElapsedMs(fetchStartedAt);
     linkTimings.http_status = response.status || 0;
-    const payload = await parseJsonResponse(response, linkTimings);
+    const payload = await parseUrlReportResponse(response, linkTimings, (progressEvent) => {
+      if (state.jobs.has(jobId)) {
+        updateUrlReportProgress(progressEvent);
+      }
+    });
     if (!response.ok) {
       throw createUrlReportError(payload, response);
     }
@@ -3106,7 +3122,9 @@ function handleWorkerMessage(event) {
         message.stage === "parsing" ? "progressParsing" : "progressReading",
       );
     } else {
-      showProgress(message.stage === "parsing" ? "progressParsing" : "progressReading");
+      showProgress(message.stage === "parsing" ? "progressParsing" : "progressReading", {
+        progress: Number.isFinite(message.progress) ? message.progress : undefined,
+      });
     }
     return;
   }
@@ -3208,12 +3226,46 @@ function updateAnalyzeControls() {
   }
 }
 
-function showProgress(key) {
+function showProgress(key, options = {}) {
   elements.progress.hidden = false;
   elements.progress.classList.toggle("is-complete", key === "progressDone");
   elements.progress.classList.toggle("is-failed", key === "progressFailed");
+  if (key === "progressDone") {
+    setProgressValue(1);
+  } else if (key === "progressFailed") {
+    clearProgressValue();
+  } else if (Number.isFinite(options.progress)) {
+    setProgressValue(options.progress);
+  } else {
+    clearProgressValue();
+  }
   elements.progressLabel.textContent = t(key);
   updateElapsed();
+}
+
+function setProgressValue(value) {
+  const progressValue = clamp(Number(value), 0, 1);
+  state.progressValue = progressValue;
+  if (elements.progressBar) {
+    elements.progressBar.style.width = `${(progressValue * 100).toFixed(1)}%`;
+    elements.progressBar.style.animation = "none";
+  }
+  elements.progress.setAttribute("role", "progressbar");
+  elements.progress.setAttribute("aria-valuemin", "0");
+  elements.progress.setAttribute("aria-valuemax", "100");
+  elements.progress.setAttribute("aria-valuenow", String(Math.round(progressValue * 100)));
+}
+
+function clearProgressValue() {
+  state.progressValue = null;
+  if (elements.progressBar) {
+    elements.progressBar.style.removeProperty("width");
+    elements.progressBar.style.removeProperty("animation");
+  }
+  elements.progress.removeAttribute("role");
+  elements.progress.removeAttribute("aria-valuemin");
+  elements.progress.removeAttribute("aria-valuemax");
+  elements.progress.removeAttribute("aria-valuenow");
 }
 
 function startTimer() {
@@ -3230,10 +3282,21 @@ function stopTimer() {
 
 function updateElapsed() {
   const elapsed = state.startedAt ? (performance.now() - state.startedAt) / 1000 : 0;
-  const text = `${elapsed.toFixed(1)}s`;
+  const progressText = state.progressValue == null || elements.progress.classList.contains("is-failed")
+    ? ""
+    : ` · ${Math.round(state.progressValue * 100)}%`;
+  const text = `${elapsed.toFixed(1)}s${progressText}`;
   if (elements.progressTime.textContent !== text) {
     elements.progressTime.textContent = text;
   }
+}
+
+function resetProgressView() {
+  elements.progress.hidden = true;
+  elements.progress.classList.remove("is-complete", "is-failed");
+  clearProgressValue();
+  elements.progressTime.textContent = "0.0s";
+  elements.progressLabel.textContent = t("progressReady");
 }
 
 async function openRuntimeLogModal() {
@@ -3450,10 +3513,7 @@ function resetState() {
     elements.lcappsSearch.value = "";
   }
   finishLcappsPickerClose();
-  elements.progress.hidden = true;
-  elements.progress.classList.remove("is-complete", "is-failed");
-  elements.progressTime.textContent = "0.0s";
-  elements.progressLabel.textContent = t("progressReady");
+  resetProgressView();
   state.analyzeBusy = false;
   renderSelectedFile();
   renderLinkStatus();
@@ -3485,6 +3545,98 @@ function normalizeDownloadUrl(value) {
   }
   url.hash = "";
   return url.toString();
+}
+
+function updateUrlReportProgress(progressEvent) {
+  const stage = String(progressEvent?.stage || "");
+  const key = URL_REPORT_PROGRESS_KEYS[stage] || "progressDownloading";
+  const progressValue = Number.isFinite(progressEvent?.progress)
+    ? Math.max(progressEvent.progress, state.progressValue ?? 0)
+    : undefined;
+  showProgress(key, {
+    progress: progressValue,
+  });
+}
+
+async function parseUrlReportResponse(response, timings = null, onProgress = () => {}) {
+  const contentType = response.headers.get("content-type") || "";
+  if (response.body && contentType.includes("application/x-ndjson")) {
+    return parseStreamingUrlReportResponse(response, timings, onProgress);
+  }
+
+  return parseJsonResponse(response, timings);
+}
+
+async function parseStreamingUrlReportResponse(response, timings = null, onProgress = () => {}) {
+  const textStartedAt = performance.now();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pendingText = "";
+  let payload = null;
+  let bodyBytes = 0;
+  let parseMs = 0;
+
+  const handleLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const parseStartedAt = performance.now();
+    let event;
+    try {
+      event = JSON.parse(trimmed);
+    } finally {
+      parseMs += performance.now() - parseStartedAt;
+    }
+
+    if (event?.type === "progress") {
+      onProgress(event);
+      return;
+    }
+
+    if (event?.type === "result") {
+      payload = event.payload || null;
+      return;
+    }
+
+    if (event?.type === "error") {
+      throw createUrlReportError({ error: event.error || {} }, {
+        status: Number(event.httpStatus) || response.status || 422,
+      });
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    if (!value?.byteLength) {
+      continue;
+    }
+
+    bodyBytes += value.byteLength;
+    pendingText += decoder.decode(value, { stream: true });
+    let lineBreakIndex = pendingText.indexOf("\n");
+    while (lineBreakIndex >= 0) {
+      handleLine(pendingText.slice(0, lineBreakIndex));
+      pendingText = pendingText.slice(lineBreakIndex + 1);
+      lineBreakIndex = pendingText.indexOf("\n");
+    }
+  }
+
+  pendingText += decoder.decode();
+  handleLine(pendingText);
+
+  if (timings) {
+    timings.response_text_ms = getElapsedMs(textStartedAt);
+    timings.body_bytes = bodyBytes;
+    timings.json_parse_ms = Math.max(0, Math.round(parseMs));
+  }
+
+  return payload;
 }
 
 async function parseJsonResponse(response, timings = null) {
@@ -3676,10 +3828,7 @@ async function openHistoryItem(id) {
     state.report = report;
     state.activeTab = "summary";
     state.activeNativeAbi = "";
-    elements.progress.hidden = true;
-    elements.progress.classList.remove("is-complete", "is-failed");
-    elements.progressTime.textContent = "0.0s";
-    elements.progressLabel.textContent = t("progressReady");
+    resetProgressView();
     updateClearButton();
     renderReport();
     trackWebEvent("webui.history.opened", {
@@ -4406,10 +4555,7 @@ function activateLcappsReport(report) {
   state.report = report;
   state.activeTab = "summary";
   state.activeNativeAbi = "";
-  elements.progress.hidden = true;
-  elements.progress.classList.remove("is-complete", "is-failed");
-  elements.progressTime.textContent = "0.0s";
-  elements.progressLabel.textContent = t("progressReady");
+  resetProgressView();
   updateClearButton();
   renderReport();
   renderLcappsBubble();

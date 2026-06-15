@@ -10,6 +10,10 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
   "content-type": "application/json; charset=UTF-8",
 };
+const STREAM_HEADERS = {
+  "cache-control": "no-store",
+  "content-type": "application/x-ndjson; charset=UTF-8",
+};
 const DEFAULT_TERMINAL_SYSTEM = Object.freeze({
   name: "Cloudflare Pages",
   version: "",
@@ -76,106 +80,25 @@ async function handlePost({ request, env }) {
     url_path: safeUrlPath(url),
   });
 
+  if (wantsStreamingResponse(request)) {
+    return streamUrlReport({
+      env,
+      url,
+      locale: activeLocale,
+      requestId,
+      startedAt,
+    });
+  }
+
   try {
-    const locale = activeLocale;
-    const terminalSystem = resolveAnalysisTerminalSystem();
-    let stageStartedAt = Date.now();
-    logUrlReportEvent("info", "url_report.preview.started", {
-      request_id: requestId,
-      result: "started",
-      analysis_stage: "url_preview",
-      url_host: safeUrlHost(url),
-      url_path: safeUrlPath(url),
+    const reportPayload = await createUrlReportPayload({
+      env,
+      url,
+      locale: activeLocale,
+      requestId,
+      startedAt,
     });
-    const preview = await readApkInfoFromUrl(url, getLinkPreviewOptions(env));
-    logUrlReportEvent("info", "url_report.preview.succeeded", {
-      request_id: requestId,
-      result: "success",
-      analysis_stage: "url_preview",
-      duration_ms: Date.now() - stageStartedAt,
-      url_host: safeUrlHost(preview.url),
-      url_path: safeUrlPath(preview.url),
-      file_name: preview.fileName || null,
-      content_length_bytes: preview.fileSize || 0,
-      downloaded_bytes: preview.stats.downloadedBytes || 0,
-      range_request_count: preview.stats.rangeRequestCount || 0,
-      range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
-      package_name: preview.apkInfo.packageName,
-      version_name: preview.apkInfo.versionName,
-      ...getPrimitiveFields(preview.diagnostics),
-    });
-
-    stageStartedAt = Date.now();
-    logUrlReportEvent("info", "url_report.sdk_annotation.started", {
-      request_id: requestId,
-      result: "started",
-      analysis_stage: "sdk_annotation",
-      package_name: preview.apkInfo.packageName,
-    });
-    const sdkAnnotated = sdkRuleAnnotator(preview.apkInfo, resolveSdkIconDataUri);
-    const apkInfo = {
-      ...preview.apkInfo,
-      ...sdkAnnotated,
-    };
-    logUrlReportEvent("info", "url_report.sdk_annotation.succeeded", {
-      request_id: requestId,
-      result: "success",
-      analysis_stage: "sdk_annotation",
-      duration_ms: Date.now() - stageStartedAt,
-      package_name: apkInfo.packageName,
-      sdk_native_match_count: apkInfo.sdkSummary?.native.length || 0,
-      sdk_component_match_count: apkInfo.sdkSummary?.components.length || 0,
-    });
-
-    stageStartedAt = Date.now();
-    logUrlReportEvent("info", "url_report.report_build.started", {
-      request_id: requestId,
-      result: "started",
-      analysis_stage: "report_build",
-      package_name: apkInfo.packageName,
-    });
-    const report = assertApkReport({
-      locale,
-      terminalSystem,
-      analysisProfile: buildAnalysisProfile(apkInfo, terminalSystem, preview.stats),
-      durationMs: Date.now() - startedAt,
-      fileName: preview.fileName || inferFallbackFileName(url),
-      fileSizeBytes: preview.fileSize || 0,
-      analyzedAt: new Date().toISOString(),
-      apkInfo,
-    });
-    logUrlReportEvent("info", "url_report.report_build.succeeded", {
-      request_id: requestId,
-      result: "success",
-      analysis_stage: "report_build",
-      duration_ms: Date.now() - stageStartedAt,
-      package_name: apkInfo.packageName,
-    });
-
-    logUrlReportEvent("info", "url_report.succeeded", {
-      request_id: requestId,
-      result: "success",
-      duration_ms: Date.now() - startedAt,
-      url_host: safeUrlHost(preview.url),
-      url_path: safeUrlPath(preview.url),
-      content_length_bytes: preview.fileSize || 0,
-      downloaded_bytes: preview.stats.downloadedBytes || 0,
-      range_request_count: preview.stats.rangeRequestCount || 0,
-      range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
-      package_name: apkInfo.packageName,
-      version_name: apkInfo.versionName,
-      ...getPrimitiveFields(preview.diagnostics),
-    });
-
-    return jsonResponse({
-      report,
-      source: {
-        contentLengthBytes: preview.fileSize || 0,
-        contentType: preview.metadata?.contentType || "",
-        supportsRange: Boolean(preview.metadata?.supportsRange),
-        stats: preview.stats || {},
-      },
-    });
+    return jsonResponse(reportPayload);
   } catch (error) {
     logUrlReportEvent("error", "url_report.failed", {
       request_id: requestId,
@@ -192,6 +115,201 @@ async function handlePost({ request, env }) {
       },
     }, 422);
   }
+}
+
+async function createUrlReportPayload({ env, url, locale, requestId, startedAt, onProgress = () => {} }) {
+  const terminalSystem = resolveAnalysisTerminalSystem();
+  let stageStartedAt = Date.now();
+  onProgress({ stage: "url_preview", progress: 0.05 });
+  logUrlReportEvent("info", "url_report.preview.started", {
+    request_id: requestId,
+    result: "started",
+    analysis_stage: "url_preview",
+    url_host: safeUrlHost(url),
+    url_path: safeUrlPath(url),
+  });
+  const preview = await readApkInfoFromUrl(url, {
+    ...getLinkPreviewOptions(env),
+    onProgress,
+  });
+  logUrlReportEvent("info", "url_report.preview.succeeded", {
+    request_id: requestId,
+    result: "success",
+    analysis_stage: "url_preview",
+    duration_ms: Date.now() - stageStartedAt,
+    url_host: safeUrlHost(preview.url),
+    url_path: safeUrlPath(preview.url),
+    file_name: preview.fileName || null,
+    content_length_bytes: preview.fileSize || 0,
+    downloaded_bytes: preview.stats.downloadedBytes || 0,
+    range_request_count: preview.stats.rangeRequestCount || 0,
+    range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+    package_name: preview.apkInfo.packageName,
+    version_name: preview.apkInfo.versionName,
+    ...getPrimitiveFields(preview.diagnostics),
+  });
+
+  stageStartedAt = Date.now();
+  onProgress({
+    stage: "sdk_annotation",
+    progress: 0.86,
+    downloaded_bytes: preview.stats.downloadedBytes || 0,
+    range_request_count: preview.stats.rangeRequestCount || 0,
+    range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+  });
+  logUrlReportEvent("info", "url_report.sdk_annotation.started", {
+    request_id: requestId,
+    result: "started",
+    analysis_stage: "sdk_annotation",
+    package_name: preview.apkInfo.packageName,
+  });
+  const sdkAnnotated = sdkRuleAnnotator(preview.apkInfo, resolveSdkIconDataUri);
+  const apkInfo = {
+    ...preview.apkInfo,
+    ...sdkAnnotated,
+  };
+  onProgress({
+    stage: "sdk_annotation",
+    progress: 0.9,
+    downloaded_bytes: preview.stats.downloadedBytes || 0,
+    range_request_count: preview.stats.rangeRequestCount || 0,
+    range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+  });
+  logUrlReportEvent("info", "url_report.sdk_annotation.succeeded", {
+    request_id: requestId,
+    result: "success",
+    analysis_stage: "sdk_annotation",
+    duration_ms: Date.now() - stageStartedAt,
+    package_name: apkInfo.packageName,
+    sdk_native_match_count: apkInfo.sdkSummary?.native.length || 0,
+    sdk_component_match_count: apkInfo.sdkSummary?.components.length || 0,
+  });
+
+  stageStartedAt = Date.now();
+  onProgress({
+    stage: "report_build",
+    progress: 0.94,
+    downloaded_bytes: preview.stats.downloadedBytes || 0,
+    range_request_count: preview.stats.rangeRequestCount || 0,
+    range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+  });
+  logUrlReportEvent("info", "url_report.report_build.started", {
+    request_id: requestId,
+    result: "started",
+    analysis_stage: "report_build",
+    package_name: apkInfo.packageName,
+  });
+  const report = assertApkReport({
+    locale,
+    terminalSystem,
+    analysisProfile: buildAnalysisProfile(apkInfo, terminalSystem, preview.stats),
+    durationMs: Date.now() - startedAt,
+    fileName: preview.fileName || inferFallbackFileName(url),
+    fileSizeBytes: preview.fileSize || 0,
+    analyzedAt: new Date().toISOString(),
+    apkInfo,
+  });
+  onProgress({
+    stage: "report_build",
+    progress: 0.98,
+    downloaded_bytes: preview.stats.downloadedBytes || 0,
+    range_request_count: preview.stats.rangeRequestCount || 0,
+    range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+  });
+  logUrlReportEvent("info", "url_report.report_build.succeeded", {
+    request_id: requestId,
+    result: "success",
+    analysis_stage: "report_build",
+    duration_ms: Date.now() - stageStartedAt,
+    package_name: apkInfo.packageName,
+  });
+
+  logUrlReportEvent("info", "url_report.succeeded", {
+    request_id: requestId,
+    result: "success",
+    duration_ms: Date.now() - startedAt,
+    url_host: safeUrlHost(preview.url),
+    url_path: safeUrlPath(preview.url),
+    content_length_bytes: preview.fileSize || 0,
+    downloaded_bytes: preview.stats.downloadedBytes || 0,
+    range_request_count: preview.stats.rangeRequestCount || 0,
+    range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+    package_name: apkInfo.packageName,
+    version_name: apkInfo.versionName,
+    ...getPrimitiveFields(preview.diagnostics),
+  });
+
+  return {
+    report,
+    source: {
+      contentLengthBytes: preview.fileSize || 0,
+      contentType: preview.metadata?.contentType || "",
+      supportsRange: Boolean(preview.metadata?.supportsRange),
+      stats: preview.stats || {},
+    },
+  };
+}
+
+function streamUrlReport({ env, url, locale, requestId, startedAt }) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      const emit = (event) => {
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          // The client may have closed the connection.
+        }
+      };
+
+      emit({ type: "progress", stage: "accepted", progress: 0.02 });
+      Promise.resolve()
+        .then(async () => {
+          const reportPayload = await createUrlReportPayload({
+            env,
+            url,
+            locale,
+            requestId,
+            startedAt,
+            onProgress: (event) => emit({ type: "progress", ...event }),
+          });
+          emit({ type: "result", payload: reportPayload });
+        })
+        .catch((error) => {
+          logUrlReportEvent("error", "url_report.failed", {
+            request_id: requestId,
+            result: "error",
+            duration_ms: Date.now() - startedAt,
+            url_host: safeUrlHost(url),
+            url_path: safeUrlPath(url),
+            ...getErrorTelemetryFields(error),
+          });
+          emit({
+            type: "error",
+            httpStatus: 422,
+            error: {
+              name: error instanceof Error ? error.name : "Error",
+              ...buildErrorResponse(error, locale),
+            },
+          });
+        })
+        .finally(() => {
+          try {
+            controller.close();
+          } catch {
+            // The stream may already be closed after client abort.
+          }
+        });
+    },
+  });
+
+  return new Response(stream, {
+    headers: STREAM_HEADERS,
+  });
+}
+
+function wantsStreamingResponse(request) {
+  return /\bapplication\/x-ndjson\b/u.test(request.headers.get("accept") || "");
 }
 
 async function readJsonBody(request) {

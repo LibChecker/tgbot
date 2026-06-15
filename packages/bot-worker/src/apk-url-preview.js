@@ -48,24 +48,29 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
   };
 
   try {
+    notifyUrlProgress(options, stats, diagnostics, "url_parse", 0.06);
     const apkUrl = parseHttpUrl(rawUrl);
     diagnostics.analysis_stage = "remote_metadata";
+    notifyUrlProgress(options, stats, diagnostics, "remote_metadata", 0.1);
     const metadata = await fetchRemoteMetadata(apkUrl, stats);
     diagnostics.content_length_bytes = metadata.contentLength || 0;
     diagnostics.content_type = metadata.contentType || "";
     diagnostics.supports_range = Boolean(metadata.supportsRange);
+    notifyUrlProgress(options, stats, diagnostics, "remote_metadata", 0.18);
 
     if (!metadata.contentLength || metadata.contentLength <= 0) {
       throw new Error("The remote link did not return Content-Length, so the APK ZIP central directory cannot be located");
     }
 
     diagnostics.analysis_stage = "zip_tail";
+    notifyUrlProgress(options, stats, diagnostics, "zip_tail", 0.24);
     const tailPrefetchBytes = Math.max(
       EOCD_PROBE_BYTES,
       options.tailPrefetchBytes ?? DEFAULT_TAIL_PREFETCH_BYTES,
     );
     const tailStart = Math.max(0, metadata.contentLength - tailPrefetchBytes);
     const tailBytes = await downloadRange(apkUrl, tailStart, metadata.contentLength - tailStart, stats);
+    notifyUrlProgress(options, stats, diagnostics, "zip_tail", 0.36);
     const eocdOffsetInTail = findEndOfCentralDirectory(tailBytes);
     const eocd = parseEocd(tailBytes, eocdOffsetInTail);
     const maxCentralDirectoryBytes = options.maxCentralDirectoryBytes ?? DEFAULT_MAX_CENTRAL_DIRECTORY_BYTES;
@@ -75,6 +80,7 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     }
 
     diagnostics.analysis_stage = "central_directory";
+    notifyUrlProgress(options, stats, diagnostics, "central_directory", 0.46);
     const centralDirectoryBytes = await readBufferedOrRemoteRange(
       apkUrl,
       eocd.centralDirectoryOffset,
@@ -87,6 +93,7 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     );
     const zipEntries = parseCentralDirectory(centralDirectoryBytes);
     Object.assign(diagnostics, describeRemoteZipEntries(zipEntries));
+    notifyUrlProgress(options, stats, diagnostics, "central_directory", 0.58);
     const maxEntryCompressedBytes = options.maxEntryCompressedBytes ?? DEFAULT_MAX_ENTRY_COMPRESSED_BYTES;
     const rangeCache = createRangeCache([
       metadata.probeRange,
@@ -102,6 +109,7 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     }
 
     diagnostics.analysis_stage = "apk_metadata";
+    notifyUrlProgress(options, stats, diagnostics, "apk_metadata", 0.68);
     const source = {
       zipEntries,
       extractEntry: (entry) =>
@@ -116,6 +124,7 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
       scanDex: false,
       maxResourceBytes: options.maxResourceBytes ?? DEFAULT_MAX_RESOURCE_BYTES,
     });
+    notifyUrlProgress(options, stats, diagnostics, "apk_metadata", 0.82);
 
     return {
       apkInfo,
@@ -128,6 +137,26 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     };
   } catch (error) {
     throw annotateUrlAnalysisError(error, diagnostics, stats);
+  }
+}
+
+function notifyUrlProgress(options, stats, diagnostics, stage, progress) {
+  if (typeof options.onProgress !== "function") {
+    return;
+  }
+
+  try {
+    options.onProgress(compactDiagnosticFields({
+      stage,
+      progress,
+      analysis_stage: diagnostics.analysis_stage,
+      content_length_bytes: diagnostics.content_length_bytes || 0,
+      downloaded_bytes: stats.downloadedBytes || 0,
+      range_request_count: stats.rangeRequestCount || 0,
+      range_cache_hit_count: stats.rangeCacheHitCount || 0,
+    }));
+  } catch {
+    // Progress reporting must not affect APK parsing.
   }
 }
 

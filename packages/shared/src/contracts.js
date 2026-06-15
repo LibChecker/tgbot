@@ -243,6 +243,9 @@
  * @property {"progress"} type
  * @property {number} jobId
  * @property {"reading" | "parsing"} stage
+ * @property {number=} progress
+ * @property {number=} loadedBytes
+ * @property {number=} totalBytes
  */
 
 /**
@@ -406,7 +409,12 @@ export function isAnalyzerWorkerMessage(value) {
   }
 
   if (value.type === "progress") {
-    return WORKER_PROGRESS_STAGES.has(value.stage);
+    return (
+      WORKER_PROGRESS_STAGES.has(value.stage) &&
+      (value.progress == null || Number.isFinite(value.progress)) &&
+      (value.loadedBytes == null || Number.isFinite(value.loadedBytes)) &&
+      (value.totalBytes == null || Number.isFinite(value.totalBytes))
+    );
   }
 
   if (value.type === "error") {

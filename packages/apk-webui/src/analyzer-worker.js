@@ -7,6 +7,7 @@ import libcheckerSdkIconsUrl from "@shared/generated/libchecker-sdk-icons.js?url
 
 const APK_MIME_TYPE = "application/vnd.android.package-archive";
 const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
+const READ_PROGRESS_WEIGHT = 0.35;
 const sdkIconDataUriCache = new Map();
 let sdkModulesPromise = null;
 
@@ -49,23 +50,43 @@ async function analyze(message) {
     type: "progress",
     jobId: message.jobId,
     stage: "reading",
+    progress: 0,
   });
 
   const sdkModulesTask = loadSdkModules();
-  const buffer = await file.arrayBuffer();
+  const buffer = await readFileBuffer(file, message.jobId);
 
   self.postMessage({
     type: "progress",
     jobId: message.jobId,
     stage: "parsing",
+    progress: 0.42,
   });
 
   const apkInfo = await readAndroidPackageInfo(buffer);
+  self.postMessage({
+    type: "progress",
+    jobId: message.jobId,
+    stage: "parsing",
+    progress: 0.78,
+  });
   const sdkModules = await sdkModulesTask;
+  self.postMessage({
+    type: "progress",
+    jobId: message.jobId,
+    stage: "parsing",
+    progress: 0.86,
+  });
   const annotated = sdkModules.annotateSdkMarkers(
     apkInfo,
     sdkModules.resolveSdkIconDataUri,
   );
+  self.postMessage({
+    type: "progress",
+    jobId: message.jobId,
+    stage: "parsing",
+    progress: 0.92,
+  });
   const mergedApkInfo = {
     ...apkInfo,
     ...annotated,
@@ -87,6 +108,73 @@ async function analyze(message) {
     type: "result",
     jobId: message.jobId,
     report,
+  });
+}
+
+async function readFileBuffer(file, jobId) {
+  const totalBytes = Number(file.size) || 0;
+  if (!totalBytes || typeof file.stream !== "function") {
+    const buffer = await file.arrayBuffer();
+    postReadProgress(jobId, buffer.byteLength || totalBytes, buffer.byteLength || totalBytes);
+    return buffer;
+  }
+
+  const reader = file.stream().getReader();
+  const bytes = new Uint8Array(totalBytes);
+  let loadedBytes = 0;
+  let lastProgress = 0;
+  let lastEmittedAt = performance.now();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    if (!value?.byteLength) {
+      continue;
+    }
+
+    if (loadedBytes + value.byteLength > bytes.byteLength) {
+      const chunks = [bytes.subarray(0, loadedBytes), value];
+      loadedBytes += value.byteLength;
+      while (true) {
+        const next = await reader.read();
+        if (next.done) {
+          break;
+        }
+        if (next.value?.byteLength) {
+          chunks.push(next.value);
+          loadedBytes += next.value.byteLength;
+        }
+      }
+      postReadProgress(jobId, loadedBytes, totalBytes, READ_PROGRESS_WEIGHT);
+      return new Blob(chunks).arrayBuffer();
+    }
+
+    bytes.set(value, loadedBytes);
+    loadedBytes += value.byteLength;
+    const progress = Math.min(READ_PROGRESS_WEIGHT, (loadedBytes / totalBytes) * READ_PROGRESS_WEIGHT);
+    const now = performance.now();
+    if (progress - lastProgress >= 0.015 || now - lastEmittedAt >= 160 || loadedBytes >= totalBytes) {
+      postReadProgress(jobId, loadedBytes, totalBytes, progress);
+      lastProgress = progress;
+      lastEmittedAt = now;
+    }
+  }
+
+  postReadProgress(jobId, loadedBytes, totalBytes, READ_PROGRESS_WEIGHT);
+  return loadedBytes === totalBytes ? bytes.buffer : bytes.buffer.slice(0, loadedBytes);
+}
+
+function postReadProgress(jobId, loadedBytes, totalBytes, progress = READ_PROGRESS_WEIGHT) {
+  self.postMessage({
+    type: "progress",
+    jobId,
+    stage: "reading",
+    progress,
+    loadedBytes,
+    totalBytes,
   });
 }
 

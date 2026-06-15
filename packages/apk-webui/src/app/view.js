@@ -21,6 +21,7 @@ export function collectAppElements(root = document) {
     analyzeButton: root.querySelector("#analyze-button"),
     analyzeButtonLabel: root.querySelector("#analyze-button span"),
     progress: root.querySelector("#progress"),
+    progressBar: root.querySelector("#progress .progress-bar"),
     progressLabel: root.querySelector("#progress-label"),
     progressTime: root.querySelector("#progress-time"),
     errorBox: root.querySelector("#error-box"),
