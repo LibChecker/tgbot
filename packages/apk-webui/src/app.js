@@ -70,7 +70,7 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
   report_build: "progressReportBuild",
 });
 const PROGRESS_WIDTH_TRANSITION = "width 180ms ease";
-const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "0.1.000";
+const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
 const RUNTIME_LOG_EXPORT_TITLE = "LibChecker WebUI Runtime Logs";
 const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);

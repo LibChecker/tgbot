@@ -8,8 +8,8 @@ const projectDir = dirname(fileURLToPath(import.meta.url));
 const repoDir = resolve(projectDir, "../..");
 const srcDir = resolve(projectDir, "src");
 const sharedDir = resolve(projectDir, "../shared/src");
-const packageJson = JSON.parse(readFileSync(resolve(projectDir, "package.json"), "utf8"));
-const webuiVersion = resolveWebuiVersion(packageJson.version);
+const rootPackageJson = JSON.parse(readFileSync(resolve(repoDir, "package.json"), "utf8"));
+const webuiVersion = resolveWebuiVersion(rootPackageJson.version);
 
 function manualChunks(id) {
   if (id.includes("/packages/shared/src/generated/libchecker-sdk-icons.js")) {
