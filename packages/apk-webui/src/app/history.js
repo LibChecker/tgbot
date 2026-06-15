@@ -7,6 +7,8 @@ import { getStats } from "./report-model.js";
 
 const HISTORY_STORAGE_KEY = "apk-webui-history";
 const HISTORY_COLLAPSED_STORAGE_KEY = "apk-webui-history-collapsed";
+const HISTORY_VIEW_MODE_STORAGE_KEY = "apk-webui-history-view-mode";
+const HISTORY_VIEW_MODES = new Set(["list", "grid"]);
 const MAX_HISTORY_ITEMS = 12;
 const HISTORY_MAX_APP_ICON_DATA_URI_LENGTH = 180_000;
 const HISTORY_COMPACT_VERSION = 1;
@@ -105,6 +107,15 @@ export function readHistoryCollapsed() {
     return window.localStorage.getItem(HISTORY_COLLAPSED_STORAGE_KEY) === "true";
   } catch {
     return false;
+  }
+}
+
+export function readHistoryViewMode() {
+  try {
+    const value = window.localStorage.getItem(HISTORY_VIEW_MODE_STORAGE_KEY);
+    return HISTORY_VIEW_MODES.has(value) ? value : "list";
+  } catch {
+    return "list";
   }
 }
 
@@ -319,5 +330,17 @@ export function persistHistoryCollapsed(isCollapsed) {
     window.localStorage.setItem(HISTORY_COLLAPSED_STORAGE_KEY, isCollapsed ? "true" : "false");
   } catch {
     // The panel remains interactive even if the preference cannot be saved.
+  }
+}
+
+export function persistHistoryViewMode(viewMode) {
+  if (!HISTORY_VIEW_MODES.has(viewMode)) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(HISTORY_VIEW_MODE_STORAGE_KEY, viewMode);
+  } catch {
+    // The view can still switch for the current session.
   }
 }

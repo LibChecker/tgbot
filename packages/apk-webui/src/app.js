@@ -3,7 +3,16 @@ import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate
 import { clamp } from "./app/math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./app/format.js";
 import { getStats } from "./app/report-model.js";
-import { buildHistorySummary, createHistoryEntry, persistHistory, persistHistoryCollapsed, readHistory, readHistoryCollapsed } from "./app/history.js";
+import {
+  buildHistorySummary,
+  createHistoryEntry,
+  persistHistory,
+  persistHistoryCollapsed,
+  persistHistoryViewMode,
+  readHistory,
+  readHistoryCollapsed,
+  readHistoryViewMode,
+} from "./app/history.js";
 import { getFileAnalyticsFields, getReportAnalyticsFields } from "./app/analytics-fields.js";
 import {
   ANALYTICS_EVENT_QUEUE_LIMIT,
@@ -13,7 +22,9 @@ import {
   VALID_TABS,
   WORKER_IDLE_TERMINATE_MS,
   createAppState,
+  createHistoryViewDragState,
   createModeDragState,
+  createReportTabDragState,
   createRuntimeState,
   createThemeDragState,
   dateTimeFormatters,
@@ -132,9 +143,12 @@ const state = createAppState({
   themeChoice: readThemeChoice(),
   history: readHistory(),
   historyCollapsed: readHistoryCollapsed(),
+  historyViewMode: readHistoryViewMode(),
 });
 const themeDrag = createThemeDragState();
 const modeDrag = createModeDragState();
+const historyViewDrag = createHistoryViewDragState();
+const tabDrag = createReportTabDragState();
 const runtime = createRuntimeState();
 const elements = collectAppElements();
 
@@ -1259,12 +1273,24 @@ function bindEvents() {
   elements.themeChipGroup.addEventListener("click", handleThemeChipGroupClick);
   elements.themeChipGroup.addEventListener("pointerdown", beginThemeDrag);
 
+  elements.historyViewGroup?.addEventListener("click", handleHistoryViewGroupClick);
+  elements.historyViewGroup?.addEventListener("pointerdown", beginHistoryViewDrag);
+
+  elements.tabs.addEventListener("click", handleReportTabsClick);
+  elements.tabs.addEventListener("pointerdown", beginTabDrag);
+
   document.addEventListener("pointermove", updateModeDrag);
   document.addEventListener("pointerup", endModeDrag);
   document.addEventListener("pointercancel", cancelModeDrag);
   document.addEventListener("pointermove", updateThemeDrag);
   document.addEventListener("pointerup", endThemeDrag);
   document.addEventListener("pointercancel", cancelThemeDrag);
+  document.addEventListener("pointermove", updateHistoryViewDrag);
+  document.addEventListener("pointerup", endHistoryViewDrag);
+  document.addEventListener("pointercancel", cancelHistoryViewDrag);
+  document.addEventListener("pointermove", updateTabDrag);
+  document.addEventListener("pointerup", endTabDrag);
+  document.addEventListener("pointercancel", cancelTabDrag);
 
   systemThemeMedia.addEventListener("change", () => {
     if (state.themeChoice === "system") {
@@ -1275,6 +1301,8 @@ function bindEvents() {
   window.addEventListener("resize", () => {
     updateModeIndicator();
     updateThemeIndicator();
+    updateHistoryViewIndicator();
+    updateTabIndicator();
   });
 
   elements.languageSelect.addEventListener("change", () => {
@@ -1284,6 +1312,8 @@ function bindEvents() {
     applyLocale();
     updateModeIndicator();
     updateThemeIndicator();
+    updateHistoryViewIndicator();
+    updateTabIndicator();
     updateHistoryCollapse();
     renderSelectedFile();
     renderHistoryList();
@@ -1303,6 +1333,10 @@ function bindEvents() {
 
   elements.linkInput?.addEventListener("input", () => {
     setDownloadUrl(elements.linkInput.value || "");
+  });
+  elements.linkClearButton?.addEventListener("click", () => {
+    setDownloadUrl("", { syncInput: true });
+    elements.linkInput?.focus();
   });
   elements.runtimeLogOpen?.addEventListener("click", openRuntimeLogModal);
   elements.runtimeLogExport?.addEventListener("click", exportRuntimeLogs);
@@ -1458,26 +1492,6 @@ function bindEvents() {
     clearHistoryPointerState();
   });
 
-  elements.tabs.addEventListener("click", (event) => {
-    const tab = event.target.closest("[data-tab]")?.dataset.tab;
-    if (!tab || !VALID_TABS.has(tab)) {
-      return;
-    }
-
-    if (tab === state.activeTab) {
-      return;
-    }
-
-    state.activeTab = tab;
-    updateTabs();
-    renderTabPanel();
-    trackWebEvent("webui.tab.changed", {
-      result: "success",
-      tab,
-      operation: tab,
-    });
-  });
-
   elements.tabPanel.addEventListener("click", (event) => {
     const exportButton = event.target.closest("[data-json-export]");
     if (exportButton) {
@@ -1531,6 +1545,38 @@ function handleThemeChipGroupClick(event) {
   const button = getSegmentButtonFromClick(event, elements.themeChipGroup, ".theme-chip");
   const themeChoice = button?.dataset.themeChoice || getThemeChoiceAtClientX(event.clientX);
   applyThemeChoice(themeChoice);
+}
+
+function handleHistoryViewGroupClick(event) {
+  if (event.defaultPrevented) {
+    return;
+  }
+
+  if (historyViewDrag.suppressClick) {
+    event.preventDefault();
+    historyViewDrag.suppressClick = false;
+    return;
+  }
+
+  const button = getSegmentButtonFromClick(event, elements.historyViewGroup, ".history-view-button");
+  const viewMode = button?.dataset.historyViewMode || getHistoryViewModeAtClientX(event.clientX);
+  setHistoryViewMode(viewMode);
+}
+
+function handleReportTabsClick(event) {
+  if (event.defaultPrevented) {
+    return;
+  }
+
+  if (tabDrag.suppressClick) {
+    event.preventDefault();
+    tabDrag.suppressClick = false;
+    return;
+  }
+
+  const button = getSegmentButtonFromClick(event, elements.tabs, ".tab");
+  const tab = button?.dataset.tab || getReportTabAtClientX(event.clientX);
+  setActiveTab(tab);
 }
 
 function ensureReportPreviewInteractions() {
@@ -1798,14 +1844,260 @@ function getThemeChoiceAtClientX(clientX) {
   return getNearestChoiceAtClientX(clientX, themeDrag.buttonCenters, elements.themeButtons, "themeChoice");
 }
 
-function maybeStartSegmentDrag(event, dragState, group) {
+function beginHistoryViewDrag(event) {
+  if (event.button !== 0 || !elements.historyViewGroup) {
+    return;
+  }
+
+  historyViewDrag.active = true;
+  historyViewDrag.dragging = false;
+  historyViewDrag.scrolling = false;
+  historyViewDrag.pointerId = event.pointerId;
+  historyViewDrag.startClientX = event.clientX;
+  historyViewDrag.startClientY = event.clientY;
+  historyViewDrag.scrollStartLeft = 0;
+  historyViewDrag.startedOnActiveSegment = isPointerOnActiveSegmentButton(
+    event,
+    elements.historyViewGroup,
+    ".history-view-button",
+  );
+  historyViewDrag.pendingViewMode = "";
+  historyViewDrag.suppressClick = false;
+  historyViewDrag.buttonCenters = measureChoiceCenters(elements.historyViewButtons, "historyViewMode");
+  captureSegmentPointer(elements.historyViewGroup, event);
+}
+
+function updateHistoryViewDrag(event) {
+  if (!historyViewDrag.active || event.pointerId !== historyViewDrag.pointerId) {
+    return;
+  }
+
+  if (!maybeStartSegmentDrag(event, historyViewDrag, elements.historyViewGroup, { allowTopbarScroll: false })) {
+    return;
+  }
+  previewHistoryViewFromPointer(event);
+}
+
+function endHistoryViewDrag(event) {
+  if (!historyViewDrag.active || event.pointerId !== historyViewDrag.pointerId) {
+    return;
+  }
+
+  if (maybeStartSegmentDrag(event, historyViewDrag, elements.historyViewGroup, { allowTopbarScroll: false })) {
+    previewHistoryViewFromPointer(event);
+    if (historyViewDrag.pendingViewMode) {
+      setHistoryViewMode(historyViewDrag.pendingViewMode);
+    }
+  }
+  finishHistoryViewDrag(event.pointerId);
+}
+
+function cancelHistoryViewDrag(event) {
+  if (!historyViewDrag.active || event.pointerId !== historyViewDrag.pointerId) {
+    return;
+  }
+
+  finishHistoryViewDrag(event.pointerId);
+}
+
+function finishHistoryViewDrag(pointerId) {
+  const wasDragging = historyViewDrag.dragging;
+  elements.historyViewGroup?.classList.remove("is-dragging");
+  historyViewDrag.active = false;
+  historyViewDrag.dragging = false;
+  historyViewDrag.scrolling = false;
+  historyViewDrag.pointerId = null;
+  historyViewDrag.startClientX = 0;
+  historyViewDrag.startClientY = 0;
+  historyViewDrag.scrollStartLeft = 0;
+  historyViewDrag.startedOnActiveSegment = false;
+  historyViewDrag.pendingViewMode = "";
+  historyViewDrag.buttonCenters = [];
+  clearHistoryViewPendingButtons();
+  if (wasDragging) {
+    updateHistoryViewIndicator();
+  }
+  try {
+    if (elements.historyViewGroup?.hasPointerCapture?.(pointerId)) {
+      elements.historyViewGroup.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // The pointer may already have been released by the browser.
+  }
+  if (!wasDragging) {
+    if (historyViewDrag.suppressClick) {
+      window.setTimeout(() => {
+        historyViewDrag.suppressClick = false;
+      }, 0);
+      return;
+    }
+    historyViewDrag.suppressClick = false;
+    return;
+  }
+
+  window.setTimeout(() => {
+    historyViewDrag.suppressClick = false;
+  }, 0);
+}
+
+function previewHistoryViewFromPointer(event) {
+  const viewMode = getHistoryViewModeAtClientX(event.clientX);
+  updateSegmentIndicatorFromPointer(
+    elements.historyViewGroup,
+    historyViewDrag.buttonCenters,
+    viewMode,
+    event.clientX,
+    "history-view",
+  );
+  if (!viewMode || viewMode === historyViewDrag.pendingViewMode) {
+    return;
+  }
+
+  historyViewDrag.pendingViewMode = viewMode;
+  elements.historyViewButtons.forEach((button) => {
+    button.classList.toggle("is-pending", button.dataset.historyViewMode === viewMode);
+  });
+}
+
+function getHistoryViewModeAtClientX(clientX) {
+  return getNearestChoiceAtClientX(clientX, historyViewDrag.buttonCenters, elements.historyViewButtons, "historyViewMode");
+}
+
+function beginTabDrag(event) {
+  if (event.button !== 0 || !elements.tabs) {
+    return;
+  }
+
+  tabDrag.active = true;
+  tabDrag.dragging = false;
+  tabDrag.scrolling = false;
+  tabDrag.pointerId = event.pointerId;
+  tabDrag.startClientX = event.clientX;
+  tabDrag.startClientY = event.clientY;
+  tabDrag.scrollStartLeft = elements.tabs.scrollLeft || 0;
+  tabDrag.startedOnActiveSegment = isPointerOnActiveSegmentButton(
+    event,
+    elements.tabs,
+    ".tab",
+  );
+  tabDrag.pendingTab = "";
+  tabDrag.suppressClick = false;
+  tabDrag.buttonCenters = measureChoiceCenters(elements.tabButtons, "tab");
+  captureSegmentPointer(elements.tabs, event);
+}
+
+function updateTabDrag(event) {
+  if (!tabDrag.active || event.pointerId !== tabDrag.pointerId) {
+    return;
+  }
+
+  if (!maybeStartSegmentDrag(event, tabDrag, elements.tabs, {
+    allowSegmentScroll: true,
+    allowTopbarScroll: false,
+    scrollElement: elements.tabs,
+  })) {
+    return;
+  }
+  previewReportTabFromPointer(event);
+}
+
+function endTabDrag(event) {
+  if (!tabDrag.active || event.pointerId !== tabDrag.pointerId) {
+    return;
+  }
+
+  if (maybeStartSegmentDrag(event, tabDrag, elements.tabs, {
+    allowSegmentScroll: true,
+    allowTopbarScroll: false,
+    scrollElement: elements.tabs,
+  })) {
+    previewReportTabFromPointer(event);
+    if (tabDrag.pendingTab) {
+      setActiveTab(tabDrag.pendingTab);
+    }
+  }
+  finishTabDrag(event.pointerId);
+}
+
+function cancelTabDrag(event) {
+  if (!tabDrag.active || event.pointerId !== tabDrag.pointerId) {
+    return;
+  }
+
+  finishTabDrag(event.pointerId);
+}
+
+function finishTabDrag(pointerId) {
+  const wasDragging = tabDrag.dragging;
+  elements.tabs.classList.remove("is-dragging");
+  tabDrag.active = false;
+  tabDrag.dragging = false;
+  tabDrag.scrolling = false;
+  tabDrag.pointerId = null;
+  tabDrag.startClientX = 0;
+  tabDrag.startClientY = 0;
+  tabDrag.scrollStartLeft = 0;
+  tabDrag.startedOnActiveSegment = false;
+  tabDrag.pendingTab = "";
+  tabDrag.buttonCenters = [];
+  clearTabPendingButtons();
+  if (wasDragging) {
+    updateTabIndicator();
+  }
+  try {
+    if (elements.tabs.hasPointerCapture?.(pointerId)) {
+      elements.tabs.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // The pointer may already have been released by the browser.
+  }
+  if (!wasDragging) {
+    if (tabDrag.suppressClick) {
+      window.setTimeout(() => {
+        tabDrag.suppressClick = false;
+      }, 0);
+      return;
+    }
+    tabDrag.suppressClick = false;
+    return;
+  }
+
+  window.setTimeout(() => {
+    tabDrag.suppressClick = false;
+  }, 0);
+}
+
+function previewReportTabFromPointer(event) {
+  const tab = getReportTabAtClientX(event.clientX);
+  updateSegmentIndicatorFromPointer(
+    elements.tabs,
+    tabDrag.buttonCenters,
+    tab,
+    event.clientX,
+    "tab",
+  );
+  if (!tab || tab === tabDrag.pendingTab) {
+    return;
+  }
+
+  tabDrag.pendingTab = tab;
+  elements.tabButtons.forEach((button) => {
+    button.classList.toggle("is-pending", button.dataset.tab === tab);
+  });
+}
+
+function getReportTabAtClientX(clientX) {
+  return getNearestChoiceAtClientX(clientX, tabDrag.buttonCenters, elements.tabButtons, "tab");
+}
+
+function maybeStartSegmentDrag(event, dragState, group, options = {}) {
   if (dragState.dragging) {
     event.preventDefault();
     return true;
   }
 
   if (dragState.scrolling) {
-    scrollTopbarActionsFromSegmentPointer(event, dragState);
+    scrollSegmentFromPointer(event, dragState, options.scrollElement || elements.topbarActions);
     return false;
   }
 
@@ -1820,8 +2112,16 @@ function maybeStartSegmentDrag(event, dragState, group) {
     return false;
   }
 
-  if (shouldStartTopbarSegmentScroll(event, dragState, absDeltaX)) {
-    startTopbarSegmentScroll(event, dragState);
+  if (
+    options.allowSegmentScroll &&
+    shouldStartSegmentScroll(event, dragState, absDeltaX, options.scrollElement)
+  ) {
+    startSegmentScroll(event, dragState, options.scrollElement);
+    return false;
+  }
+
+  if (options.allowTopbarScroll !== false && shouldStartTopbarSegmentScroll(event, dragState, absDeltaX)) {
+    startSegmentScroll(event, dragState, elements.topbarActions);
     return false;
   }
 
@@ -1855,14 +2155,20 @@ function shouldStartTopbarSegmentScroll(event, dragState, absDeltaX) {
     isScrollableTopbarActions(elements.topbarActions);
 }
 
-function startTopbarSegmentScroll(event, dragState) {
-  dragState.scrolling = true;
-  dragState.suppressClick = true;
-  scrollTopbarActionsFromSegmentPointer(event, dragState);
+function shouldStartSegmentScroll(event, dragState, absDeltaX, scroller) {
+  return !dragState.startedOnActiveSegment &&
+    absDeltaX >= TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX &&
+    isMobileTopbarSegmentPointer(event) &&
+    isScrollableTopbarActions(scroller);
 }
 
-function scrollTopbarActionsFromSegmentPointer(event, dragState) {
-  const scroller = elements.topbarActions;
+function startSegmentScroll(event, dragState, scroller) {
+  dragState.scrolling = true;
+  dragState.suppressClick = true;
+  scrollSegmentFromPointer(event, dragState, scroller);
+}
+
+function scrollSegmentFromPointer(event, dragState, scroller) {
   if (!scroller) {
     return;
   }
@@ -1902,6 +2208,7 @@ function updateSegmentIndicatorFromPointer(group, measuredChoices, value, client
   const groupRect = group.getBoundingClientRect();
   const groupStyle = getComputedStyle(group);
   const inset = Number.parseFloat(groupStyle.getPropertyValue("--topbar-segment-inset")) || 0;
+  const scrollLeft = group.scrollLeft || 0;
   const activeChoice = measuredChoices.find((choice) => choice.value === value);
   const thumbWidth = activeChoice?.width ||
     Number.parseFloat(groupStyle.getPropertyValue(`--${prefix}-indicator-width`)) ||
@@ -1911,8 +2218,9 @@ function updateSegmentIndicatorFromPointer(group, measuredChoices, value, client
   }
 
   const minX = inset;
-  const maxX = Math.max(minX, groupRect.width - inset - thumbWidth);
-  const pointerX = clientX - groupRect.left - thumbWidth / 2;
+  const contentWidth = Math.max(group.scrollWidth || 0, groupRect.width);
+  const maxX = Math.max(minX, contentWidth - inset - thumbWidth);
+  const pointerX = clientX - groupRect.left + scrollLeft - thumbWidth / 2;
   const x = clamp(pointerX, minX, maxX);
   group.style.setProperty(`--${prefix}-indicator-x`, `${x.toFixed(1)}px`);
   group.style.setProperty(`--${prefix}-indicator-width`, `${thumbWidth.toFixed(1)}px`);
@@ -2243,7 +2551,7 @@ function updateModeIndicator(appMode = state.appMode) {
 }
 
 function setSegmentIndicatorGeometry(group, groupRect, buttonRect, prefix) {
-  const x = buttonRect.left - groupRect.left;
+  const x = buttonRect.left - groupRect.left + (group.scrollLeft || 0);
   group.style.setProperty(`--${prefix}-indicator-x`, `${Math.max(0, x).toFixed(1)}px`);
   group.style.setProperty(`--${prefix}-indicator-width`, `${buttonRect.width.toFixed(1)}px`);
   group.style.setProperty(`--${prefix}-indicator-height`, `${buttonRect.height.toFixed(1)}px`);
@@ -2327,6 +2635,52 @@ function clearThemePendingButtons() {
   });
 }
 
+function setActiveTab(tab) {
+  if (!VALID_TABS.has(tab) || tab === state.activeTab) {
+    return;
+  }
+
+  state.activeTab = tab;
+  updateTabs();
+  renderTabPanel();
+  trackWebEvent("webui.tab.changed", {
+    result: "success",
+    tab,
+    operation: tab,
+  });
+}
+
+function updateTabIndicator(tab = state.activeTab) {
+  runtime.pendingTabIndicatorTab = VALID_TABS.has(tab) ? tab : "summary";
+  if (runtime.tabIndicatorFrame || !elements.tabs) {
+    return;
+  }
+
+  runtime.tabIndicatorFrame = window.requestAnimationFrame(() => {
+    runtime.tabIndicatorFrame = 0;
+    const indicatorTab = runtime.pendingTabIndicatorTab || state.activeTab;
+    const activeButton = elements.tabButtons.find((button) => button.dataset.tab === indicatorTab);
+    if (!activeButton || !elements.tabs) {
+      return;
+    }
+
+    try {
+      activeButton.scrollIntoView({ block: "nearest", inline: "nearest" });
+    } catch {
+      activeButton.scrollIntoView();
+    }
+    const groupRect = elements.tabs.getBoundingClientRect();
+    const buttonRect = activeButton.getBoundingClientRect();
+    setSegmentIndicatorGeometry(elements.tabs, groupRect, buttonRect, "tab");
+  });
+}
+
+function clearTabPendingButtons() {
+  elements.tabButtons.forEach((button) => {
+    button.classList.remove("is-pending");
+  });
+}
+
 function resolveColorScheme(choice) {
   if (choice === "dark" || choice === "light") {
     return choice;
@@ -2362,11 +2716,17 @@ function applyLocale() {
     elements.linkInput.placeholder = t("linkPlaceholder");
     elements.linkInput.setAttribute("aria-label", t("linkInputLabel"));
   }
+  if (elements.linkClearButton) {
+    const label = t("linkClear");
+    elements.linkClearButton.setAttribute("aria-label", label);
+    elements.linkClearButton.title = label;
+  }
   if (elements.appVersion) {
     elements.appVersion.textContent = `v${APP_VERSION}`;
     elements.appVersion.setAttribute("aria-label", t("runtimeLogVersionLabel", { version: APP_VERSION }));
   }
   renderLinkStatus();
+  renderHistoryViewMode();
   renderRuntimeLogs();
   renderLcappsPicker();
   renderLcappsBubble();
@@ -2806,6 +3166,9 @@ function updateAnalyzeControls() {
   elements.dropZone.classList.toggle("is-disabled", state.analyzeBusy);
   if (elements.linkInput) {
     elements.linkInput.disabled = state.analyzeBusy;
+  }
+  if (elements.linkClearButton) {
+    elements.linkClearButton.disabled = state.analyzeBusy || !hasDownloadUrl;
   }
   if (elements.linkSubmitButton) {
     elements.linkSubmitButton.disabled = state.analyzeBusy || !hasDownloadUrl;
@@ -3305,6 +3668,65 @@ function updateHistoryCollapse() {
   setHistoryCollapsed(state.historyCollapsed, { persist: false });
 }
 
+function setHistoryViewMode(viewMode, options = {}) {
+  const previousMode = state.historyViewMode;
+  const normalizedMode = viewMode === "grid" ? "grid" : "list";
+  state.historyViewMode = normalizedMode;
+  renderHistoryViewMode();
+
+  if (options.persist === false) {
+    return;
+  }
+
+  persistHistoryViewMode(normalizedMode);
+  if (previousMode !== normalizedMode) {
+    trackWebEvent("webui.history.view_changed", {
+      result: "success",
+      operation: normalizedMode,
+    });
+  }
+}
+
+function renderHistoryViewMode() {
+  const viewMode = state.historyViewMode === "grid" ? "grid" : "list";
+  elements.historyList.classList.toggle("is-grid", viewMode === "grid");
+  elements.historyList.classList.toggle("is-list", viewMode !== "grid");
+
+  elements.historyViewButtons.forEach((button) => {
+    const isActive = button.dataset.historyViewMode === viewMode;
+    button.classList.toggle("is-active", isActive);
+    button.classList.remove("is-pending");
+    button.setAttribute("aria-checked", isActive ? "true" : "false");
+  });
+  updateHistoryViewIndicator(viewMode);
+}
+
+function updateHistoryViewIndicator(viewMode = state.historyViewMode) {
+  runtime.pendingHistoryViewMode = viewMode === "grid" ? "grid" : "list";
+  if (runtime.historyViewIndicatorFrame || !elements.historyViewGroup) {
+    return;
+  }
+
+  runtime.historyViewIndicatorFrame = window.requestAnimationFrame(() => {
+    runtime.historyViewIndicatorFrame = 0;
+    const indicatorViewMode = runtime.pendingHistoryViewMode || state.historyViewMode;
+    const activeButton = elements.historyViewButtons.find((button) => button.dataset.historyViewMode === indicatorViewMode);
+    if (!activeButton || !elements.historyViewGroup) {
+      return;
+    }
+
+    const groupRect = elements.historyViewGroup.getBoundingClientRect();
+    const buttonRect = activeButton.getBoundingClientRect();
+    setSegmentIndicatorGeometry(elements.historyViewGroup, groupRect, buttonRect, "history-view");
+  });
+}
+
+function clearHistoryViewPendingButtons() {
+  elements.historyViewButtons.forEach((button) => {
+    button.classList.remove("is-pending");
+  });
+}
+
 function setHistoryLoadingId(id) {
   state.loadingHistoryId = id || "";
   const isLoading = Boolean(state.loadingHistoryId);
@@ -3339,9 +3761,9 @@ function renderHistoryItem(entry) {
   const date = formatDate(summary.analyzedAt || entry.savedAt);
   const stats = summary.stats || {};
   const versionBadges = [
-    historyBadge(t("historyVersionName"), summary.versionName || t("unknown")),
-    historyBadge(t("historyVersionCode"), summary.versionCode || t("unknown")),
-    historyBadge(t("targetSdk"), summary.targetSdk || t("unknown")),
+    historyBadge(t("historyVersionName"), summary.versionName || t("unknown"), "history-badge--version-name"),
+    historyBadge(t("historyVersionCode"), summary.versionCode || t("unknown"), "history-badge--version-code"),
+    historyBadge(t("targetSdk"), summary.targetSdk || t("unknown"), "history-badge--target-sdk"),
   ].join("");
   const statItems = [
     historyStat(t("sdk"), summary.sdkCount || 0),
@@ -3392,9 +3814,10 @@ function renderHistoryLoadingSpinner() {
   ].join("");
 }
 
-function historyBadge(label, value) {
+function historyBadge(label, value, className = "") {
+  const badgeClass = className ? `history-badge ${className}` : "history-badge";
   return [
-    `<span class="history-badge">`,
+    `<span class="${escapeAttr(badgeClass)}">`,
     `<span class="history-badge-label">${escapeHtml(label)}</span>`,
     `<span class="history-badge-value">${escapeHtml(String(value || t("unknown")))}</span>`,
     `</span>`,
@@ -3464,6 +3887,8 @@ async function renderReport() {
 
 function updateTabs() {
   updateTabButtonsView(elements, state.activeTab);
+  clearTabPendingButtons();
+  updateTabIndicator();
 }
 
 function renderTabPanel() {

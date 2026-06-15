@@ -108,6 +108,11 @@
                 <path d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"></path>
               </svg>
               <input id="link-input" name="downloadUrl" type="url" inputmode="url" autocomplete="url" autocapitalize="none" spellcheck="false" placeholder="https://example.com/app.apk">
+              <button class="link-clear-button" id="link-clear-button" type="button" aria-label="Clear link" data-title-i18n="linkClear" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 6 6 18M6 6l12 12"></path>
+                </svg>
+              </button>
               <button class="link-submit-button" id="link-submit-button" type="submit" data-i18n="linkAnalyze" disabled>Analyze link</button>
             </label>
             <p class="link-zone-note" data-i18n="linkNote">Uses Range metadata when the server supports it.</p>
@@ -139,11 +144,27 @@
                 </svg>
               </button>
               <div>
-              <h2 data-i18n="historyTitle">History</h2>
-              <p data-i18n="historyNote">Saved in this browser. Click an item to reopen the report.</p>
+                <h2 data-i18n="historyTitle">History</h2>
+                <p data-i18n="historyNote">Saved in this browser. Click an item to reopen the report.</p>
               </div>
             </div>
-            <button class="secondary-button" id="clear-history-button" type="button" data-i18n="clearHistory">Clear History</button>
+            <div class="history-panel-actions">
+              <div class="history-view-switch" id="history-view-switch" role="radiogroup" aria-label="History view" data-aria-i18n="historyViewLabel">
+                <button class="history-view-button is-active" type="button" role="radio" aria-checked="true" data-history-view-mode="list">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"></path>
+                  </svg>
+                  <span data-i18n="historyViewList">List</span>
+                </button>
+                <button class="history-view-button" type="button" role="radio" aria-checked="false" data-history-view-mode="grid">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"></path>
+                  </svg>
+                  <span data-i18n="historyViewGrid">Grid</span>
+                </button>
+              </div>
+              <button class="secondary-button" id="clear-history-button" type="button" data-i18n="clearHistory">Clear History</button>
+            </div>
           </div>
           <div class="history-content" id="history-content">
             <div class="history-list" id="history-list"></div>

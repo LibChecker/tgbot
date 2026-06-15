@@ -5,7 +5,7 @@ export const THEME_CHOICES = new Set(["light", "dark", "system"]);
 export const WORKER_IDLE_TERMINATE_MS = 60_000;
 export const ANALYTICS_EVENT_QUEUE_LIMIT = 32;
 
-export function createAppState({ locale, themeChoice, history, historyCollapsed }) {
+export function createAppState({ locale, themeChoice, history, historyCollapsed, historyViewMode }) {
   return {
     appMode: "analyze",
     locale,
@@ -26,6 +26,7 @@ export function createAppState({ locale, themeChoice, history, historyCollapsed 
     },
     history,
     historyCollapsed,
+    historyViewMode,
     activeTab: "summary",
     activeNativeAbi: "",
     loadingHistoryId: "",
@@ -73,6 +74,38 @@ export function createModeDragState() {
   };
 }
 
+export function createHistoryViewDragState() {
+  return {
+    active: false,
+    dragging: false,
+    scrolling: false,
+    pointerId: null,
+    startClientX: 0,
+    startClientY: 0,
+    scrollStartLeft: 0,
+    startedOnActiveSegment: false,
+    pendingViewMode: "",
+    suppressClick: false,
+    buttonCenters: [],
+  };
+}
+
+export function createReportTabDragState() {
+  return {
+    active: false,
+    dragging: false,
+    scrolling: false,
+    pointerId: null,
+    startClientX: 0,
+    startClientY: 0,
+    scrollStartLeft: 0,
+    startedOnActiveSegment: false,
+    pendingTab: "",
+    suppressClick: false,
+    buttonCenters: [],
+  };
+}
+
 export function createRuntimeState() {
   return {
     historyOpenToken: 0,
@@ -83,6 +116,10 @@ export function createRuntimeState() {
     pendingModeIndicatorAppMode: "",
     themeIndicatorFrame: 0,
     pendingThemeIndicatorChoice: "",
+    historyViewIndicatorFrame: 0,
+    pendingHistoryViewMode: "",
+    tabIndicatorFrame: 0,
+    pendingTabIndicatorTab: "",
     reportRenderToken: 0,
     compareController: null,
     compareControllerPromise: null,
