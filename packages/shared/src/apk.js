@@ -1365,6 +1365,10 @@ async function renderVectorDrawableIcon(xmlBytes, source, resources, candidate) 
   };
 }
 
+export const __apkTestInternals = {
+  renderVectorDrawableIcon,
+};
+
 async function buildVectorDrawableSvgLayer(xmlBytes, source, resources, candidate = null) {
   const elements = parseDrawableXmlElements(xmlBytes);
   const vectorElement = elements.find((element) => element.name === "vector");
@@ -1637,15 +1641,16 @@ async function buildSvgPathFromVectorElement(element, source, resources, defs, i
     return null;
   }
 
-  const fillColor =
-    (await resolveVectorPaint(element.attributes.get("fillColor"), source, resources, defs, idPrefix)) ||
-    "#000000";
-  const fillAlpha = clampAlpha(getNumericXmlAttribute(element, "fillAlpha") ?? 1);
+  const fillAttribute = element.attributes.get("fillColor");
+  const fillColor = fillAttribute
+    ? await resolveVectorPaint(fillAttribute, source, resources, defs, idPrefix)
+    : null;
   const strokeColor = resolveVectorColor(element.attributes.get("strokeColor"), resources);
   const strokeWidth = getNumericXmlAttribute(element, "strokeWidth");
+  const fillAlpha = fillColor ? clampAlpha(getNumericXmlAttribute(element, "fillAlpha") ?? 1) : 1;
   const attrs = [
     `d="${escapeXmlAttribute(pathData)}"`,
-    `fill="${escapeXmlAttribute(fillColor)}"`,
+    `fill="${escapeXmlAttribute(fillColor || "none")}"`,
   ];
 
   if (fillAlpha < 1) {
