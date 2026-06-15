@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const repoDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workerConfigPath = resolve(repoDir, "packages/bot-worker/wrangler.toml");
-const webuiDistDir = resolve(repoDir, "packages/apk-webui/dist");
+const webuiDir = resolve(repoDir, "packages/apk-webui");
+const webuiDistDir = resolve(webuiDir, "dist");
 const wranglerBin = resolve(repoDir, "node_modules/.bin/wrangler");
 
 const WORKER_UPLOAD_BUDGET_KIB = 5_500;
@@ -69,10 +70,10 @@ if (!options["worker-only"]) {
   await run(wranglerBin, [
     "pages",
     "deploy",
-    webuiDistDir,
+    "dist",
     "--project-name=tgbot-apk-webui",
     `--branch=${target.pagesBranch}`,
-  ]);
+  ], { cwd: webuiDir });
 }
 
 process.stdout.write(`Cloudflare ${targetName} deploy finished.\n`);
@@ -149,7 +150,7 @@ function sanitizePagesBranch(value) {
 function run(command, args, options = {}) {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(command, args, {
-      cwd: repoDir,
+      cwd: options.cwd || repoDir,
       env: process.env,
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
     });
