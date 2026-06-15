@@ -25,6 +25,7 @@ const options = parseArgs(process.argv.slice(2));
 const distDir = resolve(projectDir, options.dist || "dist");
 const label = options.label || "current";
 const samplePaths = options.samples;
+const remoteUrl = options.url ? new URL(options.url).href : "";
 const existingSamples = [];
 for (const samplePath of samplePaths) {
   try {
@@ -42,12 +43,12 @@ const outputPath = options.output
   : resolve(tmpdir(), `tgbot-webui-benchmark-${label}-${Date.now()}.json`);
 
 const distStats = await collectDistStats(distDir);
-const server = await createStaticServer(distDir);
+const server = remoteUrl ? null : await createStaticServer(distDir);
 const chrome = await launchChrome();
 
 try {
   const browser = await connectBrowser(chrome.debugPort);
-  const pageUrl = `http://127.0.0.1:${server.port}/`;
+  const pageUrl = remoteUrl || `http://127.0.0.1:${server.port}/`;
   const firstScreen = await measureFirstScreen(browser, pageUrl);
   const samples = [];
 
@@ -62,6 +63,7 @@ try {
     measuredAt: new Date().toISOString(),
     distDir: relative(repoDir, distDir),
     outputPath: relative(repoDir, outputPath),
+    pageUrl,
     sampleInputs: samplePaths.map((samplePath) => ({
       name: basename(samplePath),
       path: samplePath,
@@ -80,7 +82,9 @@ try {
   } catch {
     // Chrome may already have exited after Browser.close.
   }
-  await server.close();
+  if (server) {
+    await server.close();
+  }
   await rm(chrome.userDataDir, {
     recursive: true,
     force: true,
@@ -95,6 +99,7 @@ function parseArgs(args) {
     label: "",
     output: "",
     samples: [],
+    url: "",
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -107,6 +112,8 @@ function parseArgs(args) {
       parsed.output = args[++index] || "";
     } else if (arg === "--sample") {
       parsed.samples.push(args[++index] || "");
+    } else if (arg === "--url") {
+      parsed.url = args[++index] || "";
     } else if (arg === "--help") {
       printHelp();
       process.exit(0);
@@ -128,6 +135,7 @@ function printHelp() {
     "  --dist <path>       Dist directory relative to packages/apk-webui",
     "  --output <path>     Output JSON path relative to the repository root",
     "  --sample <path>     APK/APKS sample path; may be repeated",
+    "  --url <url>         Measure an already deployed WebUI URL instead of local dist",
     "",
     "When no --sample is provided, only page-load metrics are captured.",
   ].join("\n"));
@@ -496,6 +504,7 @@ function createEventCollector(browser, sessionId) {
         encodedDataLength: 0,
         fromDiskCache: false,
         fromMemoryCache: false,
+        headers: {},
       });
     } else if (message.method === "Network.responseReceived") {
       const entry = network.get(message.params.requestId);
@@ -504,6 +513,7 @@ function createEventCollector(browser, sessionId) {
         entry.mimeType = message.params.response.mimeType || "";
         entry.fromDiskCache = Boolean(message.params.response.fromDiskCache);
         entry.fromMemoryCache = Boolean(message.params.response.fromMemoryCache);
+        entry.headers = message.params.response.headers || {};
       }
     } else if (message.method === "Network.loadingFinished") {
       const entry = network.get(message.params.requestId);
@@ -546,7 +556,7 @@ async function measureFirstScreen(browser, pageUrl) {
   const page = await createPage(browser, pageUrl);
   await delay(2500);
   const metrics = await page.evaluate("window.__webuiBenchmarkSnapshot()");
-  const requests = summarizeRequests(page.events.requests);
+  const requests = summarizeRequests(page.events.requests, pageUrl);
   await page.close();
   page.events.dispose();
   return {
@@ -568,7 +578,7 @@ async function measureSample(browser, pageUrl, samplePath) {
   await page.evaluate("document.querySelector('#analyze-form').requestSubmit()");
 
   const flow = await waitForAnalysis(page, 180_000);
-  const requests = summarizeRequests(page.events.requests);
+  const requests = summarizeRequests(page.events.requests, pageUrl);
   await page.close();
   page.events.dispose();
 
@@ -630,6 +640,8 @@ function createBenchmarkInjectionScript() {
       const bench = {
         workers: [],
         longTasks: [],
+        lcp: [],
+        layoutShifts: [],
       };
       window.__webuiBenchmark = bench;
 
@@ -643,6 +655,35 @@ function createBenchmarkInjectionScript() {
             });
           }
         }).observe({ type: "longtask", buffered: true });
+      } catch {}
+
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            bench.lcp.push({
+              startTime: entry.startTime,
+              renderTime: entry.renderTime,
+              loadTime: entry.loadTime,
+              size: entry.size,
+              url: entry.url || "",
+              element: entry.element?.tagName || "",
+            });
+          }
+        }).observe({ type: "largest-contentful-paint", buffered: true });
+      } catch {}
+
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.hadRecentInput) {
+              continue;
+            }
+            bench.layoutShifts.push({
+              startTime: entry.startTime,
+              value: entry.value,
+            });
+          }
+        }).observe({ type: "layout-shift", buffered: true });
       } catch {}
 
       const NativeWorker = window.Worker;
@@ -706,12 +747,17 @@ function createBenchmarkInjectionScript() {
           transferSize: entry.transferSize,
           encodedBodySize: entry.encodedBodySize,
           decodedBodySize: entry.decodedBodySize,
+          nextHopProtocol: entry.nextHopProtocol,
+          renderBlockingStatus: entry.renderBlockingStatus,
         }));
         return {
           timeOrigin: performance.timeOrigin,
           navigation: navigation ? navigation.toJSON() : null,
           paints,
           resources,
+          lcp: bench.lcp,
+          cls: bench.layoutShifts.reduce((sum, entry) => sum + entry.value, 0),
+          layoutShifts: bench.layoutShifts,
           workers: bench.workers.map((worker) => ({
             ...worker,
             createToPostMessageMs: worker.postedAt ? worker.postedAt - worker.createdAt : 0,
@@ -730,12 +776,18 @@ function createBenchmarkInjectionScript() {
   `;
 }
 
-function summarizeRequests(requestMap) {
+function summarizeRequests(requestMap, pageUrl) {
+  const pageOrigin = new URL(pageUrl).origin;
   const requests = [...requestMap.values()]
-    .filter((request) => request.url.startsWith("http://127.0.0.1"))
+    .filter((request) => shouldIncludeRequest(request.url))
     .map((request) => ({
       ...request,
-      url: request.url.replace(/^http:\/\/127\.0\.0\.1:\d+\//u, "/"),
+      url: normalizeRequestUrl(request.url, pageOrigin),
+      sameOrigin: isSameOriginRequest(request.url, pageOrigin),
+      cacheControl: readHeader(request.headers, "cache-control"),
+      contentEncoding: readHeader(request.headers, "content-encoding"),
+      cfCacheStatus: readHeader(request.headers, "cf-cache-status"),
+      serverTiming: readHeader(request.headers, "server-timing"),
     }))
     .sort((a, b) => a.startTime - b.startTime || a.url.localeCompare(b.url));
   const byType = {};
@@ -767,8 +819,55 @@ function summarizeRequests(requestMap) {
       transferBytes: request.encodedDataLength,
       status: request.status,
       mimeType: request.mimeType,
+      sameOrigin: request.sameOrigin,
+      cacheControl: request.cacheControl,
+      contentEncoding: request.contentEncoding,
+      cfCacheStatus: request.cfCacheStatus,
+      serverTiming: request.serverTiming,
     })),
   };
+}
+
+function shouldIncludeRequest(url) {
+  try {
+    const parsed = new URL(url);
+    if (!/^https?:$/u.test(parsed.protocol)) {
+      return false;
+    }
+    return parsed.hostname !== "local.adguard.org";
+  } catch {
+    return false;
+  }
+}
+
+function isSameOriginRequest(url, origin) {
+  try {
+    return new URL(url).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeRequestUrl(url, origin) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.origin === origin) {
+      return `${parsed.pathname}${parsed.search}`;
+    }
+  } catch {
+    // Keep the original URL below.
+  }
+  return url;
+}
+
+function readHeader(headers, name) {
+  const expected = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (key.toLowerCase() === expected) {
+      return Array.isArray(value) ? value.join(", ") : String(value || "");
+    }
+  }
+  return "";
 }
 
 function printSummary(result, outputPath) {
@@ -778,7 +877,8 @@ function printSummary(result, outputPath) {
   console.log(`Output: ${outputPath}`);
   console.log(`Dist JS: ${formatBytes(result.dist.jsBytes)} raw, ${formatBytes(result.dist.jsGzipBytes)} gzip (${result.dist.jsFileCount} files)`);
   console.log(`Initial requests: ${result.firstScreen.requests.count}, script requests: ${result.firstScreen.requests.scriptCount}`);
-  console.log(`FCP: ${formatMs(paints["first-contentful-paint"])}, load: ${formatMs(navigation.loadEventEnd)}`);
+  const lcp = result.firstScreen.metrics.lcp?.at(-1)?.startTime;
+  console.log(`FCP: ${formatMs(paints["first-contentful-paint"])}, LCP: ${formatMs(lcp)}, CLS: ${(result.firstScreen.metrics.cls || 0).toFixed(3)}, load: ${formatMs(navigation.loadEventEnd)}`);
   for (const sample of result.samples) {
     const worker = sample.flow.worker || {};
     console.log([

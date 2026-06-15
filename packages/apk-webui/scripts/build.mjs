@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
@@ -9,6 +9,8 @@ const distDir = resolve(projectDir, "dist");
 await build({
   configFile: resolve(projectDir, "vite.config.mjs"),
 });
+
+await disableRocketLoaderForExternalScripts(resolve(distDir, "index.html"));
 
 await writeFile(
   resolve(distDir, "_headers"),
@@ -30,3 +32,14 @@ await writeFile(
 await writeFile(resolve(distDir, "_redirects"), "/* /index.html 200\n");
 
 console.log(`Built Cloudflare Pages site at ${distDir}`);
+
+async function disableRocketLoaderForExternalScripts(indexPath) {
+  const html = await readFile(indexPath, "utf8");
+  const patched = html.replace(
+    /<script\b(?![^>]*\bdata-cfasync=)([^>]*?)\bsrc=/giu,
+    '<script data-cfasync="false"$1src=',
+  );
+  if (patched !== html) {
+    await writeFile(indexPath, patched);
+  }
+}
