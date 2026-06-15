@@ -32,7 +32,87 @@ test("renders stroked vector paths without implicit black fill", async () => {
   assert.match(svg, /stroke="#ffffff"/u);
 });
 
+test("annotates native libraries with ELF page size and ZIP alignment", async () => {
+  const elfBytes = createElf64WithLoadAlignment(0x4000);
+  const zipBytes = createStoredZipWithSingleEntry("lib/arm64-v8a/libpage.so", elfBytes, 4096);
+  const zipEntries = __apkTestInternals.parseZipEntries(zipBytes);
+  const libraries = await __apkTestInternals.collectNativeLibraries({
+    zipEntries,
+    apkBytes: zipBytes,
+    extractEntry: async (entry) => zipBytes.subarray(entry.dataOffset, entry.dataOffset + entry.uncompressedSize),
+  });
+
+  assert.equal(libraries.length, 1);
+  assert.equal(libraries[0].name, "libpage.so");
+  assert.equal(libraries[0].elfPageSize, 0x4000);
+  assert.equal(libraries[0].elf16kbAligned, true);
+  assert.equal(libraries[0].zipAlignment, 4096);
+  assert.equal(libraries[0].zip16kbAligned, false);
+});
+
 function decodeSvgDataUri(dataUri) {
   const [, base64] = dataUri.split(",");
   return Buffer.from(base64, "base64").toString("utf8");
+}
+
+function createElf64WithLoadAlignment(alignment) {
+  const bytes = new Uint8Array(0x80);
+  const view = new DataView(bytes.buffer);
+  bytes.set([0x7f, 0x45, 0x4c, 0x46], 0);
+  bytes[4] = 2;
+  bytes[5] = 1;
+  view.setUint16(0x10, 3, true);
+  view.setBigUint64(0x20, 0x40n, true);
+  view.setUint16(0x36, 0x38, true);
+  view.setUint16(0x38, 1, true);
+  view.setUint32(0x40, 1, true);
+  view.setBigUint64(0x70, BigInt(alignment), true);
+  return bytes;
+}
+
+function createStoredZipWithSingleEntry(path, data, alignment) {
+  const nameBytes = textEncoder.encode(path);
+  const localHeaderLength = 30 + nameBytes.length;
+  const extraLength = (alignment - (localHeaderLength % alignment)) % alignment;
+  const localHeader = new Uint8Array(localHeaderLength + extraLength);
+  const localView = new DataView(localHeader.buffer);
+  localView.setUint32(0, 0x04034b50, true);
+  localView.setUint16(4, 20, true);
+  localView.setUint32(18, data.byteLength, true);
+  localView.setUint32(22, data.byteLength, true);
+  localView.setUint16(26, nameBytes.length, true);
+  localView.setUint16(28, extraLength, true);
+  localHeader.set(nameBytes, 30);
+
+  const centralDirectoryOffset = localHeader.byteLength + data.byteLength;
+  const centralDirectory = new Uint8Array(46 + nameBytes.length);
+  const centralView = new DataView(centralDirectory.buffer);
+  centralView.setUint32(0, 0x02014b50, true);
+  centralView.setUint16(4, 20, true);
+  centralView.setUint16(6, 20, true);
+  centralView.setUint32(20, data.byteLength, true);
+  centralView.setUint32(24, data.byteLength, true);
+  centralView.setUint16(28, nameBytes.length, true);
+  centralDirectory.set(nameBytes, 46);
+
+  const eocd = new Uint8Array(22);
+  const eocdView = new DataView(eocd.buffer);
+  eocdView.setUint32(0, 0x06054b50, true);
+  eocdView.setUint16(8, 1, true);
+  eocdView.setUint16(10, 1, true);
+  eocdView.setUint32(12, centralDirectory.byteLength, true);
+  eocdView.setUint32(16, centralDirectoryOffset, true);
+
+  return concatBytes(localHeader, data, centralDirectory, eocd);
+}
+
+function concatBytes(...chunks) {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const bytes = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }

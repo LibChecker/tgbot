@@ -8,6 +8,12 @@ const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const ZIP_COMPRESSION_STORE = 0;
 const ZIP_COMPRESSION_DEFLATE = 8;
 const ZIP_NO_ENTRY = 0xffffffff;
+const ELF_MAGIC = 0x464c457f;
+const ELF_CLASS_32 = 1;
+const ELF_CLASS_64 = 2;
+const ELF_DATA_BIG_ENDIAN = 2;
+const ELF_PROGRAM_HEADER_LOAD = 1;
+const NATIVE_PAGE_SIZE_16_KB = 0x4000;
 
 const RES_STRING_POOL_TYPE = 0x0001;
 const RES_TABLE_TYPE = 0x0002;
@@ -140,7 +146,7 @@ async function readPackageContainerInfo(packageBytes, apkEntries) {
     throw new Error("Android 包中未找到可解析的 APK 文件");
   }
 
-  const nativeLibraries = collectContainedNativeLibraries(apkSources);
+  const nativeLibraries = await collectContainedNativeLibraries(apkSources);
   const apkInfo = await readApkInfoFromZipSource(selectedSource, {
     scanDex: true,
     nativeLibraries,
@@ -368,11 +374,11 @@ function hasRootDexEntries(zipEntries) {
   return false;
 }
 
-function collectContainedNativeLibraries(apkSources) {
+async function collectContainedNativeLibraries(apkSources) {
   const librariesByKey = new Map();
 
   for (const source of apkSources) {
-    for (const library of collectNativeLibraries(source.zipEntries)) {
+    for (const library of await collectNativeLibraries(source)) {
       const item = {
         ...library,
         sourceEntry: source.path,
@@ -477,7 +483,9 @@ function isLikelySplitApkFileName(fileName) {
  */
 export async function readApkInfoFromZipSource(source, options = {}) {
   const zipEntries = source.zipEntries;
-  const nativeLibraries = collectNativeLibraries(zipEntries);
+  const nativeLibraries = await collectNativeLibraries(source, {
+    parseElf: options.parseNativeElf ?? Boolean(source.apkBytes),
+  });
   const nativeLibrariesForValidation = options.nativeLibraries || nativeLibraries;
   const buildFeaturesPromise = detectBuildFeatures(source, {
     ...options,
@@ -1366,6 +1374,9 @@ async function renderVectorDrawableIcon(xmlBytes, source, resources, candidate) 
 }
 
 export const __apkTestInternals = {
+  collectNativeLibraries,
+  parseElfInfo,
+  parseZipEntries,
   renderVectorDrawableIcon,
 };
 
@@ -2350,7 +2361,9 @@ function parseProperties(text) {
   return result;
 }
 
-function collectNativeLibraries(zipEntries) {
+async function collectNativeLibraries(source, options = {}) {
+  const zipEntries = source.zipEntries || source;
+  const parseElf = options.parseElf ?? Boolean(source.apkBytes);
   const libraries = [];
 
   for (const [path, entry] of zipEntries.entries()) {
@@ -2363,17 +2376,134 @@ function collectNativeLibraries(zipEntries) {
       continue;
     }
 
+    const nativeInfo = await readNativeLibraryBinaryInfo(source, entry, parseElf);
     libraries.push({
       abi: segments[1],
       name: segments[segments.length - 1],
       path,
       size: entry.uncompressedSize || entry.compressedSize || 0,
+      ...nativeInfo,
     });
   }
 
   libraries.sort(compareNativeLibraries);
 
   return libraries;
+}
+
+async function readNativeLibraryBinaryInfo(source, entry, parseElf) {
+  const info = {};
+  const zipAlignment = getNativeLibraryZipAlignment(entry);
+  if (zipAlignment > 0) {
+    info.zipAlignment = zipAlignment;
+    info.zip16kbAligned = zipAlignment >= NATIVE_PAGE_SIZE_16_KB;
+  }
+
+  if (!parseElf) {
+    return info;
+  }
+
+  const bytes = await getNativeLibraryBytesForElf(source, entry);
+  const elfInfo = parseElfInfo(bytes);
+  if (elfInfo.pageSize > 0) {
+    info.elfPageSize = elfInfo.pageSize;
+    info.elf16kbAligned = elfInfo.pageSize % NATIVE_PAGE_SIZE_16_KB === 0;
+  }
+  return info;
+}
+
+function getNativeLibraryZipAlignment(entry) {
+  if (entry.compressionMethod !== ZIP_COMPRESSION_STORE || !entry.dataOffset) {
+    return -1;
+  }
+  return getLowestOneBit(entry.dataOffset);
+}
+
+async function getNativeLibraryBytesForElf(source, entry) {
+  if (source.apkBytes && entry.compressionMethod === ZIP_COMPRESSION_STORE && entry.dataOffset) {
+    const end = entry.dataOffset + entry.uncompressedSize;
+    if (end <= source.apkBytes.byteLength) {
+      return source.apkBytes.subarray(entry.dataOffset, end);
+    }
+  }
+
+  if (typeof source.extractEntry !== "function") {
+    return new Uint8Array();
+  }
+
+  try {
+    return await source.extractEntry(entry);
+  } catch {
+    return new Uint8Array();
+  }
+}
+
+function parseElfInfo(bytes) {
+  try {
+    return parseElfInfoOrThrow(toUint8Array(bytes));
+  } catch {
+    return {
+      type: null,
+      pageSize: null,
+    };
+  }
+}
+
+function parseElfInfoOrThrow(bytes) {
+  ensureReadable(bytes, 0, 0x10);
+  if (readUint32(bytes, 0) !== ELF_MAGIC) {
+    throw new Error("Not an ELF file");
+  }
+
+  const elfClass = bytes[4];
+  const bigEndian = bytes[5] === ELF_DATA_BIG_ENDIAN;
+  const type = readElfUint16(bytes, 0x10, bigEndian);
+  let programHeaderOffset;
+  let programHeaderEntrySize;
+  let programHeaderCount;
+  let readProgramHeaderAlign;
+
+  if (elfClass === ELF_CLASS_32) {
+    ensureReadable(bytes, 0, 0x34);
+    programHeaderOffset = readElfUint32(bytes, 0x1c, bigEndian);
+    programHeaderEntrySize = readElfUint16(bytes, 0x2a, bigEndian);
+    programHeaderCount = readElfUint16(bytes, 0x2c, bigEndian);
+    readProgramHeaderAlign = (baseOffset) => readElfUint32(bytes, baseOffset + 0x1c, bigEndian);
+  } else if (elfClass === ELF_CLASS_64) {
+    ensureReadable(bytes, 0, 0x40);
+    programHeaderOffset = readElfUint64(bytes, 0x20, bigEndian);
+    programHeaderEntrySize = readElfUint16(bytes, 0x36, bigEndian);
+    programHeaderCount = readElfUint16(bytes, 0x38, bigEndian);
+    readProgramHeaderAlign = (baseOffset) => readElfUint64(bytes, baseOffset + 0x30, bigEndian);
+  } else {
+    throw new Error("Unsupported ELF class");
+  }
+
+  if (!programHeaderOffset || !programHeaderEntrySize || !programHeaderCount) {
+    return {
+      type,
+      pageSize: null,
+    };
+  }
+
+  let minAlignment = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < programHeaderCount; index += 1) {
+    const baseOffset = programHeaderOffset + index * programHeaderEntrySize;
+    ensureReadable(bytes, baseOffset, programHeaderEntrySize);
+    if (readElfUint32(bytes, baseOffset, bigEndian) !== ELF_PROGRAM_HEADER_LOAD) {
+      continue;
+    }
+
+    const alignment = readProgramHeaderAlign(baseOffset);
+    if (alignment > 0) {
+      minAlignment = Math.min(minAlignment, alignment);
+    }
+  }
+
+  return {
+    type,
+    pageSize: Number.isFinite(minAlignment) ? minAlignment : null,
+  };
 }
 
 function compareNativeLibraries(left, right) {
@@ -2429,6 +2559,7 @@ function parseZipEntries(bytes) {
         compressedSize,
         uncompressedSize,
         localHeaderOffset,
+        dataOffset: getZipEntryDataOffset(bytes, localHeaderOffset),
       });
     }
 
@@ -2436,6 +2567,21 @@ function parseZipEntries(bytes) {
   }
 
   return entries;
+}
+
+function getZipEntryDataOffset(bytes, headerOffset) {
+  if (headerOffset < 0 || headerOffset + 30 > bytes.byteLength) {
+    return 0;
+  }
+
+  if (readUint32(bytes, headerOffset) !== LOCAL_FILE_HEADER_SIGNATURE) {
+    return 0;
+  }
+
+  const fileNameLength = readUint16(bytes, headerOffset + 26);
+  const extraLength = readUint16(bytes, headerOffset + 28);
+  const dataOffset = headerOffset + 30 + fileNameLength + extraLength;
+  return dataOffset <= bytes.byteLength ? dataOffset : 0;
 }
 
 function shouldDecodeZipEntryName(bytes, start, length) {
@@ -3792,6 +3938,27 @@ function readUint32(bytes, offset) {
   ) >>> 0;
 }
 
+function readElfUint16(bytes, offset, bigEndian) {
+  ensureReadable(bytes, offset, 2);
+  if (bigEndian) {
+    return (bytes[offset] << 8) | bytes[offset + 1];
+  }
+  return readUint16(bytes, offset);
+}
+
+function readElfUint32(bytes, offset, bigEndian) {
+  ensureReadable(bytes, offset, 4);
+  if (bigEndian) {
+    return (
+      (bytes[offset] << 24) |
+      (bytes[offset + 1] << 16) |
+      (bytes[offset + 2] << 8) |
+      bytes[offset + 3]
+    ) >>> 0;
+  }
+  return readUint32(bytes, offset);
+}
+
 function readUint64(bytes, offset) {
   const low = BigInt(readUint32(bytes, offset));
   const high = BigInt(readUint32(bytes, offset + 4));
@@ -3801,6 +3968,32 @@ function readUint64(bytes, offset) {
   }
 
   return Number(value);
+}
+
+function readElfUint64(bytes, offset, bigEndian) {
+  ensureReadable(bytes, offset, 8);
+  const high = BigInt(readElfUint32(bytes, bigEndian ? offset : offset + 4, bigEndian));
+  const low = BigInt(readElfUint32(bytes, bigEndian ? offset + 4 : offset, bigEndian));
+  const value = (high << 32n) | low;
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("64-bit value exceeds safe integer range");
+  }
+
+  return Number(value);
+}
+
+function getLowestOneBit(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return -1;
+  }
+
+  const bit = BigInt(Math.trunc(value));
+  const lowest = bit & -bit;
+  if (lowest > BigInt(Number.MAX_SAFE_INTEGER)) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  return Number(lowest);
 }
 
 function ensureReadable(bytes, offset, length) {

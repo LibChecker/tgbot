@@ -66,6 +66,7 @@
 - Do not deploy or change Cloudflare/Telegram webhook state unless the user explicitly asks.
 - In this sandbox, `git add` and `git commit` may need escalation because writing `.git/index.lock` is blocked. Confirm staged diff boundaries before escalating.
 - Wrangler can emit non-fatal `EPERM` log-write warnings under sandboxed macOS paths. Treat command exit status and preflight result as authoritative; do not fail a task only because Wrangler could not write its local log file.
+- Windows Node deploy scripts must spawn command shims explicitly, such as `npm.cmd` and `node_modules/.bin/wrangler.cmd`; plain `spawn("npm")` or extensionless `.bin/wrangler` can fail before preflight starts.
 
 ## Generated Files And Localization
 

@@ -7,7 +7,8 @@ const repoDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workerConfigPath = resolve(repoDir, "packages/bot-worker/wrangler.toml");
 const webuiDir = resolve(repoDir, "packages/apk-webui");
 const webuiDistDir = resolve(webuiDir, "dist");
-const wranglerBin = resolve(repoDir, "node_modules/.bin/wrangler");
+const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
+const wranglerBin = resolve(repoDir, "node_modules/.bin", process.platform === "win32" ? "wrangler.cmd" : "wrangler");
 
 const WORKER_UPLOAD_BUDGET_KIB = 5_500;
 const WORKER_UPLOAD_GZIP_BUDGET_KIB = 900;
@@ -40,9 +41,9 @@ if (!existsSync(wranglerBin)) {
 }
 
 if (!options["skip-preflight"]) {
-  await run("npm", ["run", "check"]);
-  await run("npm", ["run", "pages:build"]);
-  await run("npm", ["run", "perf:check"]);
+  await run(npmBin, ["run", "check"]);
+  await run(npmBin, ["run", "pages:build"]);
+  await run(npmBin, ["run", "perf:check"]);
   await runWorkerDryRun(target.workerEnv);
 }
 
@@ -149,7 +150,8 @@ function sanitizePagesBranch(value) {
 
 function run(command, args, options = {}) {
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(command, args, {
+    const spawnSpec = resolveSpawnSpec(command, args);
+    const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: options.cwd || repoDir,
       env: process.env,
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
@@ -181,11 +183,32 @@ function run(command, args, options = {}) {
 }
 
 function runSync(command, args) {
-  const result = spawnSync(command, args, {
+  const spawnSpec = resolveSpawnSpec(command, args);
+  const result = spawnSync(spawnSpec.command, spawnSpec.args, {
     cwd: repoDir,
     encoding: "utf8",
   });
   return result.status === 0 ? result.stdout : "";
+}
+
+function resolveSpawnSpec(command, args) {
+  if (process.platform !== "win32" || !/\.(?:cmd|bat)$/iu.test(command)) {
+    return { command, args };
+  }
+
+  return {
+    command: process.env.ComSpec || "cmd.exe",
+    args: ["/d", "/s", "/c", [command, ...args].map(quoteWindowsCommandArg).join(" ")],
+  };
+}
+
+function quoteWindowsCommandArg(value) {
+  const text = String(value);
+  if (!/[ \t"&|<>^]/u.test(text)) {
+    return text;
+  }
+
+  return `"${text.replaceAll('"', '""')}"`;
 }
 
 function parseArgs(args) {

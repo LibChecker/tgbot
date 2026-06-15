@@ -5,6 +5,7 @@ const ARCHIVE_CHART_CENTER = 60;
 const ARCHIVE_CHART_RADIUS = 52;
 const ARCHIVE_CHART_LABEL_MIN_PERCENT = 6;
 const ARCHIVE_CHART_SEGMENT_LIFT = 5;
+const NATIVE_PAGE_SIZE_16_KB = 0x4000;
 const ARCHIVE_CHART_COLORS = [
   "#38bdf8",
   "#22c55e",
@@ -359,7 +360,7 @@ function renderNativeTab(report) {
     return [
       `<article class="list-row native-library-row">`,
       `<div class="row-title"><span>${escapeHtml(library.name || t("unknown"))}</span></div>`,
-      `<div class="row-meta">${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</div>`,
+      `<div class="row-meta native-library-meta"><span>${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</span>${renderNativeLibraryLabels(library)}</div>`,
       sdk ? `<div class="row-meta native-library-sdk">${sdk}</div>` : "",
       `</article>`,
     ].join("");
@@ -371,6 +372,50 @@ function renderNativeTab(report) {
     `</div>`,
     `<div class="list-stack native-library-list">${rows}</div>`,
   ].join("");
+}
+
+function renderNativeLibraryLabels(library) {
+  const labels = [];
+  if (isNativeLibraryElf16KbAligned(library)) {
+    labels.push({ text: "16 KB", tone: "ok" });
+  }
+
+  const zipAlignment = Number(library.zipAlignment) || 0;
+  if (zipAlignment > 0 && zipAlignment < NATIVE_PAGE_SIZE_16_KB) {
+    labels.push({ text: formatNativeZipAlignmentLabel(zipAlignment), tone: "warning" });
+  }
+
+  return labels.map((label) => (
+    `<span class="compare-diff-status" style="${escapeAttr(getNativeLibraryLabelStyle(label.tone))}">${escapeHtml(label.text)}</span>`
+  )).join("");
+}
+
+function getNativeLibraryLabelStyle(tone) {
+  const prefix = tone === "warning" ? "changed" : "added";
+  return [
+    `--compare-item-bg: var(--compare-${prefix}-bg)`,
+    `--compare-item-border: var(--compare-${prefix}-border)`,
+    `--compare-item-text: var(--compare-${prefix}-text)`,
+    "margin-left: 8px",
+    "max-width: none",
+    "white-space: nowrap",
+  ].join(";");
+}
+
+function isNativeLibraryElf16KbAligned(library) {
+  if (library.elf16kbAligned === true) {
+    return true;
+  }
+
+  const pageSize = Number(library.elfPageSize) || 0;
+  return pageSize > 0 && pageSize % NATIVE_PAGE_SIZE_16_KB === 0;
+}
+
+function formatNativeZipAlignmentLabel(zipAlignment) {
+  if (zipAlignment >= 1024 && zipAlignment % 1024 === 0) {
+    return `${zipAlignment / 1024}KB ZIPALIGN`;
+  }
+  return `${zipAlignment}B ZIPALIGN`;
 }
 
 function renderAppTitle(title) {

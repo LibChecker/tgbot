@@ -32,6 +32,10 @@
  * @property {string} abi
  * @property {string=} path
  * @property {number=} size
+ * @property {number=} elfPageSize
+ * @property {boolean=} elf16kbAligned
+ * @property {number=} zipAlignment
+ * @property {boolean=} zip16kbAligned
  * @property {SdkMarker | null=} sdk
  */
 
