@@ -109,6 +109,9 @@ export function createReportTabDragState() {
 export function createRuntimeState() {
   return {
     historyOpenToken: 0,
+    historySaveHandle: 0,
+    historySaveHandleType: "",
+    pendingHistoryReports: [],
     runtimeLogId: 0,
     runtimeLogStylesPromise: null,
     lcappsBubbleStylesPromise: null,

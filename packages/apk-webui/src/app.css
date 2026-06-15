@@ -384,6 +384,11 @@ select {
   font: inherit;
 }
 
+select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
 button {
   cursor: pointer;
 }

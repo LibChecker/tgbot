@@ -56,6 +56,7 @@ const ANALYTICS_IDLE_LOAD_DELAY_MS = 4000;
 const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
 const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
 const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
+const HISTORY_SAVE_IDLE_TIMEOUT_MS = 1600;
 const URL_REPORT_ENDPOINT = "/url-report";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "0.1.000";
 const RUNTIME_LOG_EXPORT_TITLE = "LibChecker WebUI Runtime Logs";
@@ -63,6 +64,8 @@ const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const RUNTIME_LOG_DETAIL_KEYS = new Set([
   "archive_type",
+  "body_bytes",
+  "client_duration_ms",
   "apk_entry_count",
   "component_count",
   "downloaded_bytes",
@@ -76,6 +79,8 @@ const RUNTIME_LOG_DETAIL_KEYS = new Set([
   "http_status",
   "history_count",
   "input_source",
+  "fetch_headers_ms",
+  "json_parse_ms",
   "locale",
   "meta_data_count",
   "native_library_count",
@@ -83,14 +88,18 @@ const RUNTIME_LOG_DETAIL_KEYS = new Set([
   "permissions_count",
   "range_request_count",
   "range_cache_hit_count",
+  "render_ms",
+  "response_text_ms",
   "remote_package_type",
   "result",
   "sdk_component_match_count",
   "sdk_native_match_count",
   "selected_apk_compression",
   "selected_apk_entry",
+  "server_duration_ms",
   "size_bucket",
   "slot",
+  "terminal_detect_ms",
   "top_level_zip_entry_count",
   "value",
   "version",
@@ -1304,6 +1313,7 @@ function bindEvents() {
     updateHistoryViewIndicator();
     updateTabIndicator();
   });
+  window.addEventListener("pagehide", flushScheduledHistoryReports);
 
   elements.languageSelect.addEventListener("change", () => {
     const previousLocale = state.locale;
@@ -2939,12 +2949,16 @@ async function analyzeDownloadUrl() {
     input_source: "url",
   });
 
+  const linkTimings = {};
   try {
+    const terminalDetectStartedAt = performance.now();
     const terminalSystem = await detectCurrentTerminalSystem();
+    linkTimings.terminal_detect_ms = getElapsedMs(terminalDetectStartedAt);
     if (!state.jobs.has(jobId)) {
       return;
     }
 
+    const fetchStartedAt = performance.now();
     const response = await fetch(URL_REPORT_ENDPOINT, {
       method: "POST",
       headers: {
@@ -2957,7 +2971,9 @@ async function analyzeDownloadUrl() {
       }),
       signal: abortController.signal,
     });
-    const payload = await parseJsonResponse(response);
+    linkTimings.fetch_headers_ms = getElapsedMs(fetchStartedAt);
+    linkTimings.http_status = response.status || 0;
+    const payload = await parseJsonResponse(response, linkTimings);
     if (!response.ok) {
       throw createUrlReportError(payload, response);
     }
@@ -2975,16 +2991,31 @@ async function analyzeDownloadUrl() {
     state.activeNativeAbi = "";
     state.linkStatusKey = "linkDone";
     renderLinkStatus();
-    saveHistoryReport(payload.report);
     updateClearButton();
     finishAnalysis();
     showProgress("progressDone");
-    renderReport();
+    const renderStartedAt = performance.now();
+    void renderReport()
+      .then(() => {
+        trackWebEvent("webui.link_analysis.rendered", {
+          result: "success",
+          input_source: "url",
+          render_ms: getElapsedMs(renderStartedAt),
+          client_duration_ms: getElapsedMs(state.startedAt),
+          server_duration_ms: Number(payload.report.durationMs) || 0,
+          ...linkTimings,
+        });
+      })
+      .catch(() => {});
+    scheduleHistoryReportSave(payload.report);
     scheduleReportSdkRuleDetailHydration(payload.report);
     trackWebEvent("webui.link_analysis.succeeded", {
       result: "success",
       input_source: "url",
+      client_duration_ms: getElapsedMs(state.startedAt),
+      server_duration_ms: Number(payload.report.durationMs) || 0,
       duration_ms: Number(payload.report.durationMs) || 0,
+      ...linkTimings,
       range_request_count: Number(payload.source?.stats?.rangeRequestCount) || 0,
       downloaded_bytes: Number(payload.source?.stats?.downloadedBytes) || 0,
       ...getReportAnalyticsFields(payload.report),
@@ -3005,6 +3036,8 @@ async function analyzeDownloadUrl() {
     trackWebEvent("webui.link_analysis.failed", {
       result: "error",
       input_source: "url",
+      client_duration_ms: getElapsedMs(state.startedAt),
+      ...linkTimings,
       ...getClientErrorTelemetryFields(error),
     });
   }
@@ -3100,7 +3133,7 @@ function handleWorkerMessage(event) {
     state.jobs.delete(message.jobId);
     if (job.type === "compare") {
       runtime.compareController?.finishJob(job.slotKey, message.report, "");
-      saveHistoryReport(message.report);
+      scheduleHistoryReportSave(message.report);
       scheduleWorkerIdleTermination();
       return;
     }
@@ -3109,10 +3142,10 @@ function handleWorkerMessage(event) {
     state.activeAnalyzeJobId = null;
     state.report = message.report;
     state.activeNativeAbi = "";
-    saveHistoryReport(message.report);
     updateClearButton();
     showProgress("progressDone");
     renderReport();
+    scheduleHistoryReportSave(message.report);
     scheduleReportSdkRuleDetailHydration(message.report);
     trackWebEvent("webui.analysis.succeeded", {
       result: "success",
@@ -3454,17 +3487,34 @@ function normalizeDownloadUrl(value) {
   return url.toString();
 }
 
-async function parseJsonResponse(response) {
+async function parseJsonResponse(response, timings = null) {
+  const textStartedAt = performance.now();
   const text = await response.text();
+  if (timings) {
+    timings.response_text_ms = getElapsedMs(textStartedAt);
+    timings.body_bytes = new Blob([text]).size;
+  }
   if (!text) {
     return null;
   }
 
+  const parseStartedAt = performance.now();
   try {
-    return JSON.parse(text);
+    const payload = JSON.parse(text);
+    if (timings) {
+      timings.json_parse_ms = getElapsedMs(parseStartedAt);
+    }
+    return payload;
   } catch {
+    if (timings) {
+      timings.json_parse_ms = getElapsedMs(parseStartedAt);
+    }
     return null;
   }
+}
+
+function getElapsedMs(startedAt) {
+  return Math.max(0, Math.round(performance.now() - startedAt));
 }
 
 function getResponseErrorMessage(payload, response) {
@@ -3550,6 +3600,55 @@ function saveHistoryReport(report) {
   renderHistoryList();
 }
 
+function scheduleHistoryReportSave(report) {
+  if (!report) {
+    return;
+  }
+
+  runtime.pendingHistoryReports.push(report);
+  if (runtime.historySaveHandle) {
+    return;
+  }
+
+  if (typeof window.requestIdleCallback === "function") {
+    runtime.historySaveHandleType = "idle";
+    runtime.historySaveHandle = window.requestIdleCallback(flushScheduledHistoryReports, {
+      timeout: HISTORY_SAVE_IDLE_TIMEOUT_MS,
+    });
+    return;
+  }
+
+  runtime.historySaveHandleType = "timeout";
+  runtime.historySaveHandle = window.setTimeout(flushScheduledHistoryReports, HISTORY_SAVE_IDLE_TIMEOUT_MS);
+}
+
+function flushScheduledHistoryReports() {
+  runtime.historySaveHandle = 0;
+  runtime.historySaveHandleType = "";
+  if (runtime.pendingHistoryReports.length === 0) {
+    return;
+  }
+
+  const reports = runtime.pendingHistoryReports.splice(0);
+  for (const report of reports) {
+    saveHistoryReport(report);
+  }
+}
+
+function cancelScheduledHistoryReports() {
+  if (runtime.historySaveHandle) {
+    if (runtime.historySaveHandleType === "idle" && typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(runtime.historySaveHandle);
+    } else {
+      window.clearTimeout(runtime.historySaveHandle);
+    }
+  }
+
+  runtime.historySaveHandle = 0;
+  runtime.historySaveHandleType = "";
+  runtime.pendingHistoryReports = [];
+}
+
 async function openHistoryItem(id) {
   if (state.loadingHistoryId) {
     return;
@@ -3633,6 +3732,7 @@ function clearHistory() {
     return;
   }
 
+  cancelScheduledHistoryReports();
   const previousCount = state.history.length;
   state.history = persistHistory([]);
   renderHistoryList();
@@ -4313,7 +4413,7 @@ function activateLcappsReport(report) {
   updateClearButton();
   renderReport();
   renderLcappsBubble();
-  saveHistoryReport(report);
+  scheduleHistoryReportSave(report);
   trackWebEvent("webui.lcapps.selected", {
     result: "success",
     input_source: "lcapps",

@@ -96,6 +96,7 @@
 - Liquid/glass-like effects must be capability- and power-mode gated, not OS-name gated. `CSS.supports()` can be a false positive for SVG-backed backdrop filters on Android/iOS browser shells; keep explicit fallback reasons in `liquid-glass-support.js` and prefer old stable backgrounds when rendering is suspect.
 - WebUI CSS gzip budget is intentionally tight. Before raising the budget, prefer lazy CSS for non-first-screen UI (`runtime-log.css`, `lcapps-bubble.css`), removing duplicated control rules, or consolidating existing tokens. A modest budget raise is acceptable only when the transferred gzip size and first-screen impact are understood.
 - Runtime log UI is page-session frontend diagnostics only: live while the page is open, capped, not Cloudflare logs, and not persisted across refresh. Keep runtime log event names/fields in English; localize only visible labels.
+- For slow Web UI link analysis, inspect runtime log split timings (`client_duration_ms`, `server_duration_ms`, `fetch_headers_ms`, `response_text_ms`, `json_parse_ms`, `render_ms`) before blaming rendering, history writes, or remote parsing. Large reports can justify moving noncritical work off the visible-result path, but they are not evidence of multi-second stalls by themselves.
 
 ## Worker Notes
 
