@@ -27,6 +27,7 @@ export default defineConfig({
   base: "./",
   publicDir: false,
   plugins: [
+    pagesFunctionDevProxy(),
     minifyGeneratedJsAssets(),
   ],
   resolve: {
@@ -69,6 +70,68 @@ export default defineConfig({
     },
   },
 });
+
+function pagesFunctionDevProxy() {
+  return {
+    name: "pages-function-dev-proxy",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/url-report", async (req, res) => {
+        try {
+          const { onRequest } = await import("./functions/url-report.js");
+          const response = await onRequest({
+            request: await createDevRequest(req),
+            env: {},
+          });
+          await sendDevResponse(res, response);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to handle URL report";
+          res.statusCode = 500;
+          res.setHeader("content-type", "application/json; charset=UTF-8");
+          res.end(JSON.stringify({ error: { message } }));
+        }
+      });
+    },
+  };
+}
+
+async function createDevRequest(req) {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        headers.append(key, item);
+      }
+    } else if (value != null) {
+      headers.set(key, String(value));
+    }
+  }
+
+  const method = req.method || "GET";
+  const body = method === "GET" || method === "HEAD" ? undefined : await readDevRequestBody(req);
+  return new Request("http://127.0.0.1/url-report", {
+    method,
+    headers,
+    body,
+  });
+}
+
+async function readDevRequestBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return chunks.length ? Buffer.concat(chunks) : undefined;
+}
+
+async function sendDevResponse(res, response) {
+  res.statusCode = response.status;
+  response.headers.forEach((value, key) => {
+    res.setHeader(key, value);
+  });
+  const buffer = Buffer.from(await response.arrayBuffer());
+  res.end(buffer);
+}
 
 function minifyGeneratedJsAssets() {
   return {

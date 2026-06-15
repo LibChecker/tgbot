@@ -9,9 +9,27 @@ const ZIP64_NO_ENTRY = 0xffffffff;
 const EOCD_PROBE_BYTES = 65_536;
 const CENTRAL_DIRECTORY_FIXED_HEADER_SIZE = 46;
 const LOCAL_FILE_HEADER_FIXED_SIZE = 30;
+const DEFAULT_TAIL_PREFETCH_BYTES = EOCD_PROBE_BYTES;
 const DEFAULT_MAX_CENTRAL_DIRECTORY_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_ENTRY_COMPRESSED_BYTES = 24 * 1024 * 1024;
 const DEFAULT_MAX_RESOURCE_BYTES = 12 * 1024 * 1024;
+const METADATA_PROBE_BYTES = 1024;
+const LOCAL_HEADER_EXTRA_SLOP_BYTES = 512;
+const SMALL_ENTRY_COALESCE_MAX_BYTES = 128 * 1024;
+const SMALL_ENTRY_LOOKAHEAD_BYTES = 192 * 1024;
+const SMALL_ENTRY_COALESCE_MIN_OFFSET = 1024 * 1024;
+const V1_SIGNATURE_ENTRY_PATTERN = /^META-INF\/[^/]+\.(?:RSA|DSA|EC)$/iu;
+const METADATA_PREFETCH_ENTRY_NAMES = new Set([
+  "AndroidManifest.xml",
+  "META-INF/androidx.compose.runtime_runtime.version",
+  "META-INF/androidx.compose.ui_ui.version",
+  "META-INF/androidx.compose.ui_ui-tooling-preview.version",
+  "META-INF/androidx.compose.foundation_foundation.version",
+  "META-INF/androidx.compose.animation_animation.version",
+  "META-INF/com/android/build/gradle/app-metadata.properties",
+  "BUNDLE-METADATA/com.android.tools.build.gradle/app-metadata.properties",
+  "kotlin-tooling-metadata.json",
+]);
 
 const utf8Decoder = new TextDecoder();
 
@@ -21,6 +39,7 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     mode: "range",
     rangeRequestCount: 0,
     downloadedBytes: 0,
+    rangeCacheHitCount: 0,
   };
   const metadata = await fetchRemoteMetadata(apkUrl, stats);
 
@@ -28,7 +47,11 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     throw new Error("远端链接没有返回 Content-Length，无法定位 APK ZIP 中央目录");
   }
 
-  const tailStart = Math.max(0, metadata.contentLength - EOCD_PROBE_BYTES);
+  const tailPrefetchBytes = Math.max(
+    EOCD_PROBE_BYTES,
+    options.tailPrefetchBytes ?? DEFAULT_TAIL_PREFETCH_BYTES,
+  );
+  const tailStart = Math.max(0, metadata.contentLength - tailPrefetchBytes);
   const tailBytes = await downloadRange(apkUrl, tailStart, metadata.contentLength - tailStart, stats);
   const eocdOffsetInTail = findEndOfCentralDirectory(tailBytes);
   const eocd = parseEocd(tailBytes, eocdOffsetInTail);
@@ -38,19 +61,33 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     throw new Error(`远端 APK 中央目录过大，当前预览上限为 ${formatBytes(maxCentralDirectoryBytes)}`);
   }
 
-  const centralDirectoryBytes = await downloadRange(
+  const centralDirectoryBytes = await readBufferedOrRemoteRange(
     apkUrl,
     eocd.centralDirectoryOffset,
     eocd.centralDirectorySize,
-    stats,
+    {
+      bufferOffset: tailStart,
+      bufferBytes: tailBytes,
+      stats,
+    },
   );
   const zipEntries = parseCentralDirectory(centralDirectoryBytes);
   const maxEntryCompressedBytes = options.maxEntryCompressedBytes ?? DEFAULT_MAX_ENTRY_COMPRESSED_BYTES;
+  const rangeCache = createRangeCache([
+    metadata.probeRange,
+    {
+      offset: tailStart,
+      bytes: tailBytes,
+    },
+  ]);
+  prefetchLikelyMetadataRange(apkUrl, zipEntries, metadata.contentLength, stats, rangeCache);
   const source = {
     zipEntries,
     extractEntry: (entry) =>
       downloadRemoteZipEntry(apkUrl, entry, stats, {
+        contentLength: metadata.contentLength,
         maxEntryCompressedBytes,
+        rangeCache,
       }),
   };
 
@@ -64,7 +101,7 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     url: apkUrl.toString(),
     fileName: inferFileNameFromUrl(apkUrl),
     fileSize: metadata.contentLength,
-    metadata,
+    metadata: createPublicMetadata(metadata),
     stats,
   };
 }
@@ -82,14 +119,14 @@ export function inferFileNameFromUrl(rawUrl) {
 }
 
 async function fetchRemoteMetadata(url, stats) {
-  const headResult = await fetchHeadMetadata(url);
-  if (headResult?.contentLength > 0) {
-    return headResult;
-  }
-
   const probeResult = await fetchRangeProbeMetadata(url, stats);
   if (probeResult?.contentLength > 0) {
     return probeResult;
+  }
+
+  const headResult = await fetchHeadMetadata(url);
+  if (headResult?.contentLength > 0 && headResult.supportsRange) {
+    return headResult;
   }
 
   throw new Error("远端链接不支持 HTTP Range，无法在不完整下载的情况下解析");
@@ -120,7 +157,7 @@ async function fetchRangeProbeMetadata(url, stats) {
   const response = await fetch(url, {
     headers: {
       ...buildRemoteHeaders(),
-      range: "bytes=0-0",
+      range: `bytes=0-${METADATA_PROBE_BYTES - 1}`,
     },
   });
 
@@ -137,6 +174,18 @@ async function fetchRangeProbeMetadata(url, stats) {
     contentLength: parseContentRangeTotal(response.headers.get("content-range")),
     contentType: response.headers.get("content-type") || null,
     supportsRange: true,
+    probeRange: {
+      offset: 0,
+      bytes,
+    },
+  };
+}
+
+function createPublicMetadata(metadata) {
+  return {
+    contentLength: metadata.contentLength,
+    contentType: metadata.contentType,
+    supportsRange: metadata.supportsRange,
   };
 }
 
@@ -149,16 +198,17 @@ async function downloadRemoteZipEntry(url, entry, stats, options) {
     throw new Error(`远端 APK 条目 ${entry.name || ""} 过大，当前预览上限为 ${formatBytes(options.maxEntryCompressedBytes)}`);
   }
 
-  const headerBytes = await downloadRange(url, entry.localHeaderOffset, LOCAL_FILE_HEADER_FIXED_SIZE, stats);
-  if (readUint32(headerBytes, 0) !== LOCAL_FILE_HEADER_SIGNATURE) {
+  const entryRange = await downloadEntryInitialRange(url, entry, stats, options);
+  const headerOffset = entry.localHeaderOffset - entryRange.offset;
+  if (readUint32(entryRange.bytes, headerOffset) !== LOCAL_FILE_HEADER_SIGNATURE) {
     throw new Error("APK ZIP 本地文件头损坏");
   }
 
-  const localCompressionMethod = readUint16(headerBytes, 8);
-  const fileNameLength = readUint16(headerBytes, 26);
-  const extraLength = readUint16(headerBytes, 28);
+  const localCompressionMethod = readUint16(entryRange.bytes, headerOffset + 8);
+  const fileNameLength = readUint16(entryRange.bytes, headerOffset + 26);
+  const extraLength = readUint16(entryRange.bytes, headerOffset + 28);
   const dataOffset = entry.localHeaderOffset + LOCAL_FILE_HEADER_FIXED_SIZE + fileNameLength + extraLength;
-  const compressedBytes = await downloadRange(url, dataOffset, entry.compressedSize, stats);
+  const compressedBytes = await readEntryCompressedBytes(url, entryRange, dataOffset, entry.compressedSize, stats, options);
   const compressionMethod = localCompressionMethod || entry.compressionMethod;
 
   if (compressionMethod === ZIP_COMPRESSION_STORE) {
@@ -170,6 +220,202 @@ async function downloadRemoteZipEntry(url, entry, stats, options) {
   }
 
   throw new Error(`不支持的 ZIP 压缩方式: ${compressionMethod}`);
+}
+
+async function downloadEntryInitialRange(url, entry, stats, options) {
+  const estimatedLength = getEstimatedEntryLocalRangeLength(entry);
+  const exactRange = getExactEntryInitialRange(entry.localHeaderOffset, estimatedLength, options);
+  const range = hasAvailableRange(options.rangeCache, exactRange.offset, exactRange.length)
+    ? exactRange
+    : getEntryInitialRange(entry.localHeaderOffset, estimatedLength, entry, options);
+  const bytes = await downloadCachedRange(url, range.offset, range.length, stats, options.rangeCache);
+  return {
+    offset: range.offset,
+    bytes,
+  };
+}
+
+function getEstimatedEntryLocalRangeLength(entry) {
+  return (
+    LOCAL_FILE_HEADER_FIXED_SIZE +
+    (entry.fileNameLength || getUtf8ByteLength(entry.name || "")) +
+    (entry.extraLength || 0) +
+    entry.compressedSize
+  );
+}
+
+function getEntryInitialRange(offset, estimatedLength, entry, options) {
+  const contentLength = options.contentLength || 0;
+  if (
+    contentLength > 0 &&
+    offset >= SMALL_ENTRY_COALESCE_MIN_OFFSET &&
+    entry.compressedSize <= SMALL_ENTRY_COALESCE_MAX_BYTES
+  ) {
+    const coalescedOffset = offset;
+    const coalescedEnd = Math.min(contentLength, coalescedOffset + SMALL_ENTRY_LOOKAHEAD_BYTES);
+    const estimatedEnd = Math.min(contentLength, offset + estimatedLength + LOCAL_HEADER_EXTRA_SLOP_BYTES);
+    return {
+      offset: coalescedOffset,
+      length: Math.max(0, Math.max(coalescedEnd, estimatedEnd) - coalescedOffset),
+    };
+  }
+
+  return getExactEntryInitialRange(offset, estimatedLength, options);
+}
+
+function getExactEntryInitialRange(offset, estimatedLength, options) {
+  const contentLength = options.contentLength || 0;
+  const wantedLength = estimatedLength + LOCAL_HEADER_EXTRA_SLOP_BYTES;
+  return {
+    offset,
+    length: contentLength > 0 ? Math.max(0, Math.min(wantedLength, contentLength - offset)) : wantedLength,
+  };
+}
+
+async function readEntryCompressedBytes(url, entryRange, dataOffset, compressedSize, stats, options) {
+  if (compressedSize <= 0) {
+    return new Uint8Array();
+  }
+
+  const dataStart = dataOffset - entryRange.offset;
+  const dataEnd = dataStart + compressedSize;
+  if (dataStart >= 0 && dataEnd <= entryRange.bytes.byteLength) {
+    return entryRange.bytes.subarray(dataStart, dataEnd);
+  }
+
+  return downloadCachedRange(url, dataOffset, compressedSize, stats, options.rangeCache);
+}
+
+function createRangeCache(initialRanges = []) {
+  const ranges = [];
+  for (const range of Array.isArray(initialRanges) ? initialRanges : [initialRanges]) {
+    if (range?.bytes?.byteLength) {
+      ranges.push({ offset: range.offset || 0, length: range.bytes.byteLength, bytes: range.bytes });
+    }
+  }
+
+  return {
+    ranges,
+    inFlight: new Map(),
+  };
+}
+
+function prefetchLikelyMetadataRange(url, zipEntries, contentLength, stats, rangeCache) {
+  const entries = collectLikelyMetadataEntries(zipEntries);
+  const lateEntries = entries.filter((entry) => entry.localHeaderOffset >= SMALL_ENTRY_COALESCE_MIN_OFFSET);
+  if (!lateEntries.length || contentLength <= 0) {
+    return;
+  }
+
+  const offset = Math.min(...lateEntries.map((entry) => entry.localHeaderOffset));
+  const length = Math.min(SMALL_ENTRY_LOOKAHEAD_BYTES, contentLength - offset);
+  if (hasAvailableRange(rangeCache, offset, length)) {
+    return;
+  }
+  void downloadCachedRange(url, offset, length, stats, rangeCache).catch(() => {});
+}
+
+function collectLikelyMetadataEntries(zipEntries) {
+  const entries = [];
+  for (const [path, entry] of zipEntries.entries()) {
+    if (METADATA_PREFETCH_ENTRY_NAMES.has(path) || V1_SIGNATURE_ENTRY_PATTERN.test(path)) {
+      entries.push(entry);
+    }
+  }
+  return entries;
+}
+
+async function downloadCachedRange(url, offset, length, stats, rangeCache) {
+  if (!rangeCache) {
+    return downloadRange(url, offset, length, stats);
+  }
+
+  const cached = findCachedRange(rangeCache.ranges, offset, length);
+  if (cached) {
+    stats.rangeCacheHitCount += 1;
+    return cached.bytes.subarray(offset - cached.offset, offset - cached.offset + length);
+  }
+
+  for (const inFlight of rangeCache.inFlight.values()) {
+    if (coversRange(inFlight, offset, length)) {
+      const resolved = await inFlight.promise;
+      stats.rangeCacheHitCount += 1;
+      return resolved.bytes.subarray(offset - resolved.offset, offset - resolved.offset + length);
+    }
+  }
+
+  const key = `${offset}:${length}`;
+  let request = rangeCache.inFlight.get(key);
+  if (!request) {
+    request = {
+      offset,
+      length,
+      promise: downloadRange(url, offset, length, stats).then((bytes) => {
+        const range = { offset, length: bytes.byteLength, bytes };
+        rangeCache.ranges.push(range);
+        pruneRangeCache(rangeCache.ranges);
+        return range;
+      }),
+    };
+    rangeCache.inFlight.set(key, request);
+    void request.promise.finally(() => {
+      rangeCache.inFlight.delete(key);
+    }).catch(() => {});
+  }
+
+  const resolved = await request.promise;
+  return resolved.bytes.subarray(offset - resolved.offset, offset - resolved.offset + length);
+}
+
+function findCachedRange(ranges, offset, length) {
+  for (const range of ranges) {
+    if (coversRange(range, offset, length)) {
+      return range;
+    }
+  }
+  return null;
+}
+
+function hasAvailableRange(rangeCache, offset, length) {
+  if (!rangeCache) {
+    return false;
+  }
+  if (findCachedRange(rangeCache.ranges, offset, length)) {
+    return true;
+  }
+  for (const inFlight of rangeCache.inFlight.values()) {
+    if (coversRange(inFlight, offset, length)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function coversRange(range, offset, length) {
+  return range.offset <= offset && range.offset + range.length >= offset + length;
+}
+
+async function readBufferedOrRemoteRange(url, offset, length, options) {
+  const bufferStart = options.bufferOffset;
+  const bufferEnd = bufferStart + options.bufferBytes.byteLength;
+  const rangeEnd = offset + length;
+  if (offset >= bufferStart && rangeEnd <= bufferEnd) {
+    options.stats.rangeCacheHitCount += 1;
+    return options.bufferBytes.subarray(offset - bufferStart, rangeEnd - bufferStart);
+  }
+
+  return downloadRange(url, offset, length, options.stats);
+}
+
+function pruneRangeCache(ranges) {
+  const maxRanges = 8;
+  const maxBytes = 3 * 1024 * 1024;
+  let totalBytes = ranges.reduce((total, range) => total + range.bytes.byteLength, 0);
+
+  while (ranges.length > maxRanges || totalBytes > maxBytes) {
+    const removed = ranges.shift();
+    totalBytes -= removed?.bytes.byteLength || 0;
+  }
 }
 
 async function downloadRange(url, offset, length, stats) {
@@ -233,6 +479,8 @@ function parseCentralDirectory(bytes) {
       name: fileName,
       flags,
       compressionMethod,
+      fileNameLength,
+      extraLength,
       compressedSize: compressedSize32 === ZIP64_NO_ENTRY ? zip64.compressedSize : compressedSize32,
       uncompressedSize: uncompressedSize32 === ZIP64_NO_ENTRY ? zip64.uncompressedSize : uncompressedSize32,
       localHeaderOffset: localHeaderOffset32 === ZIP64_NO_ENTRY ? zip64.localHeaderOffset : localHeaderOffset32,
@@ -365,6 +613,10 @@ async function cancelResponseBody(response) {
 
 function decodeZipFileName(bytes) {
   return utf8Decoder.decode(bytes);
+}
+
+function getUtf8ByteLength(value) {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 function readUint16(bytes, offset) {

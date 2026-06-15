@@ -97,6 +97,21 @@
               <span class="drop-zone-meta" id="file-meta" data-i18n="fileIdle">No file selected</span>
             </span>
           </label>
+          <section class="link-zone" id="link-zone" aria-labelledby="link-zone-title">
+            <div class="link-zone-header">
+              <h2 id="link-zone-title" data-i18n="linkPrompt">Or type a download link</h2>
+              <span class="link-zone-status" id="link-status" data-i18n="linkIdle">HTTP/HTTPS</span>
+            </div>
+            <label class="link-input-shell">
+              <span class="sr-only" data-i18n="linkInputLabel">Download link</span>
+              <svg class="link-input-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"></path>
+              </svg>
+              <input id="link-input" name="downloadUrl" type="url" inputmode="url" autocomplete="url" autocapitalize="none" spellcheck="false" placeholder="https://example.com/app.apk">
+              <button class="link-submit-button" id="link-submit-button" type="submit" data-i18n="linkAnalyze" disabled>Analyze link</button>
+            </label>
+            <p class="link-zone-note" data-i18n="linkNote">Uses Range metadata when the server supports it.</p>
+          </section>
           <div class="tool-panel-actions">
             <button class="primary-button" id="analyze-button" type="submit" disabled>
               <span data-i18n="analyze">Analyze</span>

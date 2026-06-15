@@ -45,6 +45,7 @@ const ANALYTICS_IDLE_LOAD_DELAY_MS = 4000;
 const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
 const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
 const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
+const URL_REPORT_ENDPOINT = "/url-report";
 const BRAND_LOGO_FOREGROUND_PATH = [
   "M139.391 222.718H129.667C125.942 222.566 123 219.502 123 215.773C123 212.045 125.942 208.98 129.667 208.828H139.391V194.942H129.667C125.942 194.79 123 191.726 123 187.997C123 184.268 125.942 181.204 129.667 181.052H139.391V167.166",
   "H129.667C125.942 167.014 123 163.95 123 160.221C123 156.492 125.942 153.428 129.667 153.276L139.391 153.277V150.499",
@@ -1193,6 +1194,10 @@ function bindEvents() {
     setSelectedFile(elements.fileInput.files?.[0] || null);
   });
 
+  elements.linkInput?.addEventListener("input", () => {
+    setDownloadUrl(elements.linkInput.value || "");
+  });
+
   elements.dropZone.addEventListener("pointerdown", activateDropZonePointer);
   elements.dropZone.addEventListener("pointerenter", activateDropZonePointer);
   elements.dropZone.addEventListener("pointermove", activateDropZonePointer);
@@ -1207,7 +1212,11 @@ function bindEvents() {
 
   elements.form.addEventListener("submit", (event) => {
     event.preventDefault();
-    analyzeSelectedFile();
+    if (state.selectedFile) {
+      analyzeSelectedFile();
+    } else {
+      analyzeDownloadUrl();
+    }
   });
 
   elements.dropZone.addEventListener("dragover", (event) => {
@@ -2090,7 +2099,7 @@ function updateClearButton() {
     return;
   }
 
-  elements.clearButton.disabled = !state.selectedFile && !state.report;
+  elements.clearButton.disabled = !state.selectedFile && !state.downloadUrl && !state.report;
 }
 
 function updateModeIndicator(appMode = state.appMode) {
@@ -2229,6 +2238,11 @@ function applyLocale() {
     elements.lcappsSearch.placeholder = t("lcappsSearch");
     elements.lcappsSearch.setAttribute("aria-label", t("lcappsSearch"));
   }
+  if (elements.linkInput) {
+    elements.linkInput.placeholder = t("linkPlaceholder");
+    elements.linkInput.setAttribute("aria-label", t("linkInputLabel"));
+  }
+  renderLinkStatus();
   renderLcappsPicker();
   renderLcappsBubble();
 }
@@ -2245,9 +2259,12 @@ function renderLanguageOptions() {
 
 function setSelectedFile(file) {
   hideError();
+  if (file) {
+    setDownloadUrl("", { keepFile: true, syncInput: true });
+  }
   state.selectedFile = file;
   renderSelectedFile();
-  elements.analyzeButton.disabled = !file;
+  updateAnalyzeControls();
   updateClearButton();
 
   if (file) {
@@ -2266,6 +2283,26 @@ function setSelectedFile(file) {
   }
 }
 
+function setDownloadUrl(value, options = {}) {
+  hideError();
+  state.downloadUrl = String(value || "").trim();
+  state.linkStatusKey = state.downloadUrl ? "linkReady" : "linkIdle";
+
+  if (options.syncInput && elements.linkInput) {
+    elements.linkInput.value = state.downloadUrl;
+  }
+
+  if (state.downloadUrl && !options.keepFile) {
+    state.selectedFile = null;
+    elements.fileInput.value = "";
+    renderSelectedFile();
+  }
+
+  renderLinkStatus();
+  updateAnalyzeControls();
+  updateClearButton();
+}
+
 function renderSelectedFile() {
   const file = state.selectedFile;
   if (!file) {
@@ -2277,6 +2314,16 @@ function renderSelectedFile() {
     name: file.name || "local.apk",
     size: formatBytes(file.size || 0),
   });
+}
+
+function renderLinkStatus() {
+  if (!elements.linkStatus) {
+    return;
+  }
+
+  const key = state.linkStatusKey || (state.downloadUrl ? "linkReady" : "linkIdle");
+  elements.linkStatus.textContent = t(key);
+  elements.linkStatus.classList.toggle("is-active", key !== "linkIdle");
 }
 
 async function analyzeSelectedFile() {
@@ -2356,6 +2403,125 @@ async function analyzeSelectedFile() {
     terminalSystem,
   };
   worker.postMessage(request);
+}
+
+async function analyzeDownloadUrl() {
+  hideError();
+
+  let downloadUrl = "";
+  try {
+    downloadUrl = normalizeDownloadUrl(state.downloadUrl);
+  } catch {
+    showError(t("invalidLink"));
+    state.linkStatusKey = state.downloadUrl ? "linkFailed" : "linkIdle";
+    renderLinkStatus();
+    trackWebEvent("webui.link_analysis.failed", {
+      result: "invalid_url",
+      input_source: "url",
+      error_name: "InvalidUrl",
+    });
+    return;
+  }
+
+  state.downloadUrl = downloadUrl;
+  if (elements.linkInput) {
+    elements.linkInput.value = downloadUrl;
+  }
+
+  state.jobId += 1;
+  const jobId = state.jobId;
+  const abortController = new AbortController();
+  state.startedAt = performance.now();
+  state.report = null;
+  state.activeTab = "summary";
+  state.activeNativeAbi = "";
+  state.activeAnalyzeJobId = jobId;
+  state.linkAbortController = abortController;
+  state.jobs.set(jobId, {
+    type: "url",
+  });
+
+  void loadSdkIconRendererModule().catch(() => {});
+  preloadReportRenderer();
+  preloadReportPreviewInteractions();
+  state.linkStatusKey = "linkFetching";
+  renderLinkStatus();
+  setBusy(true);
+  showProgress("progressDownloading");
+  startTimer();
+  trackWebEvent("webui.link_analysis.started", {
+    result: "started",
+    input_source: "url",
+  });
+
+  try {
+    const terminalSystem = await detectCurrentTerminalSystem();
+    if (!state.jobs.has(jobId)) {
+      return;
+    }
+
+    const response = await fetch(URL_REPORT_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        url: downloadUrl,
+        locale: state.locale,
+        terminalSystem,
+      }),
+      signal: abortController.signal,
+    });
+    const payload = await parseJsonResponse(response);
+    if (!response.ok) {
+      throw new Error(getResponseErrorMessage(payload, response));
+    }
+    if (!payload?.report) {
+      throw new Error(t("unknownError"));
+    }
+    if (!state.jobs.has(jobId)) {
+      return;
+    }
+
+    state.jobs.delete(jobId);
+    state.activeAnalyzeJobId = null;
+    state.linkAbortController = null;
+    state.report = payload.report;
+    state.activeNativeAbi = "";
+    state.linkStatusKey = "linkDone";
+    renderLinkStatus();
+    saveHistoryReport(payload.report);
+    updateClearButton();
+    finishAnalysis();
+    showProgress("progressDone");
+    renderReport();
+    scheduleReportSdkRuleDetailHydration(payload.report);
+    trackWebEvent("webui.link_analysis.succeeded", {
+      result: "success",
+      input_source: "url",
+      duration_ms: Number(payload.report.durationMs) || 0,
+      range_request_count: Number(payload.source?.stats?.rangeRequestCount) || 0,
+      downloaded_bytes: Number(payload.source?.stats?.downloadedBytes) || 0,
+      ...getReportAnalyticsFields(payload.report),
+    });
+  } catch (error) {
+    if (error?.name === "AbortError" || !state.jobs.has(jobId)) {
+      return;
+    }
+
+    state.jobs.delete(jobId);
+    state.activeAnalyzeJobId = null;
+    state.linkAbortController = null;
+    state.linkStatusKey = "linkFailed";
+    renderLinkStatus();
+    finishAnalysis();
+    showError(getErrorMessage(error) || t("unknownError"));
+    trackWebEvent("webui.link_analysis.failed", {
+      result: "error",
+      input_source: "url",
+      error_name: getErrorName(error),
+    });
+  }
 }
 
 function ensureWorker() {
@@ -2497,9 +2663,24 @@ function finishAnalysis() {
 }
 
 function setBusy(isBusy) {
-  elements.analyzeButton.disabled = isBusy || !state.selectedFile;
+  state.analyzeBusy = Boolean(isBusy);
+  updateAnalyzeControls();
   if (elements.analyzeButtonLabel) {
     elements.analyzeButtonLabel.textContent = isBusy ? t("analyzing") : t("analyze");
+  }
+}
+
+function updateAnalyzeControls() {
+  const hasDownloadUrl = Boolean(state.downloadUrl);
+  const hasSource = Boolean(state.selectedFile || hasDownloadUrl);
+  elements.analyzeButton.disabled = state.analyzeBusy || !hasSource;
+  elements.fileInput.disabled = state.analyzeBusy;
+  elements.dropZone.classList.toggle("is-disabled", state.analyzeBusy);
+  if (elements.linkInput) {
+    elements.linkInput.disabled = state.analyzeBusy;
+  }
+  if (elements.linkSubmitButton) {
+    elements.linkSubmitButton.disabled = state.analyzeBusy || !hasDownloadUrl;
   }
 }
 
@@ -2531,9 +2712,11 @@ function updateElapsed() {
 }
 
 function resetState() {
-  const hadContent = Boolean(state.selectedFile || state.report || state.activeAnalyzeJobId != null);
+  const hadContent = Boolean(state.selectedFile || state.downloadUrl || state.report || state.activeAnalyzeJobId != null);
   cancelLcappsReportActivation();
   clearLcappsBubbleTransitionTimer();
+  state.linkAbortController?.abort();
+  state.linkAbortController = null;
   if (state.activeAnalyzeJobId != null) {
     state.jobs.delete(state.activeAnalyzeJobId);
     state.activeAnalyzeJobId = null;
@@ -2542,6 +2725,8 @@ function resetState() {
   stopTimer();
   hideError();
   state.selectedFile = null;
+  state.downloadUrl = "";
+  state.linkStatusKey = "linkIdle";
   state.report = null;
   state.lcappsArchive = null;
   state.lcappsPicker.open = false;
@@ -2553,6 +2738,9 @@ function resetState() {
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   elements.fileInput.value = "";
+  if (elements.linkInput) {
+    elements.linkInput.value = "";
+  }
   if (elements.lcappsSearch) {
     elements.lcappsSearch.value = "";
   }
@@ -2561,8 +2749,10 @@ function resetState() {
   elements.progress.classList.remove("is-complete");
   elements.progressTime.textContent = "0.0s";
   elements.progressLabel.textContent = t("progressReady");
-  elements.analyzeButton.disabled = true;
+  state.analyzeBusy = false;
   renderSelectedFile();
+  renderLinkStatus();
+  updateAnalyzeControls();
   updateClearButton();
   renderReport();
 
@@ -2581,6 +2771,37 @@ function showError(message) {
 function hideError() {
   elements.errorBox.hidden = true;
   elements.errorBox.textContent = "";
+}
+
+function normalizeDownloadUrl(value) {
+  const url = new URL(String(value || "").trim());
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Invalid URL protocol");
+  }
+  url.hash = "";
+  return url.toString();
+}
+
+async function parseJsonResponse(response) {
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function getResponseErrorMessage(payload, response) {
+  const message = payload?.error?.message || payload?.message || "";
+  if (message) {
+    return String(message);
+  }
+
+  return response.status ? `${t("unknownError")} (${response.status})` : t("unknownError");
 }
 
 function getErrorMessage(error) {

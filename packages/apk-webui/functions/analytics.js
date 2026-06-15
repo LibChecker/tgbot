@@ -44,6 +44,8 @@ const ANALYTICS_DOUBLE_KEYS = [
   "viewport_height",
   "value",
   "client_time_offset_ms",
+  "downloaded_bytes",
+  "range_request_count",
   "reserved_1",
   "reserved_2",
 ];

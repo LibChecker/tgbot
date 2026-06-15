@@ -1486,6 +1486,7 @@ function getLinkPreviewOptions(env) {
     maxCentralDirectoryBytes: parseOptionalMegabytes(env.MAX_LINK_PREVIEW_CD_MB),
     maxEntryCompressedBytes: parseOptionalMegabytes(env.MAX_LINK_PREVIEW_ENTRY_MB),
     maxResourceBytes: parseOptionalMegabytes(env.MAX_LINK_PREVIEW_RESOURCE_MB),
+    tailPrefetchBytes: parseOptionalMegabytes(env.MAX_LINK_PREVIEW_TAIL_MB),
   };
 }
 

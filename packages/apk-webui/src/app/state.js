@@ -11,6 +11,8 @@ export function createAppState({ locale, themeChoice, history, historyCollapsed 
     locale,
     themeChoice,
     selectedFile: null,
+    downloadUrl: "",
+    linkStatusKey: "linkIdle",
     report: null,
     lcappsArchive: null,
     lcappsPicker: {
@@ -27,9 +29,11 @@ export function createAppState({ locale, themeChoice, history, historyCollapsed 
     loadingHistoryId: "",
     worker: null,
     workerIdleTimer: null,
+    linkAbortController: null,
     jobs: new Map(),
     jobId: 0,
     activeAnalyzeJobId: null,
+    analyzeBusy: false,
     startedAt: 0,
     timer: null,
   };
