@@ -46,7 +46,7 @@ const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
 const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
 const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
 const URL_REPORT_ENDPOINT = "/url-report";
-const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "0.1.0";
+const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "0.1.000";
 const RUNTIME_LOG_EXPORT_TITLE = "LibChecker WebUI Runtime Logs";
 const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);

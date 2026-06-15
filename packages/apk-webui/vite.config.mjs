@@ -1,12 +1,15 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, minify } from "vite";
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
+const repoDir = resolve(projectDir, "../..");
 const srcDir = resolve(projectDir, "src");
 const sharedDir = resolve(projectDir, "../shared/src");
 const packageJson = JSON.parse(readFileSync(resolve(projectDir, "package.json"), "utf8"));
+const webuiVersion = resolveWebuiVersion(packageJson.version);
 
 function manualChunks(id) {
   if (id.includes("/packages/shared/src/generated/libchecker-sdk-icons.js")) {
@@ -24,6 +27,31 @@ function manualChunks(id) {
   return null;
 }
 
+function resolveWebuiVersion(packageVersion) {
+  const [major = "0", minor = "0", patch = "0"] = String(packageVersion).split(".");
+  const commitCount = readGitCommitCount();
+  const buildNumber = commitCount || normalizeVersionPart(patch).padStart(3, "0");
+  return `${normalizeVersionPart(major)}.${normalizeVersionPart(minor)}.${buildNumber}`;
+}
+
+function readGitCommitCount() {
+  const result = spawnSync("git", ["rev-list", "--count", "HEAD"], {
+    cwd: repoDir,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    return "";
+  }
+
+  const value = Number.parseInt(result.stdout.trim(), 10);
+  return Number.isFinite(value) && value > 0 ? String(value).padStart(3, "0") : "";
+}
+
+function normalizeVersionPart(value) {
+  const number = Number.parseInt(String(value), 10);
+  return Number.isFinite(number) && number >= 0 ? String(number) : "0";
+}
+
 export default defineConfig({
   root: srcDir,
   base: "./",
@@ -38,7 +66,7 @@ export default defineConfig({
     },
   },
   define: {
-    __APK_WEBUI_VERSION__: JSON.stringify(packageJson.version),
+    __APK_WEBUI_VERSION__: JSON.stringify(webuiVersion),
   },
   server: {
     host: "127.0.0.1",
