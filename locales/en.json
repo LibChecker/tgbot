@@ -144,7 +144,7 @@
     "clear": "Clear",
     "filePrompt": "Choose or drop",
     "fileIdle": "No file selected",
-    "localNote": "Files stay local. Links are fetched server-side.",
+    "localNote": "*Local files. Links read needed data.",
     "linkPrompt": "Or type a download link",
     "linkInputLabel": "Download link",
     "linkPlaceholder": "https://example.com/app.apk",

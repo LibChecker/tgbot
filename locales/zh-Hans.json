@@ -144,7 +144,7 @@
     "clear": "清空",
     "filePrompt": "选择或拖入",
     "fileIdle": "未选择文件",
-    "localNote": "文件本地解析，链接由服务端获取",
+    "localNote": "*文件在本地解析，链接仅读取必要数据",
     "linkPrompt": "或键入下载链接",
     "linkInputLabel": "下载链接",
     "linkPlaceholder": "https://example.com/app.apk",
