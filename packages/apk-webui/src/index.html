@@ -248,6 +248,10 @@
           <div class="compare-result" id="compare-result"></div>
         </section>
       </main>
+      <footer class="site-footer">
+        <button class="footer-log-link" id="runtime-log-open" type="button" data-i18n="runtimeLogOpen">Show logs</button>
+        <span class="footer-version" id="app-version" aria-label="Version">v0.1.0</span>
+      </footer>
     </div>
     <div class="lcapps-picker" id="lcapps-picker" hidden>
       <section class="lcapps-picker__panel" id="lcapps-picker-panel" role="dialog" aria-modal="true" aria-labelledby="lcapps-picker-title" tabindex="-1">
@@ -272,6 +276,29 @@
         </div>
         <div class="lcapps-picker__status" id="lcapps-status" aria-live="polite"></div>
         <div class="lcapps-picker__grid" id="lcapps-grid"></div>
+      </section>
+    </div>
+    <div class="runtime-log-modal" id="runtime-log-modal" hidden>
+      <section class="runtime-log-panel" id="runtime-log-panel" role="dialog" aria-modal="true" aria-labelledby="runtime-log-title" tabindex="-1">
+        <header class="runtime-log-header">
+          <div class="runtime-log-title-block">
+            <h2 id="runtime-log-title" data-i18n="runtimeLogTitle">Runtime logs</h2>
+            <p data-i18n="runtimeLogSubtitle">Current page session only.</p>
+          </div>
+          <div class="runtime-log-actions">
+            <button class="icon-button runtime-log-export" id="runtime-log-export" type="button" aria-label="Export logs" data-title-i18n="runtimeLogExport">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"></path>
+              </svg>
+            </button>
+            <button class="icon-button runtime-log-close" id="runtime-log-close" type="button" aria-label="Close" data-title-i18n="runtimeLogClose">
+              <svg viewBox="4 4 16 16" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6 18 18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div class="runtime-log-list" id="runtime-log-list" aria-live="polite"></div>
       </section>
     </div>
     <button class="lcapps-bubble" id="lcapps-bubble" type="button" hidden aria-label="Reopen app list" data-title-i18n="lcappsReopen">

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, minify } from "vite";
@@ -5,6 +6,7 @@ import { defineConfig, minify } from "vite";
 const projectDir = dirname(fileURLToPath(import.meta.url));
 const srcDir = resolve(projectDir, "src");
 const sharedDir = resolve(projectDir, "../shared/src");
+const packageJson = JSON.parse(readFileSync(resolve(projectDir, "package.json"), "utf8"));
 
 function manualChunks(id) {
   if (id.includes("/packages/shared/src/generated/libchecker-sdk-icons.js")) {
@@ -34,6 +36,9 @@ export default defineConfig({
     alias: {
       "@shared": sharedDir,
     },
+  },
+  define: {
+    __APK_WEBUI_VERSION__: JSON.stringify(packageJson.version),
   },
   server: {
     host: "127.0.0.1",

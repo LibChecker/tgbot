@@ -13,6 +13,8 @@ export function createAppState({ locale, themeChoice, history, historyCollapsed 
     selectedFile: null,
     downloadUrl: "",
     linkStatusKey: "linkIdle",
+    runtimeLogs: [],
+    runtimeLogOpen: false,
     report: null,
     lcappsArchive: null,
     lcappsPicker: {
@@ -74,6 +76,7 @@ export function createModeDragState() {
 export function createRuntimeState() {
   return {
     historyOpenToken: 0,
+    runtimeLogId: 0,
     modeIndicatorFrame: 0,
     pendingModeIndicatorAppMode: "",
     themeIndicatorFrame: 0,

@@ -46,6 +46,36 @@ const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
 const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
 const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
 const URL_REPORT_ENDPOINT = "/url-report";
+const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "0.1.0";
+const RUNTIME_LOG_EXPORT_TITLE = "LibChecker WebUI Runtime Logs";
+const MAX_RUNTIME_LOGS = 200;
+const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
+const RUNTIME_LOG_DETAIL_KEYS = new Set([
+  "archive_type",
+  "apk_entry_count",
+  "component_count",
+  "downloaded_bytes",
+  "duration_ms",
+  "error_name",
+  "file_extension",
+  "file_kind",
+  "has_app_icon",
+  "history_count",
+  "input_source",
+  "locale",
+  "meta_data_count",
+  "native_library_count",
+  "operation",
+  "permissions_count",
+  "range_request_count",
+  "result",
+  "sdk_component_match_count",
+  "sdk_native_match_count",
+  "size_bucket",
+  "slot",
+  "value",
+  "version",
+]);
 const BRAND_LOGO_FOREGROUND_PATH = [
   "M139.391 222.718H129.667C125.942 222.566 123 219.502 123 215.773C123 212.045 125.942 208.98 129.667 208.828H139.391V194.942H129.667C125.942 194.79 123 191.726 123 187.997C123 184.268 125.942 181.204 129.667 181.052H139.391V167.166",
   "H129.667C125.942 167.014 123 163.95 123 160.221C123 156.492 125.942 153.428 129.667 153.276L139.391 153.277V150.499",
@@ -123,6 +153,8 @@ function trackWebEvent(event, fields = {}) {
     return;
   }
 
+  appendRuntimeLog(getRuntimeEventLevel(event, fields), event, fields);
+
   if (runtime.analyticsModule && runtime.analyticsInitialized) {
     runtime.analyticsModule.trackWebEvent(event, fields);
     return;
@@ -133,6 +165,69 @@ function trackWebEvent(event, fields = {}) {
   }
   pendingAnalyticsEvents.push([event, fields]);
   void loadWebAnalyticsModule().then(initializeAnalyticsModule).catch(() => {});
+}
+
+function appendRuntimeLog(level, message, details = {}) {
+  const normalizedLevel = RUNTIME_LOG_LEVELS.has(level) ? level : "info";
+  runtime.runtimeLogId += 1;
+  state.runtimeLogs.push({
+    id: runtime.runtimeLogId,
+    level: normalizedLevel,
+    message: String(message || ""),
+    details: formatRuntimeLogDetails(details),
+    time: Date.now(),
+  });
+
+  if (state.runtimeLogs.length > MAX_RUNTIME_LOGS) {
+    state.runtimeLogs.splice(0, state.runtimeLogs.length - MAX_RUNTIME_LOGS);
+  }
+
+  if (state.runtimeLogOpen) {
+    renderRuntimeLogs();
+  }
+}
+
+function getRuntimeEventLevel(event, fields = {}) {
+  const result = String(fields?.result || "");
+  if (result === "error" || result === "worker_error" || event.includes(".failed") || event.includes("_failed")) {
+    return "error";
+  }
+  if (result === "invalid_url" || result === "worker_unavailable" || result === "collapsed") {
+    return "warn";
+  }
+  if (result === "cancelled") {
+    return "debug";
+  }
+  if (event.includes(".changed") || event.includes(".toggled") || event.includes(".viewed")) {
+    return "debug";
+  }
+  return "info";
+}
+
+function formatRuntimeLogDetails(details = {}) {
+  if (!details || typeof details !== "object") {
+    return "";
+  }
+
+  const pairs = [];
+  for (const [key, value] of Object.entries(details)) {
+    if (!RUNTIME_LOG_DETAIL_KEYS.has(key)) {
+      continue;
+    }
+    if (value == null || value === "") {
+      continue;
+    }
+    if (typeof value === "object" || typeof value === "function") {
+      continue;
+    }
+    const text = String(value);
+    pairs.push(`${key}=${text.length > 80 ? `${text.slice(0, 77)}...` : text}`);
+    if (pairs.length >= 8) {
+      break;
+    }
+  }
+
+  return pairs.join("; ");
 }
 
 function scheduleAnalyticsLoad() {
@@ -1144,6 +1239,10 @@ initWebAnalytics(() => ({
   viewport_width: window.innerWidth || 0,
   viewport_height: window.innerHeight || 0,
 }));
+appendRuntimeLog("info", "WebUI ready", {
+  version: APP_VERSION,
+  locale: state.locale,
+});
 
 function bindEvents() {
   elements.modeChipGroup.addEventListener("click", handleModeChipGroupClick);
@@ -1196,6 +1295,19 @@ function bindEvents() {
 
   elements.linkInput?.addEventListener("input", () => {
     setDownloadUrl(elements.linkInput.value || "");
+  });
+  elements.runtimeLogOpen?.addEventListener("click", openRuntimeLogModal);
+  elements.runtimeLogExport?.addEventListener("click", exportRuntimeLogs);
+  elements.runtimeLogClose?.addEventListener("click", closeRuntimeLogModal);
+  elements.runtimeLogModal?.addEventListener("click", (event) => {
+    if (event.target === elements.runtimeLogModal) {
+      closeRuntimeLogModal();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.runtimeLogOpen) {
+      closeRuntimeLogModal();
+    }
   });
 
   elements.dropZone.addEventListener("pointerdown", activateDropZonePointer);
@@ -2242,7 +2354,12 @@ function applyLocale() {
     elements.linkInput.placeholder = t("linkPlaceholder");
     elements.linkInput.setAttribute("aria-label", t("linkInputLabel"));
   }
+  if (elements.appVersion) {
+    elements.appVersion.textContent = `v${APP_VERSION}`;
+    elements.appVersion.setAttribute("aria-label", t("runtimeLogVersionLabel", { version: APP_VERSION }));
+  }
   renderLinkStatus();
+  renderRuntimeLogs();
   renderLcappsPicker();
   renderLcappsBubble();
 }
@@ -2709,6 +2826,171 @@ function updateElapsed() {
   if (elements.progressTime.textContent !== text) {
     elements.progressTime.textContent = text;
   }
+}
+
+function openRuntimeLogModal() {
+  state.runtimeLogOpen = true;
+  elements.runtimeLogModal.hidden = false;
+  renderRuntimeLogs();
+  window.setTimeout(() => {
+    elements.runtimeLogPanel?.focus();
+  }, 0);
+}
+
+function closeRuntimeLogModal() {
+  state.runtimeLogOpen = false;
+  elements.runtimeLogModal.hidden = true;
+  elements.runtimeLogOpen?.focus();
+}
+
+function renderRuntimeLogs() {
+  if (!elements.runtimeLogList) {
+    return;
+  }
+
+  if (state.runtimeLogs.length === 0) {
+    elements.runtimeLogList.innerHTML = `<div class="runtime-log-empty">${escapeHtml(t("runtimeLogEmpty"))}</div>`;
+    return;
+  }
+
+  elements.runtimeLogList.innerHTML = state.runtimeLogs.map(renderRuntimeLogLine).join("");
+  elements.runtimeLogList.scrollTop = elements.runtimeLogList.scrollHeight;
+}
+
+function renderRuntimeLogLine(entry) {
+  const level = RUNTIME_LOG_LEVELS.has(entry.level) ? entry.level : "info";
+  const date = new Date(entry.time || Date.now());
+  const time = date.toLocaleTimeString(state.locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  const details = entry.details
+    ? `<span class="runtime-log-line__details">${escapeHtml(entry.details)}</span>`
+    : "";
+
+  return [
+    `<div class="runtime-log-line" data-level="${escapeAttr(level)}">`,
+    `<span class="runtime-log-line__time">${escapeHtml(time)}</span>`,
+    `<span class="runtime-log-line__level">${escapeHtml(level.toUpperCase())}</span>`,
+    `<span class="runtime-log-line__message">${escapeHtml(entry.message)}</span>`,
+    details,
+    `</div>`,
+  ].join("");
+}
+
+async function exportRuntimeLogs() {
+  if (!elements.runtimeLogExport) {
+    return;
+  }
+
+  const text = buildRuntimeLogExportText();
+  const fileName = `apk-webui-runtime-logs-${formatRuntimeLogExportTimestamp(new Date())}.log`;
+  elements.runtimeLogExport.disabled = true;
+
+  try {
+    const file = typeof File === "function"
+      ? new File([text], fileName, { type: "text/plain;charset=UTF-8" })
+      : null;
+
+    if (file && navigator.share && canShareRuntimeLogFile(file)) {
+      await navigator.share({
+        title: RUNTIME_LOG_EXPORT_TITLE,
+        files: [file],
+      });
+      trackWebEvent("webui.runtime_log.exported", {
+        result: "success",
+        operation: "share_file",
+        value: state.runtimeLogs.length,
+      });
+      return;
+    }
+
+    if (navigator.share) {
+      await navigator.share({
+        title: RUNTIME_LOG_EXPORT_TITLE,
+        text,
+      });
+      trackWebEvent("webui.runtime_log.exported", {
+        result: "success",
+        operation: "share_text",
+        value: state.runtimeLogs.length,
+      });
+      return;
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      trackWebEvent("webui.runtime_log.export_cancelled", {
+        result: "cancelled",
+        operation: "share",
+        value: state.runtimeLogs.length,
+      });
+      return;
+    }
+  } finally {
+    elements.runtimeLogExport.disabled = false;
+  }
+
+  downloadRuntimeLogFile(fileName, text);
+  trackWebEvent("webui.runtime_log.exported", {
+    result: "success",
+    operation: "download",
+    value: state.runtimeLogs.length,
+  });
+}
+
+function canShareRuntimeLogFile(file) {
+  if (typeof navigator.canShare !== "function") {
+    return false;
+  }
+
+  try {
+    return navigator.canShare({ files: [file] });
+  } catch {
+    return false;
+  }
+}
+
+function buildRuntimeLogExportText() {
+  const lines = [
+    RUNTIME_LOG_EXPORT_TITLE,
+    `Version: ${APP_VERSION}`,
+    `Locale: ${state.locale}`,
+    `Exported At: ${new Date().toISOString()}`,
+    `Entries: ${state.runtimeLogs.length}`,
+    "",
+  ];
+
+  for (const entry of state.runtimeLogs) {
+    lines.push(formatRuntimeLogExportLine(entry));
+  }
+
+  return lines.join("\n");
+}
+
+function formatRuntimeLogExportLine(entry) {
+  const level = RUNTIME_LOG_LEVELS.has(entry.level) ? entry.level : "info";
+  const time = new Date(entry.time || Date.now()).toISOString();
+  const details = entry.details ? ` ${entry.details}` : "";
+  return `[${time}] ${level.toUpperCase()} ${entry.message}${details}`;
+}
+
+function formatRuntimeLogExportTimestamp(date) {
+  return date.toISOString().replace(/[:.]/gu, "-");
+}
+
+function downloadRuntimeLogFile(fileName, text) {
+  const blob = new Blob([text], { type: "text/plain;charset=UTF-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function resetState() {

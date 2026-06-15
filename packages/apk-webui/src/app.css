@@ -3845,6 +3845,252 @@ svg {
   overflow-wrap: anywhere;
 }
 
+.site-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: clamp(18px, 3vw, 28px) 0 2px;
+  color: color-mix(in srgb, var(--muted) 78%, transparent);
+  font-size: 0.78rem;
+  font-weight: 520;
+  line-height: 1.35;
+}
+
+.footer-log-link {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--control-text) 68%, var(--muted));
+  padding: 0;
+  font: inherit;
+  line-height: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.footer-log-link:hover,
+.footer-log-link:focus-visible {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
+.footer-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+  white-space: nowrap;
+}
+
+.footer-version::before {
+  content: "";
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.72;
+}
+
+.runtime-log-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: clamp(14px, 4vw, 32px);
+  background: rgb(12 8 18 / 0.18);
+  color: var(--text);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
+}
+
+.runtime-log-modal[hidden] {
+  display: none;
+}
+
+.runtime-log-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(760px, 100%);
+  max-height: min(72dvh, 680px);
+  min-width: 0;
+  min-height: 280px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
+  box-shadow: 0 28px 70px rgb(22 12 38 / 0.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.runtime-log-panel:focus {
+  outline: none;
+}
+
+.runtime-log-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.runtime-log-header h2 {
+  margin: 0;
+  color: var(--heading-text);
+  font-size: 1.08rem;
+  font-weight: 760;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.runtime-log-header p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.runtime-log-title-block {
+  min-width: 0;
+}
+
+.runtime-log-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.runtime-log-export,
+.runtime-log-close {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+.runtime-log-actions .icon-button svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.85;
+}
+
+.runtime-log-actions .icon-button svg path {
+  vector-effect: non-scaling-stroke;
+}
+
+.runtime-log-export svg {
+  width: 20px;
+  height: 20px;
+}
+
+.runtime-log-actions .icon-button:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--surface-soft) 58%, transparent);
+  transform: none;
+}
+
+.runtime-log-actions .icon-button:active:not(:disabled) {
+  opacity: 0.62;
+  transform: none;
+}
+
+.runtime-log-actions .icon-button:focus-visible {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.runtime-log-export:disabled {
+  cursor: wait;
+  opacity: 0.5;
+  transform: none;
+}
+
+.runtime-log-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  overscroll-behavior: contain;
+}
+
+.runtime-log-empty {
+  padding: 22px 18px;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.runtime-log-line {
+  display: grid;
+  grid-template-columns: 82px 58px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+  padding: 7px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 56%, transparent);
+}
+
+.runtime-log-line:first-child {
+  border-top: 0;
+}
+
+.runtime-log-line__time {
+  color: color-mix(in srgb, var(--muted) 84%, transparent);
+  white-space: nowrap;
+}
+
+.runtime-log-line__level {
+  font-weight: 780;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.runtime-log-line__message {
+  min-width: 0;
+  color: var(--heading-text);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.runtime-log-line__details {
+  grid-column: 3;
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.runtime-log-line[data-level="debug"] .runtime-log-line__level {
+  color: color-mix(in srgb, var(--muted) 84%, var(--control-text));
+}
+
+.runtime-log-line[data-level="info"] .runtime-log-line__level {
+  color: var(--info-text);
+}
+
+.runtime-log-line[data-level="warn"] .runtime-log-line__level {
+  color: var(--warning-text);
+}
+
+.runtime-log-line[data-level="error"] .runtime-log-line__level {
+  color: var(--danger-text);
+}
+
 .lcapps-app-package {
   color: var(--control-text);
   font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
@@ -4514,6 +4760,39 @@ svg {
 
   .lcapps-app-card {
     padding: 11px;
+  }
+
+  .site-footer {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 0 8px;
+  }
+
+  .runtime-log-modal {
+    align-items: end;
+    padding: 8px;
+  }
+
+  .runtime-log-panel {
+    width: 100%;
+    max-height: 84dvh;
+    min-height: 260px;
+    border-radius: 18px;
+  }
+
+  .runtime-log-header {
+    padding: 15px 15px 12px;
+  }
+
+  .runtime-log-line {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 3px 10px;
+    padding: 8px 15px;
+  }
+
+  .runtime-log-line__message,
+  .runtime-log-line__details {
+    grid-column: 1 / -1;
   }
 
 }
