@@ -69,6 +69,7 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
   sdk_annotation: "progressSdkAnnotation",
   report_build: "progressReportBuild",
 });
+const PROGRESS_WIDTH_TRANSITION = "width 180ms ease";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "0.1.000";
 const RUNTIME_LOG_EXPORT_TITLE = "LibChecker WebUI Runtime Logs";
 const MAX_RUNTIME_LOGS = 200;
@@ -3245,10 +3246,24 @@ function showProgress(key, options = {}) {
 
 function setProgressValue(value) {
   const progressValue = clamp(Number(value), 0, 1);
+  const wasDeterminate = state.progressValue != null;
   state.progressValue = progressValue;
   if (elements.progressBar) {
-    elements.progressBar.style.width = `${(progressValue * 100).toFixed(1)}%`;
-    elements.progressBar.style.animation = "none";
+    const progressBar = elements.progressBar;
+    const transition = isAppPowerConstrained() ? "none" : PROGRESS_WIDTH_TRANSITION;
+    progressBar.style.animation = "none";
+
+    if (wasDeterminate) {
+      progressBar.style.transition = transition;
+      progressBar.style.width = `${(progressValue * 100).toFixed(1)}%`;
+    } else {
+      progressBar.style.transition = "none";
+      progressBar.style.width = `${(progressValue * 100).toFixed(1)}%`;
+      if (transition !== "none") {
+        progressBar.getBoundingClientRect();
+        progressBar.style.transition = transition;
+      }
+    }
   }
   elements.progress.setAttribute("role", "progressbar");
   elements.progress.setAttribute("aria-valuemin", "0");
@@ -3259,6 +3274,7 @@ function setProgressValue(value) {
 function clearProgressValue() {
   state.progressValue = null;
   if (elements.progressBar) {
+    elements.progressBar.style.removeProperty("transition");
     elements.progressBar.style.removeProperty("width");
     elements.progressBar.style.removeProperty("animation");
   }
