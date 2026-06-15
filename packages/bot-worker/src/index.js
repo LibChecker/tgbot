@@ -46,6 +46,11 @@ export default {
       return await iconResponse;
     }
 
+    logInfoEvent(env, telemetry, "worker.request.received", {
+      result: "received",
+      content_length: parseContentLengthHeader(request.headers.get("content-length")),
+    }, { analytics: false });
+
     if (request.method === "GET" && url.pathname === "/") {
       logInfoEvent(env, telemetry, "worker.status_viewed", {
         result: "success",
@@ -166,9 +171,7 @@ async function handleWebhookRequest(request, env, ctx, requestOrigin, telemetry)
     handleUpdate(update, env, requestOrigin, updateTelemetry).catch((error) => {
       logErrorEvent(env, updateTelemetry, "telegram.update.unhandled_error", {
         result: "error",
-        error_name: getErrorName(error),
-        error_message: getErrorMessage(error),
-        error_stack: getErrorStack(error),
+        ...getErrorTelemetryFields(error),
       });
     }),
   );
@@ -475,8 +478,54 @@ async function handleUploadRequest(request, env, url, telemetry) {
 
     const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
     const telegraphModuleTask = loadTelegraphModule();
+    let stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "upload.analysis.file_read.started", {
+      result: "started",
+      analysis_stage: "file_read",
+      file_name: apkFile.name || null,
+      file_size_bytes: apkFile.size || 0,
+    }, { analytics: false });
     const apkBuffer = await apkFile.arrayBuffer();
+    logInfoEvent(env, telemetry, "upload.analysis.file_read.succeeded", {
+      result: "success",
+      analysis_stage: "file_read",
+      duration_ms: Date.now() - stageStartedAt,
+      file_name: apkFile.name || null,
+      file_size_bytes: apkFile.size || 0,
+      downloaded_bytes: apkBuffer.byteLength || 0,
+    }, { analytics: false });
+
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "upload.analysis.parse.started", {
+      result: "started",
+      analysis_stage: "apk_parse",
+      file_name: apkFile.name || null,
+      file_size_bytes: apkFile.size || 0,
+    }, { analytics: false });
     const apkInfo = await readAndroidPackageInfo(apkBuffer);
+    logInfoEvent(env, telemetry, "upload.analysis.parse.succeeded", {
+      result: "success",
+      analysis_stage: "apk_parse",
+      duration_ms: Date.now() - stageStartedAt,
+      file_name: apkFile.name || null,
+      file_size_bytes: apkFile.size || 0,
+      package_name: apkInfo.packageName,
+      version_name: apkInfo.versionName,
+      permissions_count: apkInfo.permissions.length,
+      native_library_count: apkInfo.nativeLibraries.length,
+      component_count: countComponents(apkInfo.components),
+      meta_data_count: countMetaData(apkInfo.metaData),
+      has_app_icon: Boolean(apkInfo.icon?.dataUri),
+      app_icon_path: apkInfo.icon?.path || null,
+      ...getArchiveTelemetryFields(apkInfo),
+    }, { analytics: false });
+
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "upload.analysis.report_build.started", {
+      result: "started",
+      analysis_stage: "report_build",
+      package_name: apkInfo.packageName,
+    }, { analytics: false });
     const report = await buildApkReport(
       buildWebUploadMessage(formLocale),
       buildUploadDocument(apkFile),
@@ -485,8 +534,30 @@ async function handleUploadRequest(request, env, url, telemetry) {
       formLocale,
       sdkRuleAnnotatorTask,
     );
+    logInfoEvent(env, telemetry, "upload.analysis.report_build.succeeded", {
+      result: "success",
+      analysis_stage: "report_build",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: report.apkInfo.packageName,
+      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+    }, { analytics: false });
+
     const { createApkTelegraphPage } = await telegraphModuleTask;
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "upload.analysis.telegraph.started", {
+      result: "started",
+      analysis_stage: "telegraph_create",
+      package_name: report.apkInfo.packageName,
+    }, { analytics: false });
     const telegraphPage = await createApkTelegraphPage(env, report);
+    logInfoEvent(env, telemetry, "upload.analysis.telegraph.succeeded", {
+      result: "success",
+      analysis_stage: "telegraph_create",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: report.apkInfo.packageName,
+      report_path: telegraphPage.path || null,
+    }, { analytics: false });
     const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, formLocale);
 
     logInfoEvent(env, telemetry, "upload.analysis.succeeded", {
@@ -517,9 +588,7 @@ async function handleUploadRequest(request, env, url, telemetry) {
     logErrorEvent(env, telemetry, "upload.analysis.failed", {
       result: "error",
       duration_ms: Date.now() - startedAt,
-      error_name: getErrorName(error),
-      error_message: getErrorMessage(error),
-      error_stack: getErrorStack(error),
+      ...getErrorTelemetryFields(error),
     });
 
     return renderUploadResponse(
@@ -912,8 +981,7 @@ async function forwardMessageForDocument(env, message, candidate, telemetry) {
         result: "forward_failed",
         candidate_chat_id: String(candidate.fromChatId),
         candidate_message_id: candidate.messageId,
-        error_name: getErrorName(error),
-        error_message: getErrorMessage(error),
+        ...getErrorTelemetryFields(error),
       },
       { analytics: false },
     );
@@ -991,8 +1059,54 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
   try {
     const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
     const telegraphModuleTask = loadTelegraphModule();
+    let stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.analysis.file_download.started", {
+      result: "started",
+      analysis_stage: "telegram_file_download",
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+    }, { analytics: false });
     const apkBuffer = await downloadTelegramFile(env, document.file_id, locale);
+    logInfoEvent(env, telemetry, "apk.analysis.file_download.succeeded", {
+      result: "success",
+      analysis_stage: "telegram_file_download",
+      duration_ms: Date.now() - stageStartedAt,
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      downloaded_bytes: apkBuffer.byteLength || 0,
+    }, { analytics: false });
+
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.analysis.parse.started", {
+      result: "started",
+      analysis_stage: "apk_parse",
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+    }, { analytics: false });
     const apkInfo = await readAndroidPackageInfo(apkBuffer);
+    logInfoEvent(env, telemetry, "apk.analysis.parse.succeeded", {
+      result: "success",
+      analysis_stage: "apk_parse",
+      duration_ms: Date.now() - stageStartedAt,
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      package_name: apkInfo.packageName,
+      version_name: apkInfo.versionName,
+      permissions_count: apkInfo.permissions.length,
+      native_library_count: apkInfo.nativeLibraries.length,
+      component_count: countComponents(apkInfo.components),
+      meta_data_count: countMetaData(apkInfo.metaData),
+      has_app_icon: Boolean(apkInfo.icon?.dataUri),
+      app_icon_path: apkInfo.icon?.path || null,
+      ...getArchiveTelemetryFields(apkInfo),
+    }, { analytics: false });
+
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.analysis.report_build.started", {
+      result: "started",
+      analysis_stage: "report_build",
+      package_name: apkInfo.packageName,
+    }, { analytics: false });
     const report = await buildApkReport(
       message,
       document,
@@ -1001,8 +1115,30 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       locale,
       sdkRuleAnnotatorTask,
     );
+    logInfoEvent(env, telemetry, "apk.analysis.report_build.succeeded", {
+      result: "success",
+      analysis_stage: "report_build",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: report.apkInfo.packageName,
+      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+    }, { analytics: false });
+
     const { createApkTelegraphPage } = await telegraphModuleTask;
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.analysis.telegraph.started", {
+      result: "started",
+      analysis_stage: "telegraph_create",
+      package_name: report.apkInfo.packageName,
+    }, { analytics: false });
     const telegraphPage = await createApkTelegraphPage(env, report);
+    logInfoEvent(env, telemetry, "apk.analysis.telegraph.succeeded", {
+      result: "success",
+      analysis_stage: "telegraph_create",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: report.apkInfo.packageName,
+      report_path: telegraphPage.path || null,
+    }, { analytics: false });
     const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
 
     logInfoEvent(env, telemetry, "apk.analysis.succeeded", {
@@ -1038,9 +1174,7 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       duration_ms: Date.now() - startedAt,
       file_name: document.file_name || null,
       file_size_bytes: document.file_size || 0,
-      error_name: getErrorName(error),
-      error_message: getErrorMessage(error),
-      error_stack: getErrorStack(error),
+      ...getErrorTelemetryFields(error),
     });
     await sendText(
       env,
@@ -1079,8 +1213,39 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
     const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
     const telegraphModuleTask = loadTelegraphModule();
     const { readApkInfoFromUrl } = await apkUrlPreviewModuleTask;
+    let stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.link_analysis.preview.started", {
+      result: "started",
+      analysis_stage: "url_preview",
+      url_host: safeUrlHost(apkUrl),
+      url_path: safeUrlPath(apkUrl),
+    }, { analytics: false });
     const preview = await readApkInfoFromUrl(apkUrl, getLinkPreviewOptions(env));
+    logInfoEvent(env, telemetry, "apk.link_analysis.preview.succeeded", {
+      result: "success",
+      analysis_stage: "url_preview",
+      duration_ms: Date.now() - stageStartedAt,
+      url_host: safeUrlHost(preview.url),
+      url_path: safeUrlPath(preview.url),
+      file_name: preview.fileName || null,
+      content_length_bytes: preview.fileSize || 0,
+      downloaded_bytes: preview.stats.downloadedBytes || 0,
+      range_request_count: preview.stats.rangeRequestCount || 0,
+      range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+      link_preview_mode: preview.stats.mode || null,
+      package_name: preview.apkInfo.packageName,
+      version_name: preview.apkInfo.versionName,
+      ...getUrlPreviewDiagnosticTelemetryFields(preview),
+      ...getArchiveTelemetryFields(preview.apkInfo),
+    }, { analytics: false });
+
     const document = buildUrlPreviewDocument(preview);
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.link_analysis.report_build.started", {
+      result: "started",
+      analysis_stage: "report_build",
+      package_name: preview.apkInfo.packageName,
+    }, { analytics: false });
     const report = await buildApkReport(
       buildUrlPreviewMessage(message),
       document,
@@ -1089,8 +1254,30 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       locale,
       sdkRuleAnnotatorTask,
     );
+    logInfoEvent(env, telemetry, "apk.link_analysis.report_build.succeeded", {
+      result: "success",
+      analysis_stage: "report_build",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: report.apkInfo.packageName,
+      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+    }, { analytics: false });
+
     const { createApkTelegraphPage } = await telegraphModuleTask;
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.link_analysis.telegraph.started", {
+      result: "started",
+      analysis_stage: "telegraph_create",
+      package_name: report.apkInfo.packageName,
+    }, { analytics: false });
     const telegraphPage = await createApkTelegraphPage(env, report);
+    logInfoEvent(env, telemetry, "apk.link_analysis.telegraph.succeeded", {
+      result: "success",
+      analysis_stage: "telegraph_create",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: report.apkInfo.packageName,
+      report_path: telegraphPage.path || null,
+    }, { analytics: false });
     const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
 
     logInfoEvent(env, telemetry, "apk.link_analysis.succeeded", {
@@ -1103,7 +1290,9 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       content_length_bytes: preview.fileSize || 0,
       downloaded_bytes: preview.stats.downloadedBytes || 0,
       range_request_count: preview.stats.rangeRequestCount || 0,
+      range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
       link_preview_mode: preview.stats.mode || null,
+      ...getUrlPreviewDiagnosticTelemetryFields(preview),
       package_name: report.apkInfo.packageName,
       version_name: report.apkInfo.versionName,
       permissions_count: report.apkInfo.permissions.length,
@@ -1132,9 +1321,7 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       duration_ms: Date.now() - startedAt,
       url_host: safeUrlHost(apkUrl),
       url_path: safeUrlPath(apkUrl),
-      error_name: getErrorName(error),
-      error_message: getErrorMessage(error),
-      error_stack: getErrorStack(error),
+      ...getErrorTelemetryFields(error),
     });
     await sendText(
       env,
@@ -1214,6 +1401,11 @@ function normalizeWebhookUrl(value) {
   }
 
   return trimmed.endsWith("/webhook") ? trimmed : `${trimmed.replace(/\/+$/u, "")}/webhook`;
+}
+
+function parseContentLengthHeader(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 function safeUrlHost(value) {
@@ -1976,6 +2168,17 @@ function getArchiveTelemetryFields(apkInfo = {}) {
   };
 }
 
+function getUrlPreviewDiagnosticTelemetryFields(preview = {}) {
+  const diagnostics = preview.diagnostics || {};
+  const fields = {};
+  for (const [key, value] of Object.entries(diagnostics)) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      fields[key] = value;
+    }
+  }
+  return fields;
+}
+
 function buildMessageTelemetryFields(update, message, command, botMentioned, locale) {
   const links = extractLinksFromMessage(message);
   return {
@@ -2034,12 +2237,82 @@ function getErrorMessage(error) {
   return "Unknown error";
 }
 
+function getErrorTelemetryFields(error) {
+  return {
+    error_name: getErrorName(error),
+    error_message: getErrorMessage(error),
+    error_stack: getErrorStack(error),
+    error_code: getErrorCode(error),
+    ...getErrorDiagnostics(error),
+  };
+}
+
+function getErrorCode(error) {
+  if (error && typeof error === "object") {
+    if (typeof error.code === "string") {
+      return error.code;
+    }
+
+    if (typeof error.diagnostics?.error_code === "string") {
+      return error.diagnostics.error_code;
+    }
+  }
+
+  return null;
+}
+
+function getErrorDiagnostics(error) {
+  if (!error || typeof error !== "object" || !error.diagnostics || typeof error.diagnostics !== "object") {
+    return {};
+  }
+
+  const diagnostics = {};
+  for (const [key, value] of Object.entries(error.diagnostics)) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      diagnostics[key] = value;
+    }
+  }
+  return diagnostics;
+}
+
 function getLocalizedErrorMessage(error, locale) {
+  const i18n = createI18n(locale);
+  const localized = getLocalizedErrorByCode(error, i18n);
+  if (localized) {
+    return localized;
+  }
+
   if (error instanceof Error) {
     return error.message;
   }
 
-  return createI18n(locale).t("errors.unknown");
+  return i18n.t("errors.unknown");
+}
+
+function getLocalizedErrorByCode(error, i18n) {
+  const code = getErrorCode(error);
+  if (!code || !/^[a-z0-9_]+$/u.test(code)) {
+    return "";
+  }
+
+  const key = `errors.${code}`;
+  const message = i18n.t(key, getErrorMessageVariables(error));
+  return message === key ? "" : message;
+}
+
+function getErrorMessageVariables(error) {
+  const diagnostics = error && typeof error === "object" && error.diagnostics && typeof error.diagnostics === "object"
+    ? error.diagnostics
+    : {};
+  const selectedApkEntry = String(diagnostics.selected_apk_entry || "APK");
+  const selectedApkCompression = String(diagnostics.selected_apk_compression || "unknown");
+
+  return {
+    selectedApkEntry,
+    selectedApkCompression,
+    selected_apk_entry: selectedApkEntry,
+    selected_apk_compression: selectedApkCompression,
+  };
 }
 
 function getErrorName(error) {

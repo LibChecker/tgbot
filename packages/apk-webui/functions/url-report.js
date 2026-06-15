@@ -2,7 +2,7 @@ import { readApkInfoFromUrl } from "../../bot-worker/src/apk-url-preview.js";
 import { assertApkReport } from "../../shared/src/contracts.js";
 import { LIBCHECKER_RULES_CORE } from "../../shared/src/generated/libchecker-rules-core.js";
 import { LIBCHECKER_SDK_ICON_SVGS } from "../../shared/src/generated/libchecker-sdk-icons.js";
-import { normalizeLocale } from "../../shared/src/i18n.js";
+import { createI18n, normalizeLocale } from "../../shared/src/i18n.js";
 import { createSdkMarkerAnnotator } from "../../shared/src/sdk-markers.js";
 
 const MAX_BODY_BYTES = 8 * 1024;
@@ -40,29 +40,100 @@ export async function onRequest(context) {
 
 async function handlePost({ request, env }) {
   const startedAt = Date.now();
+  const requestId = request.headers.get("cf-ray") || crypto.randomUUID();
+  let activeLocale = resolveRequestLocale(request);
   let payload;
   try {
     payload = await readJsonBody(request);
   } catch (error) {
-    return jsonResponse({ error: { message: error.message || "Invalid request body" } }, 400);
+    logUrlReportEvent("warn", "url_report.bad_request", {
+      request_id: requestId,
+      result: "invalid_body",
+      http_status: 400,
+      ...getErrorTelemetryFields(error),
+    });
+    return jsonResponse({ error: buildErrorResponse(error, activeLocale) }, 400);
   }
 
+  activeLocale = resolveRequestLocale(request, payload);
   let url;
   try {
     url = normalizeDownloadUrl(payload?.url);
   } catch (error) {
-    return jsonResponse({ error: { message: error.message || "Invalid download URL" } }, 400);
+    logUrlReportEvent("warn", "url_report.bad_request", {
+      request_id: requestId,
+      result: "invalid_url",
+      http_status: 400,
+      ...getErrorTelemetryFields(error),
+    });
+    return jsonResponse({ error: buildErrorResponse(error, activeLocale) }, 400);
   }
 
+  logUrlReportEvent("info", "url_report.accepted", {
+    request_id: requestId,
+    result: "accepted",
+    url_host: safeUrlHost(url),
+    url_path: safeUrlPath(url),
+  });
+
   try {
-    const locale = normalizeLocale(payload?.locale);
+    const locale = activeLocale;
     const terminalSystem = resolveAnalysisTerminalSystem();
+    let stageStartedAt = Date.now();
+    logUrlReportEvent("info", "url_report.preview.started", {
+      request_id: requestId,
+      result: "started",
+      analysis_stage: "url_preview",
+      url_host: safeUrlHost(url),
+      url_path: safeUrlPath(url),
+    });
     const preview = await readApkInfoFromUrl(url, getLinkPreviewOptions(env));
+    logUrlReportEvent("info", "url_report.preview.succeeded", {
+      request_id: requestId,
+      result: "success",
+      analysis_stage: "url_preview",
+      duration_ms: Date.now() - stageStartedAt,
+      url_host: safeUrlHost(preview.url),
+      url_path: safeUrlPath(preview.url),
+      file_name: preview.fileName || null,
+      content_length_bytes: preview.fileSize || 0,
+      downloaded_bytes: preview.stats.downloadedBytes || 0,
+      range_request_count: preview.stats.rangeRequestCount || 0,
+      range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+      package_name: preview.apkInfo.packageName,
+      version_name: preview.apkInfo.versionName,
+      ...getPrimitiveFields(preview.diagnostics),
+    });
+
+    stageStartedAt = Date.now();
+    logUrlReportEvent("info", "url_report.sdk_annotation.started", {
+      request_id: requestId,
+      result: "started",
+      analysis_stage: "sdk_annotation",
+      package_name: preview.apkInfo.packageName,
+    });
     const sdkAnnotated = sdkRuleAnnotator(preview.apkInfo, resolveSdkIconDataUri);
     const apkInfo = {
       ...preview.apkInfo,
       ...sdkAnnotated,
     };
+    logUrlReportEvent("info", "url_report.sdk_annotation.succeeded", {
+      request_id: requestId,
+      result: "success",
+      analysis_stage: "sdk_annotation",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: apkInfo.packageName,
+      sdk_native_match_count: apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: apkInfo.sdkSummary?.components.length || 0,
+    });
+
+    stageStartedAt = Date.now();
+    logUrlReportEvent("info", "url_report.report_build.started", {
+      request_id: requestId,
+      result: "started",
+      analysis_stage: "report_build",
+      package_name: apkInfo.packageName,
+    });
     const report = assertApkReport({
       locale,
       terminalSystem,
@@ -72,6 +143,28 @@ async function handlePost({ request, env }) {
       fileSizeBytes: preview.fileSize || 0,
       analyzedAt: new Date().toISOString(),
       apkInfo,
+    });
+    logUrlReportEvent("info", "url_report.report_build.succeeded", {
+      request_id: requestId,
+      result: "success",
+      analysis_stage: "report_build",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: apkInfo.packageName,
+    });
+
+    logUrlReportEvent("info", "url_report.succeeded", {
+      request_id: requestId,
+      result: "success",
+      duration_ms: Date.now() - startedAt,
+      url_host: safeUrlHost(preview.url),
+      url_path: safeUrlPath(preview.url),
+      content_length_bytes: preview.fileSize || 0,
+      downloaded_bytes: preview.stats.downloadedBytes || 0,
+      range_request_count: preview.stats.rangeRequestCount || 0,
+      range_cache_hit_count: preview.stats.rangeCacheHitCount || 0,
+      package_name: apkInfo.packageName,
+      version_name: apkInfo.versionName,
+      ...getPrimitiveFields(preview.diagnostics),
     });
 
     return jsonResponse({
@@ -84,10 +177,18 @@ async function handlePost({ request, env }) {
       },
     });
   } catch (error) {
+    logUrlReportEvent("error", "url_report.failed", {
+      request_id: requestId,
+      result: "error",
+      duration_ms: Date.now() - startedAt,
+      url_host: safeUrlHost(url),
+      url_path: safeUrlPath(url),
+      ...getErrorTelemetryFields(error),
+    });
     return jsonResponse({
       error: {
         name: error instanceof Error ? error.name : "Error",
-        message: getErrorMessage(error),
+        ...buildErrorResponse(error, activeLocale),
       },
     }, 422);
   }
@@ -96,30 +197,30 @@ async function handlePost({ request, env }) {
 async function readJsonBody(request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > MAX_BODY_BYTES) {
-    throw new Error("Request body is too large");
+    throw createCodedError("Request body is too large", "request_body_too_large");
   }
 
   const text = await request.text();
   if (text.length > MAX_BODY_BYTES) {
-    throw new Error("Request body is too large");
+    throw createCodedError("Request body is too large", "request_body_too_large");
   }
 
   try {
     return JSON.parse(text || "{}");
   } catch {
-    throw new Error("Invalid JSON request body");
+    throw createCodedError("Invalid JSON request body", "invalid_json_request_body");
   }
 }
 
 function normalizeDownloadUrl(value) {
   const url = new URL(String(value || "").trim());
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Only HTTP/HTTPS APK download links are supported");
+    throw createCodedError("Only HTTP/HTTPS APK download links are supported", "invalid_download_url");
   }
 
   url.hash = "";
   if (isBlockedHostname(url.hostname)) {
-    throw new Error("This download host is not allowed");
+    throw createCodedError("This download host is not allowed", "invalid_download_url");
   }
 
   return url.toString();
@@ -275,6 +376,159 @@ function inferFallbackFileName(rawUrl) {
   } catch {
     return "remote.apk";
   }
+}
+
+function logUrlReportEvent(level, event, fields = {}) {
+  const entry = getPrimitiveFields({
+    level,
+    event,
+    timestamp: new Date().toISOString(),
+    surface: "pages",
+    route: "url_report",
+    ...fields,
+  });
+
+  if (level === "error") {
+    console.error(entry);
+    return;
+  }
+
+  if (level === "warn") {
+    console.warn(entry);
+    return;
+  }
+
+  console.log(entry);
+}
+
+function getErrorTelemetryFields(error) {
+  return {
+    error_name: error instanceof Error ? error.name || "Error" : "UnknownError",
+    error_message: getErrorMessage(error),
+    error_code: getErrorCode(error),
+    ...getPrimitiveFields(error?.diagnostics),
+  };
+}
+
+function getErrorCode(error) {
+  if (error && typeof error === "object") {
+    if (typeof error.code === "string") {
+      return error.code;
+    }
+
+    if (typeof error.diagnostics?.error_code === "string") {
+      return error.diagnostics.error_code;
+    }
+  }
+
+  return null;
+}
+
+function getPrimitiveFields(fields = {}) {
+  const result = {};
+  for (const [key, value] of Object.entries(fields || {})) {
+    if (value == null) {
+      continue;
+    }
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+function safeUrlHost(value) {
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+function safeUrlPath(value) {
+  try {
+    return new URL(value).pathname;
+  } catch {
+    return null;
+  }
+}
+
+function buildErrorResponse(error, locale) {
+  return {
+    name: error instanceof Error ? error.name || "Error" : "Error",
+    message: getLocalizedErrorMessage(error, locale),
+    logMessage: getErrorMessage(error),
+    code: getErrorCode(error) || undefined,
+    details: getErrorDetails(error),
+  };
+}
+
+function getLocalizedErrorMessage(error, locale) {
+  const i18n = createI18n(locale);
+  const localized = getLocalizedErrorByCode(error, i18n);
+  if (localized) {
+    return localized;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return i18n.t("errors.unknown");
+}
+
+function getLocalizedErrorByCode(error, i18n) {
+  const code = getErrorCode(error);
+  if (!code || !/^[a-z0-9_]+$/u.test(code)) {
+    return "";
+  }
+
+  const key = `errors.${code}`;
+  const message = i18n.t(key, getErrorMessageVariables(error));
+  return message === key ? "" : message;
+}
+
+function getErrorMessageVariables(error) {
+  const diagnostics = error && typeof error === "object" && error.diagnostics && typeof error.diagnostics === "object"
+    ? error.diagnostics
+    : {};
+  const selectedApkEntry = String(diagnostics.selected_apk_entry || "APK");
+  const selectedApkCompression = String(diagnostics.selected_apk_compression || "unknown");
+
+  return {
+    selectedApkEntry,
+    selectedApkCompression,
+    selected_apk_entry: selectedApkEntry,
+    selected_apk_compression: selectedApkCompression,
+  };
+}
+
+function getErrorDetails(error) {
+  return getPrimitiveFields(error?.diagnostics);
+}
+
+function createCodedError(message, code, diagnostics = {}) {
+  const error = new Error(message);
+  error.code = code;
+  error.diagnostics = getPrimitiveFields({
+    ...diagnostics,
+    error_code: code,
+  });
+  return error;
+}
+
+function resolveRequestLocale(request, payload = null) {
+  if (payload?.locale) {
+    return normalizeLocale(payload.locale);
+  }
+
+  const acceptLanguage = request.headers.get("accept-language") || "";
+  const candidate = acceptLanguage
+    .split(",")
+    .map((part) => part.split(";")[0]?.trim())
+    .find(Boolean);
+  return normalizeLocale(candidate);
 }
 
 function getErrorMessage(error) {

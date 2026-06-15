@@ -56,10 +56,13 @@ const RUNTIME_LOG_DETAIL_KEYS = new Set([
   "component_count",
   "downloaded_bytes",
   "duration_ms",
+  "error_code",
+  "error_message",
   "error_name",
   "file_extension",
   "file_kind",
   "has_app_icon",
+  "http_status",
   "history_count",
   "input_source",
   "locale",
@@ -68,11 +71,16 @@ const RUNTIME_LOG_DETAIL_KEYS = new Set([
   "operation",
   "permissions_count",
   "range_request_count",
+  "range_cache_hit_count",
+  "remote_package_type",
   "result",
   "sdk_component_match_count",
   "sdk_native_match_count",
+  "selected_apk_compression",
+  "selected_apk_entry",
   "size_bucket",
   "slot",
+  "top_level_zip_entry_count",
   "value",
   "version",
 ]);
@@ -222,7 +230,7 @@ function formatRuntimeLogDetails(details = {}) {
     }
     const text = String(value);
     pairs.push(`${key}=${text.length > 80 ? `${text.slice(0, 77)}...` : text}`);
-    if (pairs.length >= 8) {
+    if (pairs.length >= 12) {
       break;
     }
   }
@@ -2591,7 +2599,7 @@ async function analyzeDownloadUrl() {
     });
     const payload = await parseJsonResponse(response);
     if (!response.ok) {
-      throw new Error(getResponseErrorMessage(payload, response));
+      throw createUrlReportError(payload, response);
     }
     if (!payload?.report) {
       throw new Error(t("unknownError"));
@@ -2632,11 +2640,12 @@ async function analyzeDownloadUrl() {
     state.linkStatusKey = "linkFailed";
     renderLinkStatus();
     finishAnalysis();
+    showProgress("progressFailed");
     showError(getErrorMessage(error) || t("unknownError"));
     trackWebEvent("webui.link_analysis.failed", {
       result: "error",
       input_source: "url",
-      error_name: getErrorName(error),
+      ...getClientErrorTelemetryFields(error),
     });
   }
 }
@@ -2674,6 +2683,7 @@ function failActiveWorkerJobs(message) {
     } else {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
+      showProgress("progressFailed");
       showError(message);
       trackWebEvent("webui.analysis.failed", {
         result: "worker_error",
@@ -2716,6 +2726,7 @@ function handleWorkerMessage(event) {
     } else {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
+      showProgress("progressFailed");
       showError(message.error || t("workerFailed"));
       trackWebEvent("webui.analysis.failed", {
         result: "error",
@@ -2804,6 +2815,7 @@ function updateAnalyzeControls() {
 function showProgress(key) {
   elements.progress.hidden = false;
   elements.progress.classList.toggle("is-complete", key === "progressDone");
+  elements.progress.classList.toggle("is-failed", key === "progressFailed");
   elements.progressLabel.textContent = t(key);
   updateElapsed();
 }
@@ -3043,7 +3055,7 @@ function resetState() {
   }
   finishLcappsPickerClose();
   elements.progress.hidden = true;
-  elements.progress.classList.remove("is-complete");
+  elements.progress.classList.remove("is-complete", "is-failed");
   elements.progressTime.textContent = "0.0s";
   elements.progressLabel.textContent = t("progressReady");
   state.analyzeBusy = false;
@@ -3101,12 +3113,57 @@ function getResponseErrorMessage(payload, response) {
   return response.status ? `${t("unknownError")} (${response.status})` : t("unknownError");
 }
 
+function createUrlReportError(payload, response) {
+  const errorPayload = payload?.error || {};
+  const error = new Error(getResponseErrorMessage(payload, response));
+  error.name = String(errorPayload.name || "UrlReportError");
+  error.code = typeof errorPayload.code === "string" ? errorPayload.code : "";
+  error.logMessage = typeof errorPayload.logMessage === "string" ? errorPayload.logMessage : "";
+  error.details = isPlainObject(errorPayload.details) ? errorPayload.details : {};
+  error.httpStatus = response.status || 0;
+  return error;
+}
+
+function getClientErrorTelemetryFields(error) {
+  const details = isPlainObject(error?.details) ? error.details : {};
+  return {
+    error_name: getErrorName(error),
+    error_code: getErrorCode(error),
+    error_message: getErrorLogMessage(error),
+    http_status: Number(error?.httpStatus) || 0,
+    remote_package_type: details.remote_package_type || "",
+    selected_apk_entry: details.selected_apk_entry || "",
+    selected_apk_compression: details.selected_apk_compression || "",
+    apk_entry_count: Number(details.apk_entry_count) || 0,
+    top_level_zip_entry_count: Number(details.top_level_zip_entry_count) || 0,
+    range_request_count: Number(details.range_request_count) || 0,
+    range_cache_hit_count: Number(details.range_cache_hit_count) || 0,
+    downloaded_bytes: Number(details.downloaded_bytes) || 0,
+  };
+}
+
 function getErrorMessage(error) {
   return error instanceof Error ? error.message : "";
 }
 
 function getErrorName(error) {
   return error instanceof Error ? (error.name || "Error") : "UnknownError";
+}
+
+function getErrorCode(error) {
+  return error && typeof error === "object" && typeof error.code === "string" ? error.code : "";
+}
+
+function getErrorLogMessage(error) {
+  if (error && typeof error === "object" && typeof error.logMessage === "string" && error.logMessage) {
+    return error.logMessage;
+  }
+
+  return getErrorMessage(error);
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function cloneReportForHydration(report) {
@@ -3158,7 +3215,7 @@ async function openHistoryItem(id) {
     state.activeTab = "summary";
     state.activeNativeAbi = "";
     elements.progress.hidden = true;
-    elements.progress.classList.remove("is-complete");
+    elements.progress.classList.remove("is-complete", "is-failed");
     elements.progressTime.textContent = "0.0s";
     elements.progressLabel.textContent = t("progressReady");
     updateClearButton();
@@ -3825,7 +3882,7 @@ function activateLcappsReport(report) {
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   elements.progress.hidden = true;
-  elements.progress.classList.remove("is-complete");
+  elements.progress.classList.remove("is-complete", "is-failed");
   elements.progressTime.textContent = "0.0s";
   elements.progressLabel.textContent = t("progressReady");
   updateClearButton();

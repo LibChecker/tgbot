@@ -30,80 +30,105 @@ const METADATA_PREFETCH_ENTRY_NAMES = new Set([
   "BUNDLE-METADATA/com.android.tools.build.gradle/app-metadata.properties",
   "kotlin-tooling-metadata.json",
 ]);
+const APK_MANIFEST_ENTRY_NAME = "AndroidManifest.xml";
+const APK_URL_ANALYSIS_ERROR_NAME = "ApkUrlAnalysisError";
 
 const utf8Decoder = new TextDecoder();
 
 export async function readApkInfoFromUrl(rawUrl, options = {}) {
-  const apkUrl = parseHttpUrl(rawUrl);
   const stats = {
     mode: "range",
     rangeRequestCount: 0,
     downloadedBytes: 0,
     rangeCacheHitCount: 0,
   };
-  const metadata = await fetchRemoteMetadata(apkUrl, stats);
+  const diagnostics = {
+    analysis_stage: "url_parse",
+    link_preview_mode: stats.mode,
+  };
 
-  if (!metadata.contentLength || metadata.contentLength <= 0) {
-    throw new Error("远端链接没有返回 Content-Length，无法定位 APK ZIP 中央目录");
-  }
+  try {
+    const apkUrl = parseHttpUrl(rawUrl);
+    diagnostics.analysis_stage = "remote_metadata";
+    const metadata = await fetchRemoteMetadata(apkUrl, stats);
+    diagnostics.content_length_bytes = metadata.contentLength || 0;
+    diagnostics.content_type = metadata.contentType || "";
+    diagnostics.supports_range = Boolean(metadata.supportsRange);
 
-  const tailPrefetchBytes = Math.max(
-    EOCD_PROBE_BYTES,
-    options.tailPrefetchBytes ?? DEFAULT_TAIL_PREFETCH_BYTES,
-  );
-  const tailStart = Math.max(0, metadata.contentLength - tailPrefetchBytes);
-  const tailBytes = await downloadRange(apkUrl, tailStart, metadata.contentLength - tailStart, stats);
-  const eocdOffsetInTail = findEndOfCentralDirectory(tailBytes);
-  const eocd = parseEocd(tailBytes, eocdOffsetInTail);
-  const maxCentralDirectoryBytes = options.maxCentralDirectoryBytes ?? DEFAULT_MAX_CENTRAL_DIRECTORY_BYTES;
+    if (!metadata.contentLength || metadata.contentLength <= 0) {
+      throw new Error("The remote link did not return Content-Length, so the APK ZIP central directory cannot be located");
+    }
 
-  if (eocd.centralDirectorySize > maxCentralDirectoryBytes) {
-    throw new Error(`远端 APK 中央目录过大，当前预览上限为 ${formatBytes(maxCentralDirectoryBytes)}`);
-  }
+    diagnostics.analysis_stage = "zip_tail";
+    const tailPrefetchBytes = Math.max(
+      EOCD_PROBE_BYTES,
+      options.tailPrefetchBytes ?? DEFAULT_TAIL_PREFETCH_BYTES,
+    );
+    const tailStart = Math.max(0, metadata.contentLength - tailPrefetchBytes);
+    const tailBytes = await downloadRange(apkUrl, tailStart, metadata.contentLength - tailStart, stats);
+    const eocdOffsetInTail = findEndOfCentralDirectory(tailBytes);
+    const eocd = parseEocd(tailBytes, eocdOffsetInTail);
+    const maxCentralDirectoryBytes = options.maxCentralDirectoryBytes ?? DEFAULT_MAX_CENTRAL_DIRECTORY_BYTES;
 
-  const centralDirectoryBytes = await readBufferedOrRemoteRange(
-    apkUrl,
-    eocd.centralDirectoryOffset,
-    eocd.centralDirectorySize,
-    {
-      bufferOffset: tailStart,
-      bufferBytes: tailBytes,
+    if (eocd.centralDirectorySize > maxCentralDirectoryBytes) {
+      throw new Error(`The remote APK central directory is too large; the current preview limit is ${formatBytes(maxCentralDirectoryBytes)}`);
+    }
+
+    diagnostics.analysis_stage = "central_directory";
+    const centralDirectoryBytes = await readBufferedOrRemoteRange(
+      apkUrl,
+      eocd.centralDirectoryOffset,
+      eocd.centralDirectorySize,
+      {
+        bufferOffset: tailStart,
+        bufferBytes: tailBytes,
+        stats,
+      },
+    );
+    const zipEntries = parseCentralDirectory(centralDirectoryBytes);
+    Object.assign(diagnostics, describeRemoteZipEntries(zipEntries));
+    const maxEntryCompressedBytes = options.maxEntryCompressedBytes ?? DEFAULT_MAX_ENTRY_COMPRESSED_BYTES;
+    const rangeCache = createRangeCache([
+      metadata.probeRange,
+      {
+        offset: tailStart,
+        bytes: tailBytes,
+      },
+    ]);
+    prefetchLikelyMetadataRange(apkUrl, zipEntries, metadata.contentLength, stats, rangeCache);
+
+    if (!zipEntries.has(APK_MANIFEST_ENTRY_NAME)) {
+      throw createMissingRemoteManifestError(diagnostics);
+    }
+
+    diagnostics.analysis_stage = "apk_metadata";
+    const source = {
+      zipEntries,
+      extractEntry: (entry) =>
+        downloadRemoteZipEntry(apkUrl, entry, stats, {
+          contentLength: metadata.contentLength,
+          maxEntryCompressedBytes,
+          rangeCache,
+        }),
+    };
+
+    const apkInfo = await readApkInfoFromZipSource(source, {
+      scanDex: false,
+      maxResourceBytes: options.maxResourceBytes ?? DEFAULT_MAX_RESOURCE_BYTES,
+    });
+
+    return {
+      apkInfo,
+      url: apkUrl.toString(),
+      fileName: inferFileNameFromUrl(apkUrl),
+      fileSize: metadata.contentLength,
+      metadata: createPublicMetadata(metadata),
       stats,
-    },
-  );
-  const zipEntries = parseCentralDirectory(centralDirectoryBytes);
-  const maxEntryCompressedBytes = options.maxEntryCompressedBytes ?? DEFAULT_MAX_ENTRY_COMPRESSED_BYTES;
-  const rangeCache = createRangeCache([
-    metadata.probeRange,
-    {
-      offset: tailStart,
-      bytes: tailBytes,
-    },
-  ]);
-  prefetchLikelyMetadataRange(apkUrl, zipEntries, metadata.contentLength, stats, rangeCache);
-  const source = {
-    zipEntries,
-    extractEntry: (entry) =>
-      downloadRemoteZipEntry(apkUrl, entry, stats, {
-        contentLength: metadata.contentLength,
-        maxEntryCompressedBytes,
-        rangeCache,
-      }),
-  };
-
-  const apkInfo = await readApkInfoFromZipSource(source, {
-    scanDex: false,
-    maxResourceBytes: options.maxResourceBytes ?? DEFAULT_MAX_RESOURCE_BYTES,
-  });
-
-  return {
-    apkInfo,
-    url: apkUrl.toString(),
-    fileName: inferFileNameFromUrl(apkUrl),
-    fileSize: metadata.contentLength,
-    metadata: createPublicMetadata(metadata),
-    stats,
-  };
+      diagnostics: compactDiagnosticFields(diagnostics),
+    };
+  } catch (error) {
+    throw annotateUrlAnalysisError(error, diagnostics, stats);
+  }
 }
 
 export function inferFileNameFromUrl(rawUrl) {
@@ -129,7 +154,7 @@ async function fetchRemoteMetadata(url, stats) {
     return headResult;
   }
 
-  throw new Error("远端链接不支持 HTTP Range，无法在不完整下载的情况下解析");
+  throw new Error("The remote link does not support HTTP Range, so it cannot be parsed without a full download");
 }
 
 async function fetchHeadMetadata(url) {
@@ -189,19 +214,219 @@ function createPublicMetadata(metadata) {
   };
 }
 
+function describeRemoteZipEntries(zipEntries) {
+  const apkEntries = collectContainedApkEntries(zipEntries);
+  const selectedApk = apkEntries[0] || null;
+
+  return compactDiagnosticFields({
+    analysis_stage: "central_directory",
+    remote_package_type: zipEntries.has(APK_MANIFEST_ENTRY_NAME) ? "apk" : apkEntries.length > 0 ? "package-container" : "zip",
+    top_level_zip_entry_count: zipEntries.size,
+    has_top_level_manifest: zipEntries.has(APK_MANIFEST_ENTRY_NAME),
+    apk_entry_count: apkEntries.length,
+    apk_entry_names_preview: apkEntries
+      .slice(0, 6)
+      .map((entry) => getContainedApkFileName(entry.path))
+      .join(","),
+    selected_apk_entry: selectedApk ? getContainedApkFileName(selectedApk.path) : "",
+    selected_apk_compression: selectedApk ? formatZipCompressionMethod(selectedApk.entry.compressionMethod) : "",
+    selected_apk_compressed_size: selectedApk?.entry.compressedSize || 0,
+    selected_apk_uncompressed_size: selectedApk?.entry.uncompressedSize || 0,
+  });
+}
+
+function collectContainedApkEntries(zipEntries) {
+  const entries = [];
+  for (const [path, entry] of zipEntries.entries()) {
+    if (!isContainedApkPath(path)) {
+      continue;
+    }
+
+    entries.push({
+      path,
+      entry,
+      score: scoreContainedApkPath(path),
+    });
+  }
+
+  return entries.sort((left, right) => (
+    left.score - right.score ||
+    left.path.localeCompare(right.path)
+  ));
+}
+
+function isContainedApkPath(path) {
+  const normalized = String(path || "").toLowerCase().replaceAll("\\", "/");
+  return normalized.endsWith(".apk") && !normalized.startsWith("__macosx/");
+}
+
+function scoreContainedApkPath(path) {
+  const fileName = getContainedApkFileName(path);
+
+  if (fileName === "base.apk") {
+    return 0;
+  }
+
+  if (fileName === "base-master.apk") {
+    return 1;
+  }
+
+  if (/^base[-_.].+\.apk$/u.test(fileName)) {
+    return 2;
+  }
+
+  if (fileName === "standalone.apk" || fileName.endsWith("-standalone.apk")) {
+    return 3;
+  }
+
+  return isLikelySplitApkFileName(fileName) ? 5 : 4;
+}
+
+function getContainedApkFileName(path) {
+  const normalized = String(path || "").toLowerCase();
+  let end = normalized.length - 1;
+  while (end >= 0 && isPathSeparator(normalized.charCodeAt(end))) {
+    end -= 1;
+  }
+  if (end < 0) {
+    return normalized;
+  }
+
+  let start = end;
+  while (start >= 0 && !isPathSeparator(normalized.charCodeAt(start))) {
+    start -= 1;
+  }
+
+  return normalized.slice(start + 1, end + 1) || normalized;
+}
+
+function isPathSeparator(charCode) {
+  return charCode === 47 || charCode === 92;
+}
+
+function isLikelySplitApkFileName(fileName) {
+  const stem = fileName.replace(/\.apk$/u, "");
+
+  return (
+    /(?:^|[-_.])(?:split|config|dpi|lang|armeabi|arm64|x86|mips|ldpi|mdpi|tvdpi|hdpi|xhdpi|xxhdpi|xxxhdpi|nodpi|anydpi)(?:[-_.]|$)/u.test(fileName) ||
+    /^(?:armeabi|armeabi-v7a|arm64-v8a|x86|x86_64|mips|mips64)$/u.test(stem) ||
+    /^(?:ldpi|mdpi|tvdpi|hdpi|xhdpi|xxhdpi|xxxhdpi|nodpi|anydpi)$/u.test(stem) ||
+    /^[a-z]{2}(?:[-_][a-z0-9]{2,8})?$/u.test(stem)
+  );
+}
+
+function formatZipCompressionMethod(method) {
+  if (method === ZIP_COMPRESSION_STORE) {
+    return "store";
+  }
+
+  if (method === ZIP_COMPRESSION_DEFLATE) {
+    return "deflate";
+  }
+
+  return `method_${method}`;
+}
+
+function createMissingRemoteManifestError(diagnostics) {
+  if (diagnostics.apk_entry_count > 0) {
+    const selectedEntry = diagnostics.selected_apk_entry || "APK";
+    const compression = diagnostics.selected_apk_compression || "unknown";
+    const message =
+      compression === "deflate"
+        ? `The remote link is an APKM/APKS/XAPK container, and nested ${selectedEntry} is deflate-compressed. URL preview cannot read its AndroidManifest.xml without a full download; upload the file or provide a direct APK link.`
+        : `The remote link is an APKM/APKS/XAPK container and has no top-level AndroidManifest.xml. URL preview has not parsed nested ${selectedEntry}.`;
+
+    return createUrlAnalysisError(message, "remote_package_container_nested_manifest_unavailable", {
+      ...diagnostics,
+      analysis_stage: "container_detection",
+    });
+  }
+
+  return createUrlAnalysisError("The APK is missing AndroidManifest.xml", "manifest_missing", {
+    ...diagnostics,
+    analysis_stage: "manifest_lookup",
+  });
+}
+
+function createUrlAnalysisError(message, code, diagnostics = {}) {
+  const error = new Error(message);
+  error.name = APK_URL_ANALYSIS_ERROR_NAME;
+  error.code = code;
+  error.diagnostics = compactDiagnosticFields(diagnostics);
+  return error;
+}
+
+function annotateUrlAnalysisError(error, diagnostics, stats) {
+  const output = error instanceof Error ? error : new Error("Failed to parse the remote APK link");
+  if (!output.name || output.name === "Error") {
+    output.name = APK_URL_ANALYSIS_ERROR_NAME;
+  }
+  if (!output.code) {
+    output.code = inferUrlAnalysisErrorCode(output);
+  }
+
+  output.diagnostics = compactDiagnosticFields({
+    ...diagnostics,
+    ...output.diagnostics,
+    error_code: output.code,
+    link_preview_mode: stats.mode,
+    range_request_count: stats.rangeRequestCount,
+    downloaded_bytes: stats.downloadedBytes,
+    range_cache_hit_count: stats.rangeCacheHitCount,
+  });
+
+  return output;
+}
+
+function inferUrlAnalysisErrorCode(error) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message.includes("HTTP Range")) {
+    return "remote_range_unsupported";
+  }
+
+  if (message.includes("central directory")) {
+    return "central_directory_error";
+  }
+
+  if (message.includes("AndroidManifest.xml")) {
+    return "manifest_error";
+  }
+
+  if (error instanceof TypeError) {
+    return "remote_fetch_failed";
+  }
+
+  return "url_analysis_failed";
+}
+
+function compactDiagnosticFields(fields) {
+  const compacted = {};
+  for (const [key, value] of Object.entries(fields || {})) {
+    if (value == null || value === "") {
+      continue;
+    }
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      compacted[key] = value;
+    }
+  }
+  return compacted;
+}
+
 async function downloadRemoteZipEntry(url, entry, stats, options) {
   if ((entry.flags & 0x0001) !== 0) {
-    throw new Error("暂不支持解析已加密的 ZIP 条目");
+    throw new Error("Encrypted ZIP entries are not supported");
   }
 
   if (entry.compressedSize > options.maxEntryCompressedBytes) {
-    throw new Error(`远端 APK 条目 ${entry.name || ""} 过大，当前预览上限为 ${formatBytes(options.maxEntryCompressedBytes)}`);
+    throw new Error(`Remote APK entry ${entry.name || ""} is too large; the current preview limit is ${formatBytes(options.maxEntryCompressedBytes)}`);
   }
 
   const entryRange = await downloadEntryInitialRange(url, entry, stats, options);
   const headerOffset = entry.localHeaderOffset - entryRange.offset;
   if (readUint32(entryRange.bytes, headerOffset) !== LOCAL_FILE_HEADER_SIGNATURE) {
-    throw new Error("APK ZIP 本地文件头损坏");
+    throw new Error("The APK ZIP local file header is invalid");
   }
 
   const localCompressionMethod = readUint16(entryRange.bytes, headerOffset + 8);
@@ -219,7 +444,7 @@ async function downloadRemoteZipEntry(url, entry, stats, options) {
     return inflateRaw(compressedBytes);
   }
 
-  throw new Error(`不支持的 ZIP 压缩方式: ${compressionMethod}`);
+  throw new Error(`Unsupported ZIP compression method: ${compressionMethod}`);
 }
 
 async function downloadEntryInitialRange(url, entry, stats, options) {
@@ -424,7 +649,7 @@ async function downloadRange(url, offset, length, stats) {
   }
 
   if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length)) {
-    throw new Error("远端 APK 偏移量超出当前预览解析范围");
+    throw new Error("The remote APK offset is outside the current preview parsing range");
   }
 
   const end = offset + length - 1;
@@ -437,7 +662,7 @@ async function downloadRange(url, offset, length, stats) {
 
   if (response.status !== 206) {
     await cancelResponseBody(response);
-    throw new Error("远端链接不支持 HTTP Range，无法在不完整下载的情况下解析");
+    throw new Error("The remote link does not support HTTP Range, so it cannot be parsed without a full download");
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
@@ -452,7 +677,7 @@ function parseCentralDirectory(bytes) {
 
   while (offset + CENTRAL_DIRECTORY_FIXED_HEADER_SIZE <= bytes.length) {
     if (readUint32(bytes, offset) !== CENTRAL_DIRECTORY_SIGNATURE) {
-      throw new Error("APK ZIP 中央目录损坏");
+      throw new Error("The APK ZIP central directory is invalid");
     }
 
     const flags = readUint16(bytes, offset + 8);
@@ -465,7 +690,7 @@ function parseCentralDirectory(bytes) {
     const nextOffset = extraStart + extraLength + commentLength;
 
     if (nextOffset > bytes.length) {
-      throw new Error("APK ZIP 中央目录条目越界");
+      throw new Error("The APK ZIP central directory entry is out of bounds");
     }
 
     const rawExtra = bytes.subarray(extraStart, extraStart + extraLength);
@@ -539,18 +764,18 @@ function findEndOfCentralDirectory(bytes) {
     }
   }
 
-  throw new Error("APK ZIP 结束记录不存在");
+  throw new Error("The APK ZIP end-of-central-directory record is missing");
 }
 
 function parseEocd(bytes, offset) {
   if (readUint32(bytes, offset) !== EOCD_SIGNATURE) {
-    throw new Error("APK ZIP 结束记录损坏");
+    throw new Error("The APK ZIP end-of-central-directory record is invalid");
   }
 
   const centralDirectorySize = readUint32(bytes, offset + 12);
   const centralDirectoryOffset = readUint32(bytes, offset + 16);
   if (centralDirectorySize === ZIP64_NO_ENTRY || centralDirectoryOffset === ZIP64_NO_ENTRY) {
-    throw new Error("暂不支持通过链接预览解析 ZIP64 APK");
+    throw new Error("ZIP64 APKs are not supported by link preview");
   }
 
   return {
@@ -575,7 +800,7 @@ async function inflateRaw(bytes) {
 function parseHttpUrl(rawUrl) {
   const url = new URL(String(rawUrl).trim());
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("仅支持 HTTP/HTTPS APK 下载链接");
+    throw new Error("Only HTTP/HTTPS APK download links are supported");
   }
 
   url.hash = "";
@@ -641,14 +866,14 @@ function readUint64(bytes, offset) {
   const high = BigInt(readUint32(bytes, offset + 4));
   const value = Number((high << 32n) | low);
   if (!Number.isSafeInteger(value)) {
-    throw new Error("远端 APK ZIP64 字段超出当前预览解析范围");
+    throw new Error("The remote APK ZIP64 field is outside the current preview parsing range");
   }
   return value;
 }
 
 function ensureReadable(bytes, offset, size) {
   if (offset < 0 || offset + size > bytes.length) {
-    throw new Error("APK ZIP 数据越界");
+    throw new Error("The APK ZIP data is out of bounds");
   }
 }
 

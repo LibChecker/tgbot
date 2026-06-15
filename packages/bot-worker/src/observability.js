@@ -48,25 +48,26 @@ const ANALYTICS_DOUBLE_KEYS = [
   "reserved_2",
 ];
 
-const PRIVATE_TELEMETRY_KEYS = new Set([
-  "app_icon_path",
+const CONSOLE_PRIVATE_TELEMETRY_KEYS = new Set([
   "candidate_chat_id",
   "candidate_message_id",
   "chat_id",
-  "error_message",
   "error_stack",
-  "content_length_bytes",
-  "downloaded_bytes",
-  "file_name",
-  "file_size_bytes",
   "from_id",
   "message_id",
   "message_thread_id",
+  "webhook_url",
+]);
+
+const ANALYTICS_PRIVATE_TELEMETRY_KEYS = new Set([
+  ...CONSOLE_PRIVATE_TELEMETRY_KEYS,
+  "app_icon_path",
+  "error_message",
+  "file_name",
   "package_name",
   "report_path",
   "url_host",
   "url_path",
-  "webhook_url",
 ]);
 
 export function createRequestTelemetryContext(request, url, env) {
@@ -140,7 +141,7 @@ function writeTelemetry(level, env, context, event, fields, options) {
     ...normalizedFields,
   };
 
-  writeConsole(level, sanitizeTelemetryEntry(entry));
+  writeConsole(level, sanitizeTelemetryEntry(entry, CONSOLE_PRIVATE_TELEMETRY_KEYS));
 
   if (options.analytics === false) {
     return;
@@ -173,7 +174,7 @@ function writeAnalyticsDataPoint(env, context, event, fields) {
     ...context,
     ...fields,
     event,
-  });
+  }, ANALYTICS_PRIVATE_TELEMETRY_KEYS);
 
   try {
     dataset.writeDataPoint({
@@ -209,9 +210,9 @@ function normalizeTelemetryFields(fields) {
   });
 }
 
-function sanitizeTelemetryEntry(entry) {
+function sanitizeTelemetryEntry(entry, privateKeys) {
   return Object.fromEntries(
-    Object.entries(entry).filter(([key]) => !PRIVATE_TELEMETRY_KEYS.has(key)),
+    Object.entries(entry).filter(([key]) => !privateKeys.has(key)),
   );
 }
 

@@ -1931,6 +1931,13 @@ svg {
   transform: none;
 }
 
+.progress.is-failed .progress-bar {
+  width: 100%;
+  animation: none;
+  transform: none;
+  background: var(--danger-text);
+}
+
 .alert {
   padding: 12px;
   border-radius: var(--radius);
