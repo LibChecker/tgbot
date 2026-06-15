@@ -2828,13 +2828,28 @@ function updateElapsed() {
   }
 }
 
-function openRuntimeLogModal() {
+async function openRuntimeLogModal() {
+  try {
+    await ensureRuntimeLogStyles();
+  } catch (error) {
+    appendRuntimeLog("warn", "webui.runtime_log.styles_failed", {
+      error_name: getErrorName(error),
+    });
+  }
+
   state.runtimeLogOpen = true;
   elements.runtimeLogModal.hidden = false;
   renderRuntimeLogs();
   window.setTimeout(() => {
     elements.runtimeLogPanel?.focus();
   }, 0);
+}
+
+function ensureRuntimeLogStyles() {
+  if (!runtime.runtimeLogStylesPromise) {
+    runtime.runtimeLogStylesPromise = import("./runtime-log.css");
+  }
+  return runtime.runtimeLogStylesPromise;
 }
 
 function closeRuntimeLogModal() {
@@ -3417,6 +3432,15 @@ async function openLcappsPickerForFile(file) {
     return;
   }
 
+  try {
+    await ensureLcappsBubbleStyles();
+  } catch (error) {
+    trackWebEvent("webui.lcapps.styles_failed", {
+      result: "error",
+      error_name: getErrorName(error),
+      file_kind: "lcapps",
+    });
+  }
   cancelLcappsReportActivation();
   const token = runtime.lcappsPickerToken + 1;
   runtime.lcappsPickerToken = token;
@@ -3478,6 +3502,13 @@ async function openLcappsPickerForFile(file) {
       ...getFileAnalyticsFields(file),
     });
   }
+}
+
+function ensureLcappsBubbleStyles() {
+  if (!runtime.lcappsBubbleStylesPromise) {
+    runtime.lcappsBubbleStylesPromise = import("./lcapps-bubble.css");
+  }
+  return runtime.lcappsBubbleStylesPromise;
 }
 
 function reopenLcappsPicker() {

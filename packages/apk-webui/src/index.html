@@ -248,9 +248,10 @@
           <div class="compare-result" id="compare-result"></div>
         </section>
       </main>
-      <footer class="site-footer">
-        <button class="footer-log-link" id="runtime-log-open" type="button" data-i18n="runtimeLogOpen">Show logs</button>
-        <span class="footer-version" id="app-version" aria-label="Version">v0.1.0</span>
+      <footer class="site-footer" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:9px;margin:clamp(18px,3vw,28px) 0 2px;padding:0 8px;color:var(--muted);font-size:.78rem">
+        <button class="footer-log-link" id="runtime-log-open" type="button" data-i18n="runtimeLogOpen" style="border:0;background:none;color:inherit;padding:0;font:inherit;cursor:pointer">Show logs</button>
+        <span aria-hidden="true">·</span>
+        <span class="footer-version" id="app-version" aria-label="Version" style="white-space:nowrap">v0.1.0</span>
       </footer>
     </div>
     <div class="lcapps-picker" id="lcapps-picker" hidden>

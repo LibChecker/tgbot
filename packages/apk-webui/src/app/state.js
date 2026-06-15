@@ -77,6 +77,8 @@ export function createRuntimeState() {
   return {
     historyOpenToken: 0,
     runtimeLogId: 0,
+    runtimeLogStylesPromise: null,
+    lcappsBubbleStylesPromise: null,
     modeIndicatorFrame: 0,
     pendingModeIndicatorAppMode: "",
     themeIndicatorFrame: 0,

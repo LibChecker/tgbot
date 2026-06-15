@@ -1,0 +1,104 @@
+.lcapps-bubble {
+  --liquid-glass-x: 58%;
+  --liquid-glass-y: 20%;
+  position: fixed;
+  right: var(--lcapps-bubble-right, 10px);
+  top: 50%;
+  z-index: 1190;
+  display: grid;
+  place-items: center;
+  width: var(--lcapps-bubble-size, 56px);
+  height: var(--lcapps-bubble-size, 56px);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-bg) 84%, transparent);
+  color: var(--accent);
+  opacity: 1;
+  box-shadow: 0 18px 44px rgb(22 12 38 / 0.24);
+  transform: translate3d(0, -50%, 0);
+  cursor: pointer;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.lcapps-bubble[hidden] {
+  display: none;
+}
+
+.lcapps-bubble > span,
+.lcapps-bubble-icon {
+  position: relative;
+  z-index: 2;
+}
+
+.lcapps-bubble-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.lcapps-bubble-icon--placeholder {
+  font-size: 1rem;
+}
+
+.lcapps-bubble:hover {
+  border-color: var(--accent-border);
+  box-shadow: 0 20px 48px rgb(22 12 38 / 0.3);
+}
+
+.lcapps-bubble.is-bouncing {
+  pointer-events: none;
+  animation: lcapps-bubble-dock-bounce 1040ms both;
+}
+
+:root[data-rule-preview-material="liquid-glass"] .lcapps-bubble {
+  border-radius: 999px;
+}
+
+@keyframes lcapps-bubble-dock-bounce {
+  0% {
+    transform: translate3d(0, -50%, 0) scale(1);
+    animation-timing-function: cubic-bezier(0.2, 0, 0.38, 0.9);
+  }
+
+  9% {
+    transform: translate3d(0, calc(-50% + 3px), 0) scale(1.08, 0.92);
+    animation-timing-function: cubic-bezier(0.22, 0.95, 0.28, 1);
+  }
+
+  27% {
+    transform: translate3d(0, calc(-50% - var(--lcapps-bubble-bounce-y-1)), 0) scale(0.96, 1.06);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.64, 1);
+  }
+
+  43% {
+    transform: translate3d(0, -50%, 0) scale(1.1, 0.9);
+    animation-timing-function: cubic-bezier(0.22, 0.95, 0.28, 1);
+  }
+
+  59% {
+    transform: translate3d(0, calc(-50% - var(--lcapps-bubble-bounce-y-2)), 0) scale(0.98, 1.04);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.64, 1);
+  }
+
+  76% {
+    transform: translate3d(0, -50%, 0) scale(1.06, 0.94);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.22, 1);
+  }
+
+  88% {
+    transform: translate3d(0, calc(-50% - 4px), 0) scale(0.99, 1.01);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.64, 1);
+  }
+
+  100% {
+    transform: translate3d(0, -50%, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lcapps-bubble.is-bouncing {
+    animation: none;
+  }
+}
