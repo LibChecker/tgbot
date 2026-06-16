@@ -88,6 +88,7 @@
 - Keep Web UI styles in `packages/apk-webui/src/app.css`; keep feature-specific lazy styles in their existing CSS files when already split.
 - History, compare mode, report rendering, SDK icons, and LCAPPS flows have dedicated modules. Prefer extending those modules over adding more unrelated logic to `app.js`.
 - Browser APK analysis should stay local to the Web UI worker. Server-side URL analysis belongs to the Worker/Pages Function boundary.
+- Web UI Telegram/social preview metadata lives in `packages/apk-webui/src/index.html`; keep the stable preview image source at `packages/apk-webui/src/assets/social-preview.png` and copy it through `packages/apk-webui/scripts/build.mjs`.
 - When adding a new Web UI `src/app/*.js` module, make sure the build path copies or bundles it into `dist`. A past refactor passed syntax checks but served a 404 module until `scripts/build.mjs` was updated.
 - The Web UI check script auto-scans Web UI `src/` and `scripts/`. Keep it as the single package-level entrypoint instead of lengthening `package.json` with per-file `node --check` lists.
 - Segmented controls should share the established title-bar pill geometry: real capsule ends (`border-radius: 999px` and `corner-shape: round` where used), inset-shadow borders instead of layout-affecting borders, consistent inner inset, and draggable thumb support when the paired control supports it. Keep click and drag paths separate so click transitions can animate and drag can follow the pointer.
