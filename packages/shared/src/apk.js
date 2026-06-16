@@ -1659,10 +1659,16 @@ async function buildSvgPathFromVectorElement(element, source, resources, defs, i
   const strokeColor = resolveVectorColor(element.attributes.get("strokeColor"), resources);
   const strokeWidth = getNumericXmlAttribute(element, "strokeWidth");
   const fillAlpha = fillColor ? clampAlpha(getNumericXmlAttribute(element, "fillAlpha") ?? 1) : 1;
+  const fillRule = fillColor ? getVectorFillRule(element) : null;
   const attrs = [
     `d="${escapeXmlAttribute(pathData)}"`,
     `fill="${escapeXmlAttribute(fillColor || "none")}"`,
   ];
+
+  if (fillRule) {
+    attrs.push(`fill-rule="${fillRule}"`);
+    attrs.push(`clip-rule="${fillRule}"`);
+  }
 
   if (fillAlpha < 1) {
     attrs.push(`fill-opacity="${fillAlpha}"`);
@@ -1676,6 +1682,15 @@ async function buildSvgPathFromVectorElement(element, source, resources, defs, i
   const path = `<path ${attrs.join(" ")}/>`;
   const transform = buildVectorElementTransform(element);
   return transform ? `<g transform="${escapeXmlAttribute(transform)}">${path}</g>` : path;
+}
+
+function getVectorFillRule(element) {
+  const normalized = normalizeText(getXmlAttributeValue(element, "fillType"))?.toLowerCase();
+  if (normalized === "evenodd" || normalized === "even-odd" || normalized === "1") {
+    return "evenodd";
+  }
+
+  return null;
 }
 
 async function resolveVectorPaint(attribute, source, resources, defs, idPrefix) {
@@ -3730,6 +3745,8 @@ function getAndroidAttributeName(resourceId) {
       return "strokeAlpha";
     case 0x010104cc:
       return "fillAlpha";
+    case 0x0101051e:
+      return "fillType";
     default:
       return null;
   }

@@ -32,6 +32,32 @@ test("renders stroked vector paths without implicit black fill", async () => {
   assert.match(svg, /stroke="#ffffff"/u);
 });
 
+test("preserves vector even-odd fill rules", async () => {
+  const vectorXml = textEncoder.encode(`
+    <vector xmlns:android="http://schemas.android.com/apk/res/android"
+        android:width="108dp"
+        android:height="108dp"
+        android:viewportWidth="24"
+        android:viewportHeight="24">
+      <path
+          android:pathData="M0,0h24v24h-24z M6,6h12v12h-12z"
+          android:fillColor="#0058a0"
+          android:fillType="evenOdd"/>
+    </vector>
+  `);
+
+  const icon = await __apkTestInternals.renderVectorDrawableIcon(
+    vectorXml,
+    {},
+    { resolveColor: () => null },
+    { path: "res/drawable/launcher_background.xml" },
+  );
+  const svg = decodeSvgDataUri(icon.dataUri);
+
+  assert.match(svg, /fill-rule="evenodd"/u);
+  assert.match(svg, /clip-rule="evenodd"/u);
+});
+
 test("annotates native libraries with ELF page size and ZIP alignment", async () => {
   const elfBytes = createElf64WithLoadAlignment(0x4000);
   const zipBytes = createStoredZipWithSingleEntry("lib/arm64-v8a/libpage.so", elfBytes, 4096);

@@ -117,6 +117,7 @@
 - APKS/APKM/XAPK are ZIP containers. Local analysis should pick `base.apk` or the best main APK candidate; do not pretend split manifests/resources are fully merged unless that is actually implemented.
 - Adaptive icon rendering must handle bitmap/vector/color plus shape drawables, including `solid` and `gradient` backgrounds. White foreground-only icons often mean the adaptive background layer was skipped.
 - Vector drawables with stroke-only paths must not silently default missing `fillColor` to black. Preserve `fill="none"` for pure stroked paths and add parser tests for icon regressions.
+- Vector drawable paths with `fillType="evenOdd"` must preserve SVG `fill-rule="evenodd"`/`clip-rule="evenodd"` or hollow rings can render as solid fills.
 
 ## Validation Guidance
 

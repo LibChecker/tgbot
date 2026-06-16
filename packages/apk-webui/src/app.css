@@ -1659,20 +1659,17 @@ svg {
 .drop-zone::before {
   content: "";
   position: absolute;
-  pointer-events: none;
-  border-radius: inherit;
-  opacity: var(--drop-highlight-opacity);
-}
-
-.drop-zone::before {
   z-index: 1;
   top: var(--drop-y);
   left: var(--drop-x);
   width: min(480px, 70vw);
   height: min(360px, 58vw);
+  border-radius: inherit;
   background: color-mix(in srgb, var(--drop-glass-sheen) 38%, var(--drop-glass-core) 62%);
   filter: blur(74px);
   mix-blend-mode: screen;
+  opacity: var(--drop-highlight-opacity);
+  pointer-events: none;
   transform: translate(-50%, -50%) scale(var(--drop-highlight-scale));
   transition: opacity 180ms ease, transform 180ms ease;
 }
