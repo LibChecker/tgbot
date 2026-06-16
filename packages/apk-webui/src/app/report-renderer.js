@@ -99,7 +99,7 @@ function renderHero(report) {
     chip(`${t("heroVersionName")}: ${info.versionName || t("unknown")}`),
     chip(`${t("heroVersionCode")}: ${info.versionCode || t("unknown")}`),
     chip(`${t("targetSdk")}: ${info.targetSdk || t("unknown")}`),
-    chip(t("localFile")),
+    chip(t("localFile"), { appData: false }),
     `</div>`,
     `</div>`,
   ].join("");
@@ -359,9 +359,9 @@ function renderNativeTab(report) {
     const sdk = library.sdk ? renderSdkChip(library.sdk) : "";
     return [
       `<article class="list-row native-library-row">`,
-      `<div class="row-title"><span>${escapeHtml(library.name || t("unknown"))}</span></div>`,
-      `<div class="row-meta native-library-meta"><span>${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</span>${renderNativeLibraryLabels(library)}</div>`,
-      sdk ? `<div class="row-meta native-library-sdk">${sdk}</div>` : "",
+      `<div class="row-title"><span class="app-data-text">${escapeHtml(library.name || t("unknown"))}</span></div>`,
+      `<div class="row-meta native-library-meta app-data-text"><span>${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</span>${renderNativeLibraryLabels(library)}</div>`,
+      sdk ? `<div class="row-meta native-library-sdk app-data-text">${sdk}</div>` : "",
       `</article>`,
     ].join("");
   }).join("");
@@ -422,7 +422,7 @@ function renderAppTitle(title) {
   const value = title || t("unknown");
   return [
     `<h2 class="app-title-mask" data-app-title-mask>`,
-    `<span class="app-title-mask__base">${escapeHtml(value)}</span>`,
+    `<span class="app-title-mask__base app-data-text">${escapeHtml(value)}</span>`,
     `<span class="app-title-mask__color" aria-hidden="true">${escapeHtml(value)}</span>`,
     `</h2>`,
   ].join("");
@@ -457,7 +457,7 @@ function renderComponentRow(component) {
     `<article class="list-row component-row">`,
     `<div class="component-row-header">`,
     `<div class="component-row-main">`,
-    `<div class="row-title component-row-title"><span>${escapeHtml(component.name || t("unknown"))}</span></div>`,
+    `<div class="row-title component-row-title"><span class="app-data-text">${escapeHtml(component.name || t("unknown"))}</span></div>`,
     `</div>`,
     `</div>`,
     renderComponentDetails(component),
@@ -644,9 +644,9 @@ function renderMetaDataTab(report) {
 
   const rows = metaData.map((item) => [
     `<article class="list-row">`,
-    `<div class="row-title"><span>${escapeHtml(item.name || t("unknown"))}</span></div>`,
-    `<div class="row-meta">${renderMetaDataValue(item)}</div>`,
-    item.resourceId != null ? `<div class="row-meta">${escapeHtml(t("resource"))}: ${codeChip(formatResourceId(item.resourceId))}</div>` : "",
+    `<div class="row-title"><span class="app-data-text">${escapeHtml(item.name || t("unknown"))}</span></div>`,
+    `<div class="row-meta app-data-text">${renderMetaDataValue(item)}</div>`,
+    item.resourceId != null ? `<div class="row-meta app-data-text">${escapeHtml(t("resource"))}: ${codeChip(formatResourceId(item.resourceId))}</div>` : "",
     `</article>`,
   ].join("")).join("");
 
@@ -673,7 +673,7 @@ function renderRawTab(report) {
     `<span>${escapeHtml(t("exportJson"))}</span>`,
     `</button>`,
     `</div>`,
-    `<pre class="json-block">${escapeHtml(formatExportJson(report))}</pre>`,
+    `<pre class="json-block app-data-text">${escapeHtml(formatExportJson(report))}</pre>`,
   ].join("");
 }
 
@@ -720,12 +720,12 @@ function renderSdkRows(entries) {
     return [
       `<article class="sdk-row">`,
       `<div class="sdk-row-header">`,
-      `<div class="sdk-title">${renderSdkIcon(entry.iconUrl, entry.label, entry.singleColorIcon)}${renderSdkRuleLabel(entry, t("unknown"))}</div>`,
-      `<span class="sdk-count">${escapeHtml(String(entry.count || 0))}</span>`,
+      `<div class="sdk-title app-data-text">${renderSdkIcon(entry.iconUrl, entry.label, entry.singleColorIcon)}${renderSdkRuleLabel(entry, t("unknown"))}</div>`,
+      `<span class="sdk-count app-data-text">${escapeHtml(String(entry.count || 0))}</span>`,
       `</div>`,
       `<div class="bar-track"><div class="bar" style="width: ${width}%"></div></div>`,
-      detail ? `<div class="sdk-meta">${escapeHtml(detail)}</div>` : "",
-      preview ? `<div class="sdk-preview">${preview}</div>` : "",
+      detail ? `<div class="sdk-meta app-data-text">${escapeHtml(detail)}</div>` : "",
+      preview ? `<div class="sdk-preview app-data-text">${preview}</div>` : "",
       `</article>`,
     ].join("");
   }).join("");
@@ -773,7 +773,7 @@ function renderFeaturePills(buildFeatures = {}) {
     return "";
   }
 
-  return `<div class="feature-grid">${features.map((item) => `<span class="feature-pill">${escapeHtml(item)}</span>`).join("")}</div>`;
+  return `<div class="feature-grid">${features.map((item) => `<span class="feature-pill app-data-text">${escapeHtml(item)}</span>`).join("")}</div>`;
 }
 
 function renderSdkChip(sdk) {
@@ -808,7 +808,7 @@ function renderKeyValueTable(rows) {
     rows.map(([label, value]) => [
       `<div class="kv-row">`,
       `<div class="kv-label">${escapeHtml(label)}</div>`,
-      `<div class="kv-value">${escapeHtml(value || t("unknown"))}</div>`,
+      `<div class="kv-value app-data-text">${escapeHtml(value || t("unknown"))}</div>`,
       `</div>`,
     ].join("")).join(""),
     `</div>`,
@@ -822,7 +822,7 @@ function renderHtmlKeyValueTable(rows, className = "") {
     rows.map(([label, value]) => [
       `<div class="kv-row">`,
       `<div class="kv-label">${escapeHtml(label)}</div>`,
-      `<div class="kv-value">${value || escapeHtml(t("unknown"))}</div>`,
+      `<div class="kv-value app-data-text">${value || escapeHtml(t("unknown"))}</div>`,
       `</div>`,
     ].join("")).join(""),
     `</div>`,
@@ -833,7 +833,7 @@ function metric(label, value) {
   return [
     `<article class="metric-card">`,
     `<div class="metric-label">${escapeHtml(label)}</div>`,
-    `<div class="metric-value">${escapeHtml(String(value))}</div>`,
+    `<div class="metric-value app-data-text">${escapeHtml(String(value))}</div>`,
     `</article>`,
   ].join("");
 }
@@ -846,16 +846,17 @@ function sectionStack(items) {
   return `<div class="section-stack">${items.join("")}</div>`;
 }
 
-function chip(value) {
-  return `<span class="chip">${escapeHtml(value || t("unknown"))}</span>`;
+function chip(value, { appData = true } = {}) {
+  const className = appData ? "chip app-data-text" : "chip";
+  return `<span class="${className}">${escapeHtml(value || t("unknown"))}</span>`;
 }
 
 function codeChip(value) {
-  return `<span class="code-chip">${escapeHtml(value || t("unknown"))}</span>`;
+  return `<span class="code-chip app-data-text">${escapeHtml(value || t("unknown"))}</span>`;
 }
 
 function inlineCodeValue(value) {
-  return `<code class="inline-code-value">${escapeHtml(value || t("unknown"))}</code>`;
+  return `<code class="inline-code-value app-data-text">${escapeHtml(value || t("unknown"))}</code>`;
 }
 
 function buildFeatureLabel(name, version) {

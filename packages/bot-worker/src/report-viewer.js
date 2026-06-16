@@ -77,6 +77,26 @@ function renderReportPage(page, locale) {
           radial-gradient(circle at top left, rgba(236, 72, 153, 0.08), transparent 24rem),
           var(--bg);
         color: var(--text);
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .report-hero h1,
+      .report-hero .meta,
+      pre,
+      code,
+      .kv-value,
+      .feature-pill,
+      .item-line,
+      .chip-cloud,
+      .sdk-chart-label,
+      .sdk-chart-count,
+      .sdk-chart-meta,
+      .sdk-chart-preview {
+        -webkit-touch-callout: default;
+        -webkit-user-select: text;
+        user-select: text;
       }
 
       .page {

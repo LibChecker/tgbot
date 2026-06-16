@@ -98,6 +98,7 @@
 - WebUI CSS gzip budget is intentionally tight. Before raising the budget, prefer lazy CSS for non-first-screen UI (`runtime-log.css`, `lcapps-bubble.css`), removing duplicated control rules, or consolidating existing tokens. A modest budget raise is acceptable only when the transferred gzip size and first-screen impact are understood.
 - Runtime log UI is page-session frontend diagnostics only: live while the page is open, capped, not Cloudflare logs, and not persisted across refresh. Keep runtime log event names/fields in English; localize only visible labels.
 - For slow Web UI link analysis, inspect runtime log split timings (`client_duration_ms`, `server_duration_ms`, `fetch_headers_ms`, `response_text_ms`, `json_parse_ms`, `render_ms`) before blaming rendering, history writes, or remote parsing. Large reports can justify moving noncritical work off the visible-result path, but they are not evidence of multi-second stalls by themselves.
+- Static Web UI text should stay non-selectable for drag/long-press copy. Only application/report data values should opt into selection, using the existing `app-data-text` whitelist class or an equivalent narrowly scoped report-data selector.
 
 ## Worker Notes
 

@@ -542,12 +542,12 @@ export class CompareController {
       `<div class="compare-app-card">`,
       this.renderAppIcon(info),
       `<div class="compare-app-copy">`,
-      `<h3>${escapeHtml(info.appName || this.t("unknown"))}</h3>`,
-      `<code>${escapeHtml(info.packageName || this.t("unknown"))}</code>`,
+      `<h3 class="app-data-text">${escapeHtml(info.appName || this.t("unknown"))}</h3>`,
+      `<code class="app-data-text">${escapeHtml(info.packageName || this.t("unknown"))}</code>`,
       `<div class="hero-meta">`,
       chip(`${this.t("versionName")}: ${info.versionName || this.t("unknown")}`, this.t("unknown")),
       chip(`${this.t("versionCode")}: ${info.versionCode || this.t("unknown")}`, this.t("unknown")),
-      chip(sourceLabel, this.t("unknown")),
+      chip(sourceLabel, this.t("unknown"), { appData: false }),
       `</div>`,
       `<div class="compare-stat-strip">`,
       compareMiniStat(this.t("permissions"), stats.permissions),
@@ -653,8 +653,8 @@ export class CompareController {
         return [
           `<div class="compare-table-row${changed}">`,
           `<div>${escapeHtml(label)}</div>`,
-          `<div>${escapeHtml(leftValue)}</div>`,
-          `<div>${escapeHtml(rightValue)}</div>`,
+          `<div class="app-data-text">${escapeHtml(leftValue)}</div>`,
+          `<div class="app-data-text">${escapeHtml(rightValue)}</div>`,
           `</div>`,
         ].join("");
       }).join(""),
@@ -755,10 +755,10 @@ export class CompareController {
     return [
       `<article class="compare-diff-item${status ? ` is-${escapeAttr(status)}` : ""}">`,
       `<div class="compare-diff-item-header">`,
-      `<strong>${item.labelHtml || escapeHtml(item.label || item.key || this.t("unknown"))}</strong>`,
+      `<strong class="app-data-text">${item.labelHtml || escapeHtml(item.label || item.key || this.t("unknown"))}</strong>`,
       statusLabel ? `<span class="compare-diff-status">${escapeHtml(statusLabel)}</span>` : "",
       `</div>`,
-      item.metaHtml || item.meta ? `<span>${item.metaHtml || escapeHtml(item.meta)}</span>` : "",
+      item.metaHtml || item.meta ? `<span class="app-data-text">${item.metaHtml || escapeHtml(item.meta)}</span>` : "",
       `</article>`,
     ].join("");
   }
@@ -942,9 +942,9 @@ export class CompareController {
 
   renderPairMeta(left, right) {
     return [
-      `<span class="compare-diff-pair-value">${left.pairValueHtml || escapeHtml(left.pairValue || left.meta || left.label || this.t("unknown"))}</span>`,
+      `<span class="compare-diff-pair-value app-data-text">${left.pairValueHtml || escapeHtml(left.pairValue || left.meta || left.label || this.t("unknown"))}</span>`,
       `<span class="compare-diff-arrow" aria-hidden="true">→</span>`,
-      `<span class="compare-diff-pair-value">${right.pairValueHtml || escapeHtml(right.pairValue || right.meta || right.label || this.t("unknown"))}</span>`,
+      `<span class="compare-diff-pair-value app-data-text">${right.pairValueHtml || escapeHtml(right.pairValue || right.meta || right.label || this.t("unknown"))}</span>`,
     ].join("");
   }
 
@@ -1207,7 +1207,7 @@ function compareMiniStat(label, value) {
   return [
     `<span class="compare-mini-stat">`,
     `<span>${escapeHtml(label)}</span>`,
-    `<strong>${escapeHtml(String(value || 0))}</strong>`,
+    `<strong class="app-data-text">${escapeHtml(String(value || 0))}</strong>`,
     `</span>`,
   ].join("");
 }
@@ -1216,7 +1216,7 @@ function metric(label, value) {
   return [
     `<article class="metric-card">`,
     `<div class="metric-label">${escapeHtml(label)}</div>`,
-    `<div class="metric-value">${escapeHtml(String(value))}</div>`,
+    `<div class="metric-value app-data-text">${escapeHtml(String(value))}</div>`,
     `</article>`,
   ].join("");
 }
@@ -1229,8 +1229,9 @@ function sectionStack(items) {
   return `<div class="section-stack">${items.join("")}</div>`;
 }
 
-function chip(value, unknownLabel) {
-  return `<span class="chip">${escapeHtml(value || unknownLabel)}</span>`;
+function chip(value, unknownLabel, { appData = true } = {}) {
+  const className = appData ? "chip app-data-text" : "chip";
+  return `<span class="${className}">${escapeHtml(value || unknownLabel)}</span>`;
 }
 
 function emptyList(message) {

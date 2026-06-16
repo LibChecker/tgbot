@@ -67,6 +67,20 @@ export function renderUploadPage({
           var(--bg);
         color: var(--text);
         font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      input {
+        -webkit-touch-callout: default;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
+      select {
+        -webkit-user-select: auto;
+        user-select: auto;
       }
 
       main {

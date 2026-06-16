@@ -188,6 +188,32 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+select {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+.app-data-text,
+.app-data-text *,
+.history-list :is(.history-title, .history-package, .history-badge-value, .history-stat-value),
+.history-file-line span:not([aria-hidden="true"]),
+.lcapps-picker__grid :is(.lcapps-app-title, .lcapps-app-package, .lcapps-app-meta) {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .color-orb-background {
