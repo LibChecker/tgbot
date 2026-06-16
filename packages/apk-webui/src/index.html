@@ -140,13 +140,11 @@
             </button>
             <p class="local-note" data-i18n="localNote">The file is analyzed in this browser.</p>
           </div>
-          <div class="progress" id="progress" hidden aria-live="polite">
+          <div class="progress" id="progress" hidden role="status" aria-live="polite" aria-atomic="true">
             <div class="progress-header">
-              <span id="progress-label" data-i18n="progressReady">Waiting for file</span>
-              <span id="progress-time">0.0s</span>
-            </div>
-            <div class="progress-track">
-              <div class="progress-bar"></div>
+              <span class="progress-label" id="progress-label" data-i18n="progressReady">Waiting for file</span>
+              <span class="progress-time" id="progress-time">0.0s</span>
+              <span class="progress-percent" id="progress-percent" hidden></span>
             </div>
           </div>
           <div class="alert" id="error-box" hidden role="alert"></div>

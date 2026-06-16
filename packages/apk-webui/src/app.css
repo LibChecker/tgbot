@@ -52,8 +52,6 @@
   --compare-moved-border: rgba(37, 99, 235, 0.36);
   --compare-moved-text: #1d4ed8;
   --table-row-alt: rgba(0, 0, 0, 0.025);
-  --progress-track: rgba(118, 118, 128, 0.16);
-  --progress-fill: linear-gradient(90deg, #0071e3, #55a7ff);
   --bar-track: rgba(118, 118, 128, 0.16);
   --bar-fill: linear-gradient(90deg, var(--blue), #34c759);
   --count-bg: rgba(0, 113, 227, 0.1);
@@ -135,8 +133,6 @@
   --compare-moved-border: rgba(96, 165, 250, 0.44);
   --compare-moved-text: #bfdbfe;
   --table-row-alt: rgba(255, 255, 255, 0.045);
-  --progress-track: rgba(118, 118, 128, 0.28);
-  --progress-fill: linear-gradient(90deg, #0a84ff, #64d2ff);
   --bar-track: rgba(118, 118, 128, 0.28);
   --bar-fill: linear-gradient(90deg, var(--blue), #30d158);
   --count-bg: rgba(10, 132, 255, 0.18);
@@ -218,6 +214,15 @@ body {
 :root[data-power-mode="constrained"] .color-orb-background {
   opacity: 0.42;
   filter: none;
+}
+
+:root[data-power-mode="constrained"] .progress-label,
+:root[data-power-mode="constrained"] .progress-time,
+:root[data-power-mode="constrained"] .progress-percent {
+  color: var(--muted);
+  background: none;
+  animation: none;
+  -webkit-text-fill-color: currentColor;
 }
 
 :root[data-power-mode="constrained"] .brand-title__color-canvas,
@@ -905,6 +910,11 @@ svg {
   align-items: start;
   gap: 14px 16px;
   padding: clamp(14px, 2.4vw, 20px);
+}
+
+.tool-panel.is-height-animating {
+  overflow: hidden;
+  will-change: height;
 }
 
 .history-panel {
@@ -1977,12 +1987,13 @@ svg {
 }
 
 .progress {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface-soft) 82%, transparent);
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .progress[hidden],
@@ -1996,39 +2007,82 @@ svg {
 .progress-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 7px 8px;
+  min-width: 0;
   color: var(--muted);
   font-size: 0.92rem;
-  font-weight: 700;
+  text-align: left;
 }
 
-.progress-track {
-  height: 10px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--progress-track);
+.progress-label,
+.progress-time,
+.progress-percent {
+  display: inline-block;
+  flex: 0 0 auto;
+  min-width: 0;
+  color: var(--progress-text-color, var(--muted));
+  background-image: linear-gradient(
+    120deg,
+    var(--progress-shine-base, var(--muted)) 0%,
+    var(--progress-shine-base, var(--muted)) 35%,
+    var(--progress-shine-peak, var(--heading-text)) 50%,
+    var(--progress-shine-base, var(--muted)) 65%,
+    var(--progress-shine-base, var(--muted)) 100%
+  );
+  background-size: 220% auto;
+  background-position: 150% center;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: progress-shiny-text 2s linear infinite;
 }
 
-.progress-bar {
-  width: 38%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--progress-fill);
-  animation: progress-slide 1.1s ease-in-out infinite;
+.progress-label {
+  --progress-text-color: color-mix(in srgb, var(--heading-text) 58%, var(--muted));
+  --progress-shine-base: color-mix(in srgb, var(--heading-text) 58%, var(--muted));
+  --progress-shine-peak: var(--heading-text);
+  flex: 0 1 auto;
+  font-weight: 760;
 }
 
-.progress.is-complete .progress-bar {
-  width: 100%;
+.progress-time,
+.progress-percent {
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-time {
+  --progress-text-color: color-mix(in srgb, var(--muted) 88%, var(--text));
+  --progress-shine-base: color-mix(in srgb, var(--muted) 88%, var(--text));
+  --progress-shine-peak: color-mix(in srgb, var(--heading-text) 78%, var(--muted));
+  font-weight: 560;
+}
+
+.progress-percent {
+  --progress-text-color: color-mix(in srgb, var(--muted) 82%, var(--text));
+  --progress-shine-base: color-mix(in srgb, var(--muted) 82%, var(--text));
+  --progress-shine-peak: color-mix(in srgb, var(--heading-text) 74%, var(--muted));
+  font-weight: 760;
+}
+
+.progress.is-complete .progress-label,
+.progress.is-complete .progress-time,
+.progress.is-complete .progress-percent,
+.progress.is-failed .progress-label,
+.progress.is-failed .progress-time,
+.progress.is-failed .progress-percent {
+  background: none;
   animation: none;
-  transform: none;
+  -webkit-text-fill-color: currentColor;
 }
 
-.progress.is-failed .progress-bar {
-  width: 100%;
-  animation: none;
-  transform: none;
-  background: var(--danger-text);
+.progress.is-complete .progress-label {
+  color: var(--compare-added-text);
+}
+
+.progress.is-failed .progress-label {
+  color: var(--danger-text);
 }
 
 .alert {
@@ -2659,6 +2713,7 @@ svg {
   align-items: center;
   gap: 16px;
   min-width: 0;
+  scroll-margin-top: calc(var(--topbar-height) + var(--topbar-gap-after) + 10px);
 }
 
 .app-icon-frame,
@@ -4508,13 +4563,13 @@ svg {
 
 }
 
-@keyframes progress-slide {
+@keyframes progress-shiny-text {
   0% {
-    transform: translateX(-120%);
+    background-position: 150% center;
   }
 
   100% {
-    transform: translateX(280%);
+    background-position: -50% center;
   }
 }
 
@@ -4525,10 +4580,21 @@ svg {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .progress-label,
+  .progress-time,
+  .progress-percent,
   .compare-spinner,
   .history-loading-spinner,
   .lcapps-spinner {
     animation: none;
+  }
+
+  .progress-label,
+  .progress-time,
+  .progress-percent {
+    color: var(--muted);
+    background: none;
+    -webkit-text-fill-color: currentColor;
   }
 
   .lcapps-picker,

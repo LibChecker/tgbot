@@ -69,7 +69,8 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
   sdk_annotation: "progressSdkAnnotation",
   report_build: "progressReportBuild",
 });
-const PROGRESS_WIDTH_TRANSITION = "width 180ms ease";
+const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
+const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
 const RUNTIME_LOG_EXPORT_TITLE = "LibChecker WebUI Runtime Logs";
 const MAX_RUNTIME_LOGS = 200;
@@ -3389,6 +3390,7 @@ async function analyzeDownloadUrl() {
     const renderStartedAt = performance.now();
     void renderReport()
       .then(() => {
+        revealReportHeroAfterAnalysis(payload.report);
         trackWebEvent("webui.link_analysis.rendered", {
           result: "success",
           input_source: "url",
@@ -3538,7 +3540,11 @@ function handleWorkerMessage(event) {
     state.activeNativeAbi = "";
     updateClearButton();
     showProgress("progressDone");
-    renderReport();
+    void renderReport()
+      .then(() => {
+        revealReportHeroAfterAnalysis(message.report);
+      })
+      .catch(() => {});
     scheduleHistoryReportSave(message.report);
     scheduleReportSdkRuleDetailHydration(message.report);
     trackWebEvent("webui.analysis.succeeded", {
@@ -3603,60 +3609,33 @@ function updateAnalyzeControls() {
 }
 
 function showProgress(key, options = {}) {
-  elements.progress.hidden = false;
-  elements.progress.classList.toggle("is-complete", key === "progressDone");
-  elements.progress.classList.toggle("is-failed", key === "progressFailed");
-  if (key === "progressDone") {
-    setProgressValue(1);
-  } else if (key === "progressFailed") {
-    clearProgressValue();
-  } else if (Number.isFinite(options.progress)) {
-    setProgressValue(options.progress);
-  } else {
-    clearProgressValue();
-  }
-  elements.progressLabel.textContent = t(key);
-  updateElapsed();
+  animateAnalyzePanelHeightChange(() => {
+    elements.progress.hidden = false;
+    elements.progress.classList.toggle("is-complete", key === "progressDone");
+    elements.progress.classList.toggle("is-failed", key === "progressFailed");
+    if (key === "progressDone") {
+      setProgressValue(1);
+    } else if (key === "progressFailed") {
+      clearProgressValue();
+    } else if (Number.isFinite(options.progress)) {
+      setProgressValue(options.progress);
+    } else {
+      clearProgressValue();
+    }
+    elements.progressLabel.textContent = t(key);
+    updateElapsed();
+  });
 }
 
 function setProgressValue(value) {
   const progressValue = clamp(Number(value), 0, 1);
-  const wasDeterminate = state.progressValue != null;
   state.progressValue = progressValue;
-  if (elements.progressBar) {
-    const progressBar = elements.progressBar;
-    const transition = isAppPowerConstrained() ? "none" : PROGRESS_WIDTH_TRANSITION;
-    progressBar.style.animation = "none";
-
-    if (wasDeterminate) {
-      progressBar.style.transition = transition;
-      progressBar.style.width = `${(progressValue * 100).toFixed(1)}%`;
-    } else {
-      progressBar.style.transition = "none";
-      progressBar.style.width = `${(progressValue * 100).toFixed(1)}%`;
-      if (transition !== "none") {
-        progressBar.getBoundingClientRect();
-        progressBar.style.transition = transition;
-      }
-    }
-  }
-  elements.progress.setAttribute("role", "progressbar");
-  elements.progress.setAttribute("aria-valuemin", "0");
-  elements.progress.setAttribute("aria-valuemax", "100");
-  elements.progress.setAttribute("aria-valuenow", String(Math.round(progressValue * 100)));
+  updateProgressPercent();
 }
 
 function clearProgressValue() {
   state.progressValue = null;
-  if (elements.progressBar) {
-    elements.progressBar.style.removeProperty("transition");
-    elements.progressBar.style.removeProperty("width");
-    elements.progressBar.style.removeProperty("animation");
-  }
-  elements.progress.removeAttribute("role");
-  elements.progress.removeAttribute("aria-valuemin");
-  elements.progress.removeAttribute("aria-valuemax");
-  elements.progress.removeAttribute("aria-valuenow");
+  updateProgressPercent();
 }
 
 function startTimer() {
@@ -3673,21 +3652,89 @@ function stopTimer() {
 
 function updateElapsed() {
   const elapsed = state.startedAt ? (performance.now() - state.startedAt) / 1000 : 0;
-  const progressText = state.progressValue == null || elements.progress.classList.contains("is-failed")
-    ? ""
-    : ` · ${Math.round(state.progressValue * 100)}%`;
-  const text = `${elapsed.toFixed(1)}s${progressText}`;
+  const text = `${elapsed.toFixed(1)}s`;
   if (elements.progressTime.textContent !== text) {
     elements.progressTime.textContent = text;
   }
+  const percentText = updateProgressPercent();
+  const statusText = [elements.progressLabel.textContent, text, percentText].filter(Boolean).join(" ");
+  elements.progress.setAttribute("aria-label", statusText);
+}
+
+function updateProgressPercent() {
+  const percentText = state.progressValue == null || elements.progress.classList.contains("is-failed")
+    ? ""
+    : `${Math.round(state.progressValue * 100)}%`;
+  if (elements.progressPercent) {
+    elements.progressPercent.hidden = !percentText;
+    if (elements.progressPercent.textContent !== percentText) {
+      elements.progressPercent.textContent = percentText;
+    }
+  }
+  return percentText;
 }
 
 function resetProgressView() {
-  elements.progress.hidden = true;
-  elements.progress.classList.remove("is-complete", "is-failed");
-  clearProgressValue();
-  elements.progressTime.textContent = "0.0s";
-  elements.progressLabel.textContent = t("progressReady");
+  animateAnalyzePanelHeightChange(() => {
+    elements.progress.hidden = true;
+    elements.progress.classList.remove("is-complete", "is-failed");
+    clearProgressValue();
+    elements.progressTime.textContent = "0.0s";
+    elements.progressLabel.textContent = t("progressReady");
+    elements.progress.removeAttribute("aria-label");
+  });
+}
+
+function animateAnalyzePanelHeightChange(update) {
+  const panel = elements.form;
+  if (!panel || panel.hidden || isAppPowerConstrained() || typeof panel.animate !== "function") {
+    return update();
+  }
+
+  const previousAnimation = runtime.analyzePanelHeightAnimation;
+  const startHeight = panel.getBoundingClientRect().height;
+  if (previousAnimation) {
+    runtime.analyzePanelHeightAnimation = null;
+    previousAnimation.cancel();
+    panel.classList.remove("is-height-animating");
+    panel.style.removeProperty("height");
+  }
+  const result = update();
+  const endHeight = panel.getBoundingClientRect().height;
+  if (!Number.isFinite(startHeight) || !Number.isFinite(endHeight) || Math.abs(endHeight - startHeight) < 0.5) {
+    return result;
+  }
+
+  panel.classList.add("is-height-animating");
+  panel.style.height = `${startHeight}px`;
+  panel.getBoundingClientRect();
+  const animation = panel.animate(
+    [
+      { height: `${startHeight}px` },
+      { height: `${endHeight}px` },
+    ],
+    {
+      duration: ANALYZE_PANEL_HEIGHT_ANIMATION_MS,
+      easing: ANALYZE_PANEL_HEIGHT_ANIMATION_EASING,
+    },
+  );
+  runtime.analyzePanelHeightAnimation = animation;
+  panel.style.height = `${endHeight}px`;
+
+  const cleanup = () => {
+    if (runtime.analyzePanelHeightAnimation !== animation) {
+      return;
+    }
+    runtime.analyzePanelHeightAnimation = null;
+    panel.classList.remove("is-height-animating");
+    panel.style.removeProperty("height");
+  };
+  animation.finished.then(cleanup, () => {
+    if (runtime.analyzePanelHeightAnimation === animation) {
+      cleanup();
+    }
+  });
+  return result;
 }
 
 async function openRuntimeLogModal() {
@@ -3920,13 +3967,17 @@ function resetState() {
 }
 
 function showError(message) {
-  elements.errorBox.hidden = false;
-  elements.errorBox.textContent = message;
+  animateAnalyzePanelHeightChange(() => {
+    elements.errorBox.hidden = false;
+    elements.errorBox.textContent = message;
+  });
 }
 
 function hideError() {
-  elements.errorBox.hidden = true;
-  elements.errorBox.textContent = "";
+  animateAnalyzePanelHeightChange(() => {
+    elements.errorBox.hidden = true;
+    elements.errorBox.textContent = "";
+  });
 }
 
 function normalizeDownloadUrl(value) {
@@ -4523,6 +4574,54 @@ async function renderReport() {
   initReportTitleColorMask(elements.reportHero, state.report.apkInfo);
   updateTabs();
   renderTabPanel();
+}
+
+function revealReportHeroAfterAnalysis(report) {
+  const target = elements.reportHero;
+  if (!report || !target || typeof target.scrollIntoView !== "function") {
+    return;
+  }
+
+  const revealToken = runtime.reportRevealToken + 1;
+  runtime.reportRevealToken = revealToken;
+  const reveal = () => {
+    if (
+      runtime.reportRevealToken !== revealToken ||
+      state.appMode !== "analyze" ||
+      state.report !== report ||
+      elements.resultView.hidden ||
+      !target.isConnected ||
+      !target.children.length ||
+      isReportHeroComfortablyVisible(target)
+    ) {
+      return;
+    }
+
+    target.scrollIntoView({
+      behavior: isAppPowerConstrained() ? "auto" : "smooth",
+      block: "start",
+      inline: "nearest",
+    });
+  };
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(reveal);
+  });
+}
+
+function isReportHeroComfortablyVisible(target) {
+  const rect = target.getBoundingClientRect();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  if (!Number.isFinite(rect.top) || !Number.isFinite(rect.bottom) || viewportHeight <= 0) {
+    return false;
+  }
+
+  const style = getComputedStyle(document.documentElement);
+  const topbarHeight = Number.parseFloat(style.getPropertyValue("--topbar-height")) || 0;
+  const topbarGap = Number.parseFloat(style.getPropertyValue("--topbar-gap-after")) || 0;
+  const topComfort = topbarHeight + topbarGap;
+  const bottomComfort = 24;
+  return rect.top >= topComfort && rect.bottom <= viewportHeight - bottomComfort;
 }
 
 function updateTabs() {
