@@ -119,6 +119,7 @@ export function createRuntimeState() {
     modeIndicatorFrame: 0,
     pendingModeIndicatorAppMode: "",
     themeIndicatorFrame: 0,
+    themeTransitionFrame: 0,
     pendingThemeIndicatorChoice: "",
     historyViewIndicatorFrame: 0,
     pendingHistoryViewMode: "",

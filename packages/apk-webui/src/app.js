@@ -2599,10 +2599,15 @@ function applyThemeChoice(choice, options = {}) {
   const previousChoice = state.themeChoice;
   const themeChoice = THEME_CHOICES.has(choice) ? choice : "system";
   const shouldPersist = options.persist !== false;
+  const root = document.documentElement;
+  const colorScheme = resolveColorScheme(themeChoice);
   state.themeChoice = themeChoice;
 
-  document.documentElement.dataset.themeChoice = themeChoice;
-  document.documentElement.dataset.colorScheme = resolveColorScheme(themeChoice);
+  if (root.dataset.colorScheme && root.dataset.colorScheme !== colorScheme) {
+    suppressThemeSurfaceTransitions(root);
+  }
+  root.dataset.themeChoice = themeChoice;
+  root.dataset.colorScheme = colorScheme;
   window.dispatchEvent(new Event("apk-theme-change"));
 
   elements.themeButtons.forEach((button) => {
@@ -2629,6 +2634,19 @@ function applyThemeChoice(choice, options = {}) {
       operation: themeChoice,
     });
   }
+}
+
+function suppressThemeSurfaceTransitions(root = document.documentElement) {
+  root.classList.add("is-theme-switching");
+  if (runtime.themeTransitionFrame) {
+    window.cancelAnimationFrame(runtime.themeTransitionFrame);
+  }
+  runtime.themeTransitionFrame = window.requestAnimationFrame(() => {
+    runtime.themeTransitionFrame = window.requestAnimationFrame(() => {
+      runtime.themeTransitionFrame = 0;
+      root.classList.remove("is-theme-switching");
+    });
+  });
 }
 
 function updateThemeIndicator(themeChoice = state.themeChoice) {
