@@ -72,7 +72,6 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
 const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
 const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
-const RUNTIME_LOG_EXPORT_TITLE = "LibChecker WebUI Runtime Logs";
 const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const RUNTIME_LOG_DETAIL_KEYS = new Set([
@@ -117,22 +116,6 @@ const RUNTIME_LOG_DETAIL_KEYS = new Set([
   "value",
   "version",
 ]);
-const BRAND_LOGO_FOREGROUND_PATH = [
-  "M139.391 222.718H129.667C125.942 222.566 123 219.502 123 215.773C123 212.045 125.942 208.98 129.667 208.828H139.391V194.942H129.667C125.942 194.79 123 191.726 123 187.997C123 184.268 125.942 181.204 129.667 181.052H139.391V167.166",
-  "H129.667C125.942 167.014 123 163.95 123 160.221C123 156.492 125.942 153.428 129.667 153.276L139.391 153.277V150.499",
-  "C139.39 147.552 140.559 144.726 142.643 142.643C144.726 140.56 147.552 139.39 150.498 139.391H153.277V129.668C153.429 125.942 156.493 123 160.222 123C163.951 123 167.015 125.942 167.167 129.668V139.39",
-  "L181.053 139.391V129.668C181.205 125.942 184.269 123 187.998 123C191.726 123 194.791 125.942 194.943 129.668V139.391",
-  "H208.829V129.668C208.981 125.942 212.045 123 215.774 123C219.502 123 222.567 125.942 222.719 129.668L222.717 139.39",
-  "H225.496C228.443 139.388 231.269 140.558 233.354 142.641C235.438 144.724 236.609 147.55 236.609 150.497V153.276",
-  "H246.333C250.058 153.428 253 156.492 253 160.221C253 163.95 250.058 167.014 246.333 167.166H236.609V181.052",
-  "H246.333C250.058 181.204 253 184.268 253 187.997C253 191.726 250.058 194.79 246.333 194.942H236.609V208.827",
-  "H246.333C250.058 208.979 253 212.043 253 215.772C253 219.501 250.058 222.565 246.333 222.717H236.609V225.496",
-  "C236.609 231.633 231.633 236.609 225.496 236.609H222.717V246.332C222.565 250.058 219.501 253 215.772 253C212.044 253 208.979 250.058 208.827 246.332V236.609",
-  "H194.941V246.332C194.789 250.058 191.725 253 187.996 253C184.268 253 181.203 250.058 181.051 246.332V236.609",
-  "H167.166V246.332C167.014 250.058 163.949 253 160.22 253C156.492 253 153.427 250.058 153.275 246.332L153.277 236.61",
-  "H150.498C144.361 236.61 139.391 231.635 139.391 225.497V222.718Z",
-  "M202.723 167.162H173.277C169.886 167.162 167.167 169.887 167.167 173.272V202.718C167.163 204.34 167.805 205.896 168.952 207.043C170.099 208.19 171.655 208.832 173.277 208.828H202.723C206.113 208.828 208.833 206.103 208.833 202.718V173.272C208.833 169.881 206.108 167.162 202.723 167.162Z",
-].join(" ");
 const SEGMENT_DRAG_START_THRESHOLD_PX = 4;
 const SEGMENT_TOUCH_DRAG_START_THRESHOLD_PX = 16;
 const TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX = 12;
@@ -3809,112 +3792,40 @@ async function exportRuntimeLogs() {
     return;
   }
 
-  const text = buildRuntimeLogExportText();
-  const fileName = `apk-webui-runtime-logs-${formatRuntimeLogExportTimestamp(new Date())}.log`;
   elements.runtimeLogExport.disabled = true;
 
   try {
-    const file = typeof File === "function"
-      ? new File([text], fileName, { type: "text/plain;charset=UTF-8" })
-      : null;
-
-    if (file && navigator.share && canShareRuntimeLogFile(file)) {
-      await navigator.share({
-        title: RUNTIME_LOG_EXPORT_TITLE,
-        files: [file],
-      });
-      trackWebEvent("webui.runtime_log.exported", {
-        result: "success",
-        operation: "share_file",
-        value: state.runtimeLogs.length,
-      });
-      return;
-    }
-
-    if (navigator.share) {
-      await navigator.share({
-        title: RUNTIME_LOG_EXPORT_TITLE,
-        text,
-      });
-      trackWebEvent("webui.runtime_log.exported", {
-        result: "success",
-        operation: "share_text",
-        value: state.runtimeLogs.length,
-      });
-      return;
-    }
-  } catch (error) {
-    if (error?.name === "AbortError") {
+    const { exportRuntimeLogs: exportLogs } = await import("./app/runtime-log-export.js");
+    const result = await exportLogs({
+      logs: state.runtimeLogs,
+      locale: state.locale,
+      version: APP_VERSION,
+    });
+    if (result?.cancelled) {
       trackWebEvent("webui.runtime_log.export_cancelled", {
         result: "cancelled",
-        operation: "share",
+        operation: result.operation || "share",
         value: state.runtimeLogs.length,
       });
       return;
     }
+
+    trackWebEvent("webui.runtime_log.exported", {
+      result: "success",
+      operation: result?.operation || "download",
+      value: state.runtimeLogs.length,
+    });
+  } catch (error) {
+    console.error("Failed to export runtime logs", error);
+    trackWebEvent("webui.runtime_log.export_failed", {
+      result: "error",
+      error_name: error?.name || "Error",
+      error_message: error?.message || String(error || ""),
+      value: state.runtimeLogs.length,
+    });
   } finally {
     elements.runtimeLogExport.disabled = false;
   }
-
-  downloadRuntimeLogFile(fileName, text);
-  trackWebEvent("webui.runtime_log.exported", {
-    result: "success",
-    operation: "download",
-    value: state.runtimeLogs.length,
-  });
-}
-
-function canShareRuntimeLogFile(file) {
-  if (typeof navigator.canShare !== "function") {
-    return false;
-  }
-
-  try {
-    return navigator.canShare({ files: [file] });
-  } catch {
-    return false;
-  }
-}
-
-function buildRuntimeLogExportText() {
-  const lines = [
-    RUNTIME_LOG_EXPORT_TITLE,
-    `Version: ${APP_VERSION}`,
-    `Locale: ${state.locale}`,
-    `Exported At: ${new Date().toISOString()}`,
-    `Entries: ${state.runtimeLogs.length}`,
-    "",
-  ];
-
-  for (const entry of state.runtimeLogs) {
-    lines.push(formatRuntimeLogExportLine(entry));
-  }
-
-  return lines.join("\n");
-}
-
-function formatRuntimeLogExportLine(entry) {
-  const level = RUNTIME_LOG_LEVELS.has(entry.level) ? entry.level : "info";
-  const time = new Date(entry.time || Date.now()).toISOString();
-  const details = entry.details ? ` ${entry.details}` : "";
-  return `[${time}] ${level.toUpperCase()} ${entry.message}${details}`;
-}
-
-function formatRuntimeLogExportTimestamp(date) {
-  return date.toISOString().replace(/[:.]/gu, "-");
-}
-
-function downloadRuntimeLogFile(fileName, text) {
-  const blob = new Blob([text], { type: "text/plain;charset=UTF-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.rel = "noopener";
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function resetState() {
@@ -4498,11 +4409,7 @@ function renderHistoryItem(entry) {
 }
 
 function renderHistoryLoadingSpinner() {
-  return [
-    `<svg class="history-loading-spinner" viewBox="63 63 250 250" aria-hidden="true" focusable="false">`,
-    `<path d="${BRAND_LOGO_FOREGROUND_PATH}"></path>`,
-    `</svg>`,
-  ].join("");
+  return '<svg class="history-loading-spinner" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2v4a6 6 0 1 1-6 6H2A10 10 0 1 0 12 2Z"></path></svg>';
 }
 
 function historyBadge(label, value, className = "") {
