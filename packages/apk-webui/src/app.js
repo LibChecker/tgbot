@@ -4582,8 +4582,7 @@ function revealReportHeroAfterAnalysis(report) {
     return;
   }
 
-  const revealToken = runtime.reportRevealToken + 1;
-  runtime.reportRevealToken = revealToken;
+  const revealToken = ++runtime.reportRevealToken;
   const reveal = () => {
     if (
       runtime.reportRevealToken !== revealToken ||
@@ -4591,37 +4590,27 @@ function revealReportHeroAfterAnalysis(report) {
       state.report !== report ||
       elements.resultView.hidden ||
       !target.isConnected ||
-      !target.children.length ||
-      isReportHeroComfortablyVisible(target)
+      !target.children.length
     ) {
+      return;
+    }
+
+    const rect = target.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const topComfort = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+    if (rect.top >= topComfort && rect.bottom <= viewportHeight - 24) {
       return;
     }
 
     target.scrollIntoView({
       behavior: isAppPowerConstrained() ? "auto" : "smooth",
       block: "start",
-      inline: "nearest",
     });
   };
 
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(reveal);
   });
-}
-
-function isReportHeroComfortablyVisible(target) {
-  const rect = target.getBoundingClientRect();
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-  if (!Number.isFinite(rect.top) || !Number.isFinite(rect.bottom) || viewportHeight <= 0) {
-    return false;
-  }
-
-  const style = getComputedStyle(document.documentElement);
-  const topbarHeight = Number.parseFloat(style.getPropertyValue("--topbar-height")) || 0;
-  const topbarGap = Number.parseFloat(style.getPropertyValue("--topbar-gap-after")) || 0;
-  const topComfort = topbarHeight + topbarGap;
-  const bottomComfort = 24;
-  return rect.top >= topComfort && rect.bottom <= viewportHeight - bottomComfort;
 }
 
 function updateTabs() {
