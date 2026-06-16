@@ -200,159 +200,24 @@ body {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  display: block;
   pointer-events: none;
-  overflow: hidden;
-  opacity: 1;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.76), transparent 34%),
-    radial-gradient(ellipse at 68% -12%, rgba(0, 113, 227, 0.09), transparent 45%),
-    radial-gradient(ellipse at 0% 70%, rgba(52, 199, 89, 0.045), transparent 42%),
-    var(--body-bg);
+  opacity: 0.56;
+  background: var(--body-bg);
   transform: translateZ(0);
 }
 
-:root[data-color-scheme="light"] .color-orb-background {
-  opacity: 1;
-  filter: saturate(0.86) brightness(1.02);
+.dot-field-background {
+  contain: strict;
 }
 
 :root[data-color-scheme="dark"] .color-orb-background {
-  opacity: 1;
-  filter: saturate(0.9) brightness(0.92);
-  background:
-    radial-gradient(ellipse at 70% -12%, rgba(10, 132, 255, 0.14), transparent 48%),
-    radial-gradient(ellipse at 4% 76%, rgba(48, 209, 88, 0.045), transparent 42%),
-    var(--body-bg);
-}
-
-.color-mesh-spot {
-  position: absolute;
-  display: block;
-  width: min(980px, 96vw);
-  height: min(780px, 82vh);
-  border-radius: 38% 62% 46% 54% / 44% 40% 60% 56%;
-  filter: blur(58px);
-  mix-blend-mode: multiply;
-  opacity: 0.12;
-  will-change: transform;
-  transform: translate3d(var(--mesh-x), var(--mesh-y), 0) rotate(var(--mesh-rotate)) scale(var(--mesh-scale));
-  animation: color-mesh-drift var(--mesh-duration) linear infinite;
-  animation-delay: var(--mesh-delay);
-}
-
-.color-mesh-spot--violet {
-  --mesh-x: -22vw;
-  --mesh-y: -22vh;
-  --mesh-rotate: -8deg;
-  --mesh-scale: 1.06;
-  --mesh-duration: 14s;
-  --mesh-delay: -2s;
-  background: rgba(168, 85, 247, 0.34);
-}
-
-.color-mesh-spot--blue {
-  --mesh-x: 34vw;
-  --mesh-y: -20vh;
-  --mesh-rotate: 11deg;
-  --mesh-scale: 1;
-  --mesh-duration: 16s;
-  --mesh-delay: -7s;
-  background: rgba(0, 113, 227, 0.22);
-}
-
-.color-mesh-spot--rose {
-  --mesh-x: -18vw;
-  --mesh-y: 34vh;
-  --mesh-rotate: 16deg;
-  --mesh-scale: 0.98;
-  --mesh-duration: 18s;
-  --mesh-delay: -4s;
-  background: rgba(255, 149, 0, 0.12);
-}
-
-.color-mesh-spot--mint {
-  --mesh-x: 42vw;
-  --mesh-y: 30vh;
-  --mesh-rotate: -12deg;
-  --mesh-scale: 0.94;
-  --mesh-duration: 15s;
-  --mesh-delay: -10s;
-  background: rgba(52, 199, 89, 0.12);
-}
-
-.color-mesh-spot--amber {
-  --mesh-x: 12vw;
-  --mesh-y: 4vh;
-  --mesh-rotate: 5deg;
-  --mesh-scale: 1.18;
-  --mesh-duration: 20s;
-  --mesh-delay: -13s;
-  background: rgba(255, 214, 10, 0.08);
-}
-
-:root[data-color-scheme="dark"] .color-mesh-spot {
-  mix-blend-mode: screen;
-  opacity: 0.16;
-}
-
-:root[data-color-scheme="dark"] .color-mesh-spot--violet {
-  background: rgba(10, 132, 255, 0.18);
-}
-
-:root[data-color-scheme="dark"] .color-mesh-spot--blue {
-  background: rgba(100, 210, 255, 0.16);
-}
-
-:root[data-color-scheme="dark"] .color-mesh-spot--rose {
-  background: rgba(255, 159, 10, 0.1);
-}
-
-:root[data-color-scheme="dark"] .color-mesh-spot--mint {
-  background: rgba(48, 209, 88, 0.1);
-}
-
-:root[data-color-scheme="dark"] .color-mesh-spot--amber {
-  background: rgba(255, 214, 10, 0.08);
-}
-
-@keyframes color-mesh-drift {
-  0% {
-    transform: translate3d(var(--mesh-x), var(--mesh-y), 0) rotate(var(--mesh-rotate)) scale(var(--mesh-scale));
-  }
-
-  25% {
-    transform: translate3d(calc(var(--mesh-x) + 18vw), calc(var(--mesh-y) + 6vh), 0) rotate(calc(var(--mesh-rotate) + 13deg)) scale(calc(var(--mesh-scale) * 1.08));
-  }
-
-  50% {
-    transform: translate3d(calc(var(--mesh-x) + 6vw), calc(var(--mesh-y) + 18vh), 0) rotate(calc(var(--mesh-rotate) - 8deg)) scale(calc(var(--mesh-scale) * 0.96));
-  }
-
-  75% {
-    transform: translate3d(calc(var(--mesh-x) - 14vw), calc(var(--mesh-y) + 8vh), 0) rotate(calc(var(--mesh-rotate) + 9deg)) scale(calc(var(--mesh-scale) * 1.04));
-  }
-
-  100% {
-    transform: translate3d(var(--mesh-x), var(--mesh-y), 0) rotate(var(--mesh-rotate)) scale(var(--mesh-scale));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .color-mesh-spot {
-    animation: none;
-  }
+  opacity: 0.7;
 }
 
 :root[data-power-mode="constrained"] .color-orb-background {
-  opacity: 0.5;
-  filter: none;
-}
-
-:root[data-power-mode="constrained"] .color-mesh-spot {
-  animation: none;
-  filter: blur(44px);
   opacity: 0.42;
-  will-change: auto;
+  filter: none;
 }
 
 :root[data-power-mode="constrained"] .brand-title__color-canvas,
