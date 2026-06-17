@@ -31,7 +31,6 @@ import {
   pendingAnalyticsEvents,
   pointerCoordinateUpdaters,
 } from "./app/state.js";
-import { renderBrandTitle } from "./app/title-effects.js";
 import {
   collectAppElements,
   hideAnalyzeReportViews,
@@ -119,6 +118,7 @@ const SEGMENT_TOUCH_DRAG_START_THRESHOLD_PX = 16;
 const TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX = 12;
 const TOPBAR_SCROLL_EPSILON_PX = 1;
 const TOPBAR_REPORT_IDENTITY_EPSILON_PX = 1;
+let brandTitleRendererPromise = null;
 const LIQUID_GLASS_CONTROLS = Object.freeze({
   edgeIntensity: 0.01,
   rimIntensity: 0.05,
@@ -3084,10 +3084,11 @@ function renderTopbarDefaultIdentity(options = {}) {
   if (elements.brandAppIconFace) {
     elements.brandAppIconFace.textContent = "";
   }
-  renderBrandTitle(elements.brandTitle, title, {
+  renderTopbarBrandTitle(title, {
+    actionsRect,
     animate: shouldAnimate,
+    identityKey: key,
   });
-  animateTopbarActionsShift(actionsRect);
 }
 
 function renderTopbarReportIdentity(info, options = {}) {
@@ -3105,10 +3106,11 @@ function renderTopbarReportIdentity(info, options = {}) {
     elements.brandAppIconFace.innerHTML = renderTopbarAppIconFace(identity);
   }
   elements.brand?.classList.add("is-report-identity");
-  renderBrandTitle(elements.brandTitle, identity.title, {
+  renderTopbarBrandTitle(identity.title, {
+    actionsRect,
     animate: shouldAnimate,
+    identityKey: key,
   });
-  animateTopbarActionsShift(actionsRect);
 }
 
 function setTopbarReportIdentity(active, options = {}) {
@@ -3136,6 +3138,56 @@ function renderTopbarAppIconFace(identity) {
   }
 
   return `<span class="brand-orb__placeholder">${escapeHtml(identity.initial)}</span>`;
+}
+
+function renderTopbarBrandTitle(title, options = {}) {
+  if (!options.animate) {
+    renderBrandTitleStable(elements.brandTitle, title);
+    animateTopbarActionsShift(options.actionsRect);
+    return;
+  }
+
+  loadBrandTitleRenderer()
+    .then(({ renderBrandTitle }) => {
+      if (runtime.topbarIdentityKey !== options.identityKey) {
+        return;
+      }
+
+      renderBrandTitle(elements.brandTitle, title, { animate: true });
+      animateTopbarActionsShift(options.actionsRect);
+    })
+    .catch(() => {
+      if (runtime.topbarIdentityKey !== options.identityKey) {
+        return;
+      }
+
+      renderBrandTitleStable(elements.brandTitle, title);
+      animateTopbarActionsShift(options.actionsRect);
+    });
+}
+
+function loadBrandTitleRenderer() {
+  if (!brandTitleRendererPromise) {
+    brandTitleRendererPromise = import("./app/title-effects.js").catch((error) => {
+      brandTitleRendererPromise = null;
+      throw error;
+    });
+  }
+
+  return brandTitleRendererPromise;
+}
+
+function renderBrandTitleStable(node, fallbackTitle) {
+  if (!node) {
+    return;
+  }
+
+  const title = fallbackTitle || "LibChecker WebUI";
+  node.classList.remove("is-switching-title");
+  node.classList.add("is-text-rendered");
+  node.setAttribute("aria-label", title);
+  node.title = title;
+  node.innerHTML = `<span class="brand-title__layer brand-title__layer--base brand-title__text" aria-hidden="true">${escapeHtml(title)}</span>`;
 }
 
 function captureTopbarActionsRect() {
