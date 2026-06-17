@@ -2509,6 +2509,20 @@ function initColorOrbBackground() {
     const dpr = Math.min(window.devicePixelRatio || 1, DOT_FIELD_DPR_LIMIT);
     const pixelWidth = Math.max(1, Math.round(width * dpr));
     const pixelHeight = Math.max(1, Math.round(height * dpr));
+    const sizeChanged = (
+      metrics.width !== width ||
+      metrics.height !== height ||
+      metrics.dpr !== dpr ||
+      canvas.width !== pixelWidth ||
+      canvas.height !== pixelHeight
+    );
+
+    metrics.left = rect.left;
+    metrics.top = rect.top;
+    if (!sizeChanged) {
+      drawFrame();
+      return;
+    }
 
     if (canvas.width !== pixelWidth) {
       canvas.width = pixelWidth;
@@ -2519,8 +2533,6 @@ function initColorOrbBackground() {
 
     metrics.width = width;
     metrics.height = height;
-    metrics.left = rect.left;
-    metrics.top = rect.top;
     metrics.dpr = dpr;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     buildDots();
@@ -2770,12 +2782,13 @@ function initColorOrbBackground() {
   window.addEventListener("blur", clearPointer);
   window.addEventListener("apk-theme-change", refreshPalette);
   window.addEventListener("apk-power-mode-change", refreshMotionMode);
+  addChangeListener(fineHoverMedia, refreshMotionMode);
   document.addEventListener("visibilitychange", refreshMotionMode);
   startAnimation();
 }
 
 function shouldAnimateDotField() {
-  return !isAppPowerConstrained() && document.visibilityState !== "hidden";
+  return !isAppPowerConstrained() && document.visibilityState !== "hidden" && fineHoverMedia.matches;
 }
 
 function resolveDotFieldPalette() {

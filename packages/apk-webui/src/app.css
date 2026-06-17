@@ -183,7 +183,6 @@ body {
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
@@ -345,7 +344,6 @@ svg {
   overflow: hidden;
   overflow: clip;
   contain: paint;
-  backface-visibility: hidden;
   will-change: transform;
   transform: translate3d(0, 0, 0);
 }
@@ -359,7 +357,6 @@ svg {
   background: var(--topbar-bg);
   -webkit-backdrop-filter: saturate(180%) blur(18px);
   backdrop-filter: saturate(180%) blur(18px);
-  backface-visibility: hidden;
   will-change: transform, backdrop-filter;
   transform: translate3d(0, 0, 0);
 }
@@ -393,7 +390,6 @@ svg {
   width: max-content;
   max-width: var(--brand-title-max-width);
   min-width: 0;
-  overflow: visible;
 }
 
 .brand-mark {
@@ -403,7 +399,6 @@ svg {
   place-items: center;
   width: 26px;
   height: 26px;
-  overflow: visible;
 }
 
 .brand-orb {
@@ -495,15 +490,10 @@ svg {
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Segoe UI", sans-serif;
   font-size: 14px;
   font-weight: 600;
-  font-kerning: normal;
   line-height: 1.15;
   letter-spacing: 0;
   white-space: nowrap;
   max-width: var(--brand-title-max-width);
-  cursor: default;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
 }
 
 .brand-title.is-text-rendered {
@@ -515,10 +505,6 @@ svg {
   line-height: 1;
 }
 
-.brand-title.is-switching-title {
-  overflow: visible;
-}
-
 .brand-title__layer {
   grid-area: 1 / 1;
   display: block;
@@ -527,9 +513,6 @@ svg {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: default;
-  -webkit-user-select: none;
-  user-select: none;
 }
 
 .brand-title__text {
@@ -556,7 +539,6 @@ svg {
   overflow: visible;
   padding: 0 12px;
   margin: 0 -12px;
-  text-overflow: clip;
 }
 
 .brand-title__layer--enter .brand-title__blur-word {
@@ -584,7 +566,6 @@ svg {
   overflow: hidden;
   padding: 0 12px;
   margin: 0;
-  text-overflow: clip;
 }
 
 .brand-title__layer--exit .brand-title__blur-word {
@@ -764,14 +745,6 @@ svg {
   box-shadow: inset 0 0 0 1px var(--topbar-focus);
 }
 
-.mode-chip.is-active {
-  color: var(--topbar-selected-text);
-}
-
-.mode-chip.is-pending {
-  color: var(--topbar-selected-text);
-}
-
 .topbar-github-link {
   flex: 0 0 auto;
   color: var(--topbar-muted);
@@ -863,11 +836,9 @@ svg {
   box-shadow: inset 0 0 0 1px var(--topbar-focus);
 }
 
-.theme-chip.is-active {
-  background: transparent;
-  color: var(--topbar-selected-text);
-}
-
+.mode-chip.is-active,
+.mode-chip.is-pending,
+.theme-chip.is-active,
 .theme-chip.is-pending {
   color: var(--topbar-selected-text);
 }
@@ -4409,11 +4380,6 @@ svg {
     margin-right: 12px;
   }
 
-  .brand-title.is-text-rendered,
-  .brand-title__layer {
-    flex-wrap: nowrap;
-  }
-
   .topbar-actions {
     flex: 1 1 auto;
     width: auto;
@@ -4543,9 +4509,6 @@ svg {
 @media (max-width: 600px) {
   .brand {
     max-width: min(32vw, 136px);
-  }
-
-  .brand {
     --brand-title-max-width: clamp(72px, 18vw, 96px);
   }
 }
@@ -4695,6 +4658,25 @@ svg {
     padding: 11px;
   }
 
+}
+
+@media (hover: none), (pointer: coarse) {
+  .color-orb-background {
+    transform: none;
+  }
+
+  .topbar {
+    contain: none;
+    will-change: auto;
+    transform: none;
+  }
+
+  .topbar::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    will-change: auto;
+    transform: none;
+  }
 }
 
 @keyframes progress-shiny-text {
