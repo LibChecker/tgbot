@@ -58,6 +58,65 @@ test("preserves vector even-odd fill rules", async () => {
   assert.match(svg, /clip-rule="evenodd"/u);
 });
 
+test("prefers renderable vector drawables over bitmap app icon candidates", async () => {
+  const vectorPath = "res/mipmap-anydpi-v26/ic_launcher.xml";
+  const bitmapPath = "res/mipmap-xxxhdpi/ic_launcher.png";
+  const source = createIconSource({
+    [vectorPath]: textEncoder.encode(`
+      <vector xmlns:android="http://schemas.android.com/apk/res/android"
+          android:width="108dp"
+          android:height="108dp"
+          android:viewportWidth="24"
+          android:viewportHeight="24">
+        <path
+            android:pathData="M12,2l9,20h-18z"
+            android:fillColor="#2f80ed"/>
+      </vector>
+    `),
+    [bitmapPath]: createPngHeaderBytes(),
+  });
+  const icon = await __apkTestInternals.readBestIconCandidate(
+    source,
+    createIconResources(),
+    0x7f010001,
+    [
+      createIconCandidate(bitmapPath, 640),
+      createIconCandidate(vectorPath, 0xfffe),
+    ],
+  );
+
+  assert.equal(icon.mimeType, "image/svg+xml");
+  assert.equal(icon.path, vectorPath);
+  assert.match(decodeSvgDataUri(icon.dataUri), /<path /u);
+});
+
+test("prefers simple shape drawables over bitmap app icon candidates", async () => {
+  const shapePath = "res/drawable/ic_launcher.xml";
+  const bitmapPath = "res/drawable-xxxhdpi/ic_launcher.png";
+  const source = createIconSource({
+    [shapePath]: textEncoder.encode(`
+      <shape xmlns:android="http://schemas.android.com/apk/res/android"
+          android:shape="rectangle">
+        <solid android:color="#2f80ed"/>
+      </shape>
+    `),
+    [bitmapPath]: createPngHeaderBytes(),
+  });
+  const icon = await __apkTestInternals.readBestIconCandidate(
+    source,
+    createIconResources(),
+    0x7f010002,
+    [
+      createIconCandidate(bitmapPath, 640),
+      createIconCandidate(shapePath, 0),
+    ],
+  );
+
+  assert.equal(icon.mimeType, "image/svg+xml");
+  assert.equal(icon.path, shapePath);
+  assert.match(decodeSvgDataUri(icon.dataUri), /fill="#2f80ed"/u);
+});
+
 test("annotates native libraries with ELF page size and ZIP alignment", async () => {
   const elfBytes = createElf64WithLoadAlignment(0x4000);
   const zipBytes = createStoredZipWithSingleEntry("lib/arm64-v8a/libpage.so", elfBytes, 4096);
@@ -79,6 +138,42 @@ test("annotates native libraries with ELF page size and ZIP alignment", async ()
 function decodeSvgDataUri(dataUri) {
   const [, base64] = dataUri.split(",");
   return Buffer.from(base64, "base64").toString("utf8");
+}
+
+function createIconSource(files) {
+  const fileEntries = Object.entries(files).map(([path, bytes]) => [
+    path,
+    {
+      path,
+      compressedSize: bytes.byteLength,
+      uncompressedSize: bytes.byteLength,
+    },
+  ]);
+  const fileMap = new Map(Object.entries(files));
+  return {
+    zipEntries: new Map(fileEntries),
+    extractEntry: async (entry) => fileMap.get(entry.path),
+  };
+}
+
+function createIconResources() {
+  return {
+    resolveColor: () => null,
+    resolveFiles: () => [],
+  };
+}
+
+function createIconCandidate(path, density) {
+  return {
+    path,
+    density,
+    typeName: path.includes("/mipmap") ? "mipmap" : "drawable",
+    isDefaultConfig: path.includes("/mipmap/") || path.includes("/drawable/"),
+  };
+}
+
+function createPngHeaderBytes() {
+  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 }
 
 function createElf64WithLoadAlignment(alignment) {

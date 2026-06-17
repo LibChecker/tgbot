@@ -881,6 +881,11 @@ async function readBestIconCandidate(source, resources, resourceId, candidates, 
     return adaptiveIcon;
   }
 
+  const vectorIcon = await readVectorIconFromXmlCandidates(source, resources, candidates);
+  if (vectorIcon) {
+    return vectorIcon;
+  }
+
   const candidate = selectBestIconCandidate(source.zipEntries, candidates);
   if (!candidate) {
     return readBestIconFromXmlCandidates(source, resources, candidates, seen);
@@ -941,6 +946,33 @@ async function readBestIconFromXmlCandidates(source, resources, candidates, seen
       }
     } catch {
       // Some icons are vectors or unsupported XML shapes; keep looking for bitmap fallbacks.
+    }
+  }
+
+  return null;
+}
+
+async function readVectorIconFromXmlCandidates(source, resources, candidates) {
+  const xmlCandidates = selectIconXmlCandidates(source.zipEntries, candidates);
+  for (const candidate of xmlCandidates) {
+    const entry = source.zipEntries.get(candidate.path);
+    if (!entry) {
+      continue;
+    }
+
+    try {
+      const xmlBytes = await extractSourceEntry(source, entry);
+      const vectorIcon = await renderVectorDrawableIcon(xmlBytes, source, resources, candidate);
+      if (vectorIcon) {
+        return vectorIcon;
+      }
+
+      const shapeIcon = renderShapeDrawableIcon(xmlBytes, resources, candidate);
+      if (shapeIcon) {
+        return shapeIcon;
+      }
+    } catch {
+      // Unsupported XML should not block bitmap fallbacks.
     }
   }
 
@@ -1363,6 +1395,30 @@ async function renderVectorDrawableIcon(xmlBytes, source, resources, candidate) 
 
   const svg = renderStandaloneVectorSvg(layer);
   const bytes = new TextEncoder().encode(svg);
+  if (bytes.byteLength > MAX_APP_ICON_BYTES) {
+    return null;
+  }
+
+  return {
+    resourceId: null,
+    path: candidate.path,
+    mimeType: "image/svg+xml",
+    size: bytes.byteLength,
+    dataUri: `data:image/svg+xml;base64,${bytesToBase64(bytes)}`,
+  };
+}
+
+function renderShapeDrawableIcon(xmlBytes, resources, candidate) {
+  const layer = buildShapeDrawableSvgLayer(xmlBytes, resources, candidate);
+  if (!layer) {
+    return null;
+  }
+
+  const svg = renderStandaloneShapeSvg(layer);
+  const bytes = new TextEncoder().encode(svg);
+  if (bytes.byteLength > MAX_APP_ICON_BYTES) {
+    return null;
+  }
 
   return {
     resourceId: null,
@@ -1377,6 +1433,7 @@ export const __apkTestInternals = {
   collectNativeLibraries,
   parseElfInfo,
   parseZipEntries,
+  readBestIconCandidate,
   renderVectorDrawableIcon,
 };
 
@@ -1546,6 +1603,16 @@ function renderStandaloneVectorSvg(layer) {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${escapeXmlAttribute(layer.viewportWidth)} ${escapeXmlAttribute(layer.viewportHeight)}">`,
     layer.content,
+    "</svg>",
+  ].join("");
+}
+
+function renderStandaloneShapeSvg(layer) {
+  const size = ADAPTIVE_ICON_SIZE;
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">`,
+    layer.defs,
+    `<rect x="0" y="0" width="${size}" height="${size}" fill="${escapeXmlAttribute(layer.paint)}"/>`,
     "</svg>",
   ].join("");
 }
