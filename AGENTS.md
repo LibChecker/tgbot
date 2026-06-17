@@ -65,7 +65,8 @@
 - Cloudflare Pages deploys must run from `packages/apk-webui/` with its relative `dist` so `functions/` are discovered. If production `/url-report` returns `405`, suspect Pages Functions were not deployed and verify the deploy cwd before changing route logic.
 - Do not deploy or change Cloudflare/Telegram webhook state unless the user explicitly asks.
 - In this sandbox, `git add` and `git commit` may need escalation because writing `.git/index.lock` is blocked. Confirm staged diff boundaries before escalating.
-- Wrangler can emit non-fatal `EPERM` log-write warnings under sandboxed macOS paths. Treat command exit status and preflight result as authoritative; do not fail a task only because Wrangler could not write its local log file.
+- Preflight success requires every check table row, especially `npm run perf:check` size budgets, to be `OK`. Treat any `FAIL` budget row as a real preflight failure even if later logs include Wrangler dry-run output.
+- Wrangler can emit non-fatal `EPERM` log-write warnings under sandboxed macOS paths. Treat these as noise only when command exit status is 0, the preflight reports passed, and all budget/check rows are `OK`.
 - Windows Node deploy scripts must spawn command shims explicitly, such as `npm.cmd` and `node_modules/.bin/wrangler.cmd`; plain `spawn("npm")` or extensionless `.bin/wrangler` can fail before preflight starts.
 
 ## Generated Files And Localization
@@ -126,6 +127,7 @@
 
 - For narrow Web UI UI-only changes: run `npm run pages:check`; prefer `npm run pages:build` when HTML/CSS/assets or bundle behavior changes.
 - For Web UI visual or bundle-size work, also run `npm run perf:check` when CSS/JS size, lazy CSS, first-screen assets, or animated effects changed.
+- When reading `npm run perf:check` or deploy preflight output, scan the full performance budget table and verify all rows are `OK`; do not rely only on the final Worker dry-run or upload-size lines.
 - For rendered Web UI validation, start or inspect `npm run pages:dev` and use the exact Vite `Local:` URL. Do not assume port `5173`; first confirm the chosen URL returns `200 OK` with `curl -I`.
 - If a long-lived dev server appears stale, restart it or use a cache-busting URL/new port before drawing conclusions. Vite/HMR and browser caches have previously served old `app.js`/`app.css`.
 - Use the Codex Browser plugin first for local Web UI checks. If it reports `ERR_BLOCKED_BY_CLIENT`, `Browser Use URL policy`, a crashed tab, or repeated localhost navigation timeouts, record that blocker and ask the user before falling back to ordinary Playwright or another browser surface. Do not keep retrying blocked localhost URLs in a loop.
