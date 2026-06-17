@@ -54,8 +54,6 @@ const LIQUID_GLASS_PREVIEW_SELECTOR = ".sdk-rule-preview, .sdk-icon-preview, .lc
 const LIQUID_GLASS_CHANNEL_GAIN = 6;
 const ANALYTICS_IDLE_LOAD_DELAY_MS = 4000;
 const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
-const BRAND_TITLE_IDLE_LOAD_DELAY_MS = 3200;
-const BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS = 5000;
 const HISTORY_SAVE_IDLE_TIMEOUT_MS = 1600;
 const URL_REPORT_ENDPOINT = "/url-report";
 const URL_REPORT_PROGRESS_KEYS = Object.freeze({
@@ -120,6 +118,7 @@ const SEGMENT_DRAG_START_THRESHOLD_PX = 4;
 const SEGMENT_TOUCH_DRAG_START_THRESHOLD_PX = 16;
 const TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX = 12;
 const TOPBAR_SCROLL_EPSILON_PX = 1;
+const TOPBAR_REPORT_IDENTITY_EPSILON_PX = 1;
 const LIQUID_GLASS_CONTROLS = Object.freeze({
   edgeIntensity: 0.01,
   rimIntensity: 0.05,
@@ -330,54 +329,6 @@ function loadWebAnalyticsModule() {
   }
 
   return runtime.analyticsModulePromise;
-}
-
-function initBrandTitleColorMaskWhenIdle(node) {
-  if (!node || isAppPowerConstrained()) {
-    return;
-  }
-
-  let initialized = false;
-  const pointerOptions = { passive: true };
-  const init = () => {
-    if (initialized || isAppPowerConstrained()) {
-      return;
-    }
-
-    initialized = true;
-    node.removeEventListener("pointerenter", init, pointerOptions);
-    node.removeEventListener("pointermove", init, pointerOptions);
-
-    void loadBrandTitleColorMask().then((initBrandTitleColorMask) => {
-      if (node.isConnected) {
-        initBrandTitleColorMask(node);
-      }
-    }).catch(() => {});
-  };
-
-  node.addEventListener("pointerenter", init, pointerOptions);
-  node.addEventListener("pointermove", init, pointerOptions);
-
-  if (typeof window.requestIdleCallback === "function") {
-    window.setTimeout(() => {
-      window.requestIdleCallback(init, { timeout: BRAND_TITLE_IDLE_LOAD_TIMEOUT_MS });
-    }, BRAND_TITLE_IDLE_LOAD_DELAY_MS);
-  } else {
-    window.setTimeout(init, BRAND_TITLE_IDLE_LOAD_DELAY_MS);
-  }
-}
-
-function loadBrandTitleColorMask() {
-  if (!runtime.brandTitleColorMaskPromise) {
-    runtime.brandTitleColorMaskPromise = import("./app/brand-title-mask.js")
-      .then(({ initBrandTitleColorMask }) => initBrandTitleColorMask)
-      .catch((error) => {
-        runtime.brandTitleColorMaskPromise = null;
-        throw error;
-      });
-  }
-
-  return runtime.brandTitleColorMaskPromise;
 }
 
 function initializeAnalyticsModule(module) {
@@ -1281,8 +1232,7 @@ initPowerModeAdaptation();
 applyFilePickerAcceptCompatibilityWhenReady();
 renderLanguageOptions();
 applyLocale();
-renderBrandTitle(elements.brandTitle, t("title"));
-initBrandTitleColorMaskWhenIdle(elements.brandTitle);
+renderTopbarDefaultIdentity({ force: true });
 renderHistoryList();
 updateHistoryCollapse();
 updateAppMode();
@@ -1339,7 +1289,9 @@ function bindEvents() {
     updateThemeIndicator();
     updateHistoryViewIndicator();
     updateTabIndicator();
+    scheduleTopbarReportIdentityCheck();
   });
+  window.addEventListener("scroll", scheduleTopbarReportIdentityCheck, { passive: true });
   window.addEventListener("pagehide", flushScheduledHistoryReports);
 
   elements.languageSelect.addEventListener("change", () => {
@@ -2874,6 +2826,7 @@ function updateAppMode() {
   if (isCompare) {
     elements.emptyState.hidden = true;
     elements.resultView.hidden = true;
+    setTopbarReportIdentity(false, { animate: true });
   } else {
     renderReport();
   }
@@ -3111,6 +3064,165 @@ function applyLocale() {
   renderRuntimeLogs();
   renderLcappsPicker();
   renderLcappsBubble();
+  if (runtime.topbarIdentityMode !== "report" || !state.report) {
+    renderTopbarDefaultIdentity({ force: true });
+  }
+}
+
+function renderTopbarDefaultIdentity(options = {}) {
+  const title = t("title");
+  const key = `brand:${title}`;
+  if (!options.force && runtime.topbarIdentityMode === "brand" && runtime.topbarIdentityKey === key) {
+    return;
+  }
+
+  const shouldAnimate = Boolean(options.animate) && !isAppPowerConstrained();
+  const actionsRect = shouldAnimate ? captureTopbarActionsRect() : null;
+  runtime.topbarIdentityMode = "brand";
+  runtime.topbarIdentityKey = key;
+  elements.brand?.classList.remove("is-report-identity");
+  if (elements.brandAppIconFace) {
+    elements.brandAppIconFace.textContent = "";
+  }
+  renderBrandTitle(elements.brandTitle, title, {
+    animate: shouldAnimate,
+  });
+  animateTopbarActionsShift(actionsRect);
+}
+
+function renderTopbarReportIdentity(info, options = {}) {
+  const identity = resolveTopbarReportIdentity(info);
+  const key = `report:${identity.title}\n${identity.iconSrc || identity.initial}`;
+  if (!options.force && runtime.topbarIdentityMode === "report" && runtime.topbarIdentityKey === key) {
+    return;
+  }
+
+  const shouldAnimate = Boolean(options.animate) && !isAppPowerConstrained();
+  const actionsRect = shouldAnimate ? captureTopbarActionsRect() : null;
+  runtime.topbarIdentityMode = "report";
+  runtime.topbarIdentityKey = key;
+  if (elements.brandAppIconFace) {
+    elements.brandAppIconFace.innerHTML = renderTopbarAppIconFace(identity);
+  }
+  elements.brand?.classList.add("is-report-identity");
+  renderBrandTitle(elements.brandTitle, identity.title, {
+    animate: shouldAnimate,
+  });
+  animateTopbarActionsShift(actionsRect);
+}
+
+function setTopbarReportIdentity(active, options = {}) {
+  if (active && state.report?.apkInfo) {
+    renderTopbarReportIdentity(state.report.apkInfo, options);
+    return;
+  }
+
+  renderTopbarDefaultIdentity(options);
+}
+
+function resolveTopbarReportIdentity(info = {}) {
+  const title = info.appName || info.packageName || t("unknown");
+  const iconSrc = sanitizeImageSrc(info.icon?.dataUri || "");
+  return {
+    title,
+    iconSrc,
+    initial: getInitial(title || info.packageName),
+  };
+}
+
+function renderTopbarAppIconFace(identity) {
+  if (identity.iconSrc) {
+    return `<img class="brand-orb__icon brand-orb__icon--app" src="${escapeAttr(identity.iconSrc)}" alt="">`;
+  }
+
+  return `<span class="brand-orb__placeholder">${escapeHtml(identity.initial)}</span>`;
+}
+
+function captureTopbarActionsRect() {
+  return elements.topbarActions?.getBoundingClientRect() || null;
+}
+
+function animateTopbarActionsShift(beforeRect) {
+  const node = elements.topbarActions;
+  if (!node || !beforeRect) {
+    return;
+  }
+
+  const afterRect = node.getBoundingClientRect();
+  const deltaX = beforeRect.left - afterRect.left;
+  const deltaY = beforeRect.top - afterRect.top;
+  if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) {
+    return;
+  }
+
+  node.classList.remove("is-layout-shifting");
+  node.style.transition = "none";
+  node.style.transform = `translate3d(${deltaX.toFixed(1)}px, ${deltaY.toFixed(1)}px, 0)`;
+  node.getBoundingClientRect();
+  const shiftToken = runtime.topbarActionsShiftToken + 1;
+  runtime.topbarActionsShiftToken = shiftToken;
+  node.style.transition = "";
+  node.classList.add("is-layout-shifting");
+  node.style.transform = "translate3d(0, 0, 0)";
+
+  const cleanup = () => {
+    if (runtime.topbarActionsShiftToken !== shiftToken) {
+      return;
+    }
+    node.classList.remove("is-layout-shifting");
+    node.style.transition = "";
+    node.style.transform = "";
+  };
+  node.addEventListener("transitionend", (event) => {
+    if (event.propertyName === "transform") {
+      cleanup();
+    }
+  }, { once: true });
+  window.setTimeout(cleanup, 560);
+}
+
+function scheduleTopbarReportIdentityCheck() {
+  if (runtime.topbarIdentityFrame) {
+    return;
+  }
+
+  runtime.topbarIdentityFrame = window.requestAnimationFrame(() => {
+    runtime.topbarIdentityFrame = 0;
+    updateTopbarReportIdentity({ animate: true });
+  });
+}
+
+function updateTopbarReportIdentity(options = {}) {
+  setTopbarReportIdentity(shouldUseTopbarReportIdentity(), options);
+}
+
+function shouldUseTopbarReportIdentity() {
+  if (state.appMode !== "analyze" || !state.report || elements.resultView.hidden || !elements.reportHero?.children.length) {
+    return false;
+  }
+
+  const iconNode = elements.reportHero.querySelector(".app-icon-frame, .app-icon-placeholder");
+  const titleNode = elements.reportHero.querySelector("[data-app-title-mask], h2");
+  if (!iconNode || !titleNode) {
+    return false;
+  }
+
+  const threshold = getTopbarReportIdentityThreshold();
+  return isElementAboveThreshold(iconNode, threshold) && isElementAboveThreshold(titleNode, threshold);
+}
+
+function getTopbarReportIdentityThreshold() {
+  const topbarRect = elements.topbar?.getBoundingClientRect();
+  if (topbarRect?.height) {
+    return topbarRect.bottom + TOPBAR_REPORT_IDENTITY_EPSILON_PX;
+  }
+
+  const topbarHeight = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--topbar-height")) || 0;
+  return topbarHeight + TOPBAR_REPORT_IDENTITY_EPSILON_PX;
+}
+
+function isElementAboveThreshold(node, threshold) {
+  return node.getBoundingClientRect().bottom <= threshold;
 }
 
 function renderLanguageOptions() {
@@ -4446,11 +4558,13 @@ async function renderReport() {
 
   if (state.appMode !== "analyze") {
     hideAnalyzeReportViews(elements);
+    setTopbarReportIdentity(false, { animate: true });
     return;
   }
 
   if (!state.report) {
     showEmptyReportState(elements);
+    setTopbarReportIdentity(false, { animate: true });
     return;
   }
 
@@ -4479,6 +4593,7 @@ async function renderReport() {
     archiveDistributionHtml: archiveDistribution,
   });
   initReportTitleColorMask(elements.reportHero, state.report.apkInfo);
+  updateTopbarReportIdentity({ animate: true });
   updateTabs();
   renderTabPanel();
 }
