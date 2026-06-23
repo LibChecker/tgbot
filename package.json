@@ -34,7 +34,8 @@
     "pages:deploy:production": "npm run deploy:production --workspace @tgbot/apk-webui",
     "perf:check": "node scripts/check-size-budgets.mjs",
     "size:check": "npm run perf:check",
-    "check:deploy": "node --check scripts/check-size-budgets.mjs && node --check scripts/deploy-cloudflare.mjs",
+    "check:workflows": "node --check scripts/check-desktop-nightly-workflow.mjs && node scripts/check-desktop-nightly-workflow.mjs",
+    "check:deploy": "node --check scripts/check-size-budgets.mjs && node --check scripts/deploy-cloudflare.mjs && npm run check:workflows",
     "check": "npm run check --workspace @tgbot/shared && npm run check --workspace @tgbot/bot-worker && npm run check --workspace @tgbot/apk-webui && npm run check:deploy"
   }
 }

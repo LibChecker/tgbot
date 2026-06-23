@@ -1,0 +1,211 @@
+name: Desktop Nightly
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: Web UI URL to package with Pake
+        required: true
+        default: https://lc.absinthe.life/
+      pake_cli_version:
+        description: pake-cli npm version or dist tag
+        required: true
+        default: latest
+  schedule:
+    - cron: "0 18 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-nightly
+  cancel-in-progress: false
+
+env:
+  APP_NAME: LibChecker WebUI
+  APP_URL: ${{ github.event.inputs.app_url || 'https://lc.absinthe.life/' }}
+  PAKE_CLI_VERSION: ${{ github.event.inputs.pake_cli_version || 'latest' }}
+  PAKE_WIDTH: "1280"
+  PAKE_HEIGHT: "860"
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            os: windows-latest
+            artifact: libchecker-webui-windows-x64
+            output_dir: windows
+          - label: macOS arm64
+            os: macos-15
+            artifact: libchecker-webui-macos-arm64
+            output_dir: macos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-pake-cargo-${{ env.PAKE_CLI_VERSION }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-pake-cargo-
+
+      - name: Verify macOS runner architecture
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "arm64"
+
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+        run: |
+          set -euo pipefail
+          mkdir -p output/macos
+          npx --yes "pake-cli@${PAKE_CLI_VERSION}" "${APP_URL}" \
+            --name "${APP_NAME}" \
+            --icon "packages/apk-webui/src/assets/icon_round.svg" \
+            --width "${PAKE_WIDTH}" \
+            --height "${PAKE_HEIGHT}" \
+            --hide-title-bar \
+            --targets apple
+
+          dmg_path="$(find . -path "./output" -prune -o -type f -name "*.dmg" -print | head -n 1)"
+          if [ -z "${dmg_path}" ]; then
+            echo "No DMG file generated"
+            find . -type f -name "*.dmg" -print
+            exit 1
+          fi
+          mv "${dmg_path}" "output/macos/libchecker-webui-macos-arm64.dmg"
+
+      - name: Build Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -Path "output\windows" -ItemType Directory -Force | Out-Null
+          $pakeArgs = @(
+            "--yes",
+            "pake-cli@$env:PAKE_CLI_VERSION",
+            $env:APP_URL,
+            "--name", $env:APP_NAME,
+            "--icon", "packages/apk-webui/src/assets/icon_round.svg",
+            "--width", $env:PAKE_WIDTH,
+            "--height", $env:PAKE_HEIGHT,
+            "--targets", "x64"
+          )
+          npx @pakeArgs
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          $msiFile = Get-ChildItem -Path "." -Recurse -Filter "*.msi" |
+            Where-Object { $_.FullName -notlike "*\output\*" } |
+            Select-Object -First 1
+          if (-not $msiFile) {
+            Write-Error "No MSI file generated"
+            Get-ChildItem -Path "." -Recurse -Filter "*.msi" | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+          Move-Item -LiteralPath $msiFile.FullName -Destination "output\windows\libchecker-webui-windows-x64.msi" -Force
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: output/${{ matrix.output_dir }}/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish nightly release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: nightly-assets
+          merge-multiple: true
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<EOF
+          Automated LibChecker WebUI desktop nightly build.
+
+          Source commit: ${GITHUB_SHA}
+          Wrapped URL: ${APP_URL}
+          Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Existing assets on this prerelease are replaced after every successful run.
+          EOF
+
+      - name: Move nightly tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f nightly "${GITHUB_SHA}"
+          git push origin refs/tags/nightly --force
+
+      - name: Publish release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find nightly-assets -type f \( -name "*.dmg" -o -name "*.msi" \) | sort)
+          if [ "${#assets[@]}" -ne 2 ]; then
+            echo "Expected 2 desktop assets, found ${#assets[@]}"
+            find nightly-assets -type f -print
+            exit 1
+          fi
+
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly \
+              --title "LibChecker WebUI Nightly" \
+              --notes-file release-notes.md \
+              --prerelease
+          else
+            gh release create nightly \
+              --verify-tag \
+              --title "LibChecker WebUI Nightly" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --latest=false
+          fi
+
+          gh release upload nightly "${assets[@]}" --clobber

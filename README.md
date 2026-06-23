@@ -146,6 +146,7 @@ The CI performance budget is intentionally lightweight and does not need a brows
 | `npm run pages:deploy:production` | Web UI | Deploy the production Pages branch. |
 | `npm run perf:check` | Web UI | Validate WebUI dist performance budgets for CI. |
 | `npm run size:check` | Web UI | Alias for `perf:check`. |
+| `npm run check:workflows` | CI | Validate repository workflow guardrails. |
 | `npm run check` | all | Validate shared modules, Worker, scripts, generated files, and Web UI. |
 
 The repository root is the npm workspace root. Root scripts are compatibility shims that delegate to `@tgbot/bot-worker`, `@tgbot/apk-webui`, and `@tgbot/shared`.
@@ -186,6 +187,8 @@ POST /admin/commands/delete
 ## GitHub Actions
 
 `.github/workflows/deploy.yml` checks both parts with `npm run check`, then deploys the Worker on pushes to `main` or `master`.
+
+`.github/workflows/desktop-nightly.yml` packages `https://lc.absinthe.life/` with Pake into Windows x64 and macOS arm64 desktop installers. It runs nightly, can be triggered manually with a custom URL or `pake-cli` version, and replaces assets on the reusable `nightly` prerelease.
 
 Required repository secrets:
 
