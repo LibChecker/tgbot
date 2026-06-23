@@ -15,6 +15,7 @@ const requiredSnippets = [
   ["manual trigger", "workflow_dispatch:"],
   ["scheduled trigger", "schedule:"],
   ["release write permission", "contents: write"],
+  ["Node 24 cache action", "actions/cache@v5"],
   ["Windows runner", "windows-latest"],
   ["macOS Apple Silicon runner", "macos-15"],
   ["macOS arm64 guard", 'test "$(uname -m)" = "arm64"'],
@@ -34,6 +35,10 @@ for (const [label, snippet] of requiredSnippets) {
   if (!workflow.includes(snippet)) {
     fail(`Desktop nightly workflow missing ${label}: ${snippet}`);
   }
+}
+
+if (workflow.includes("actions/cache@v4")) {
+  fail("Desktop nightly workflow still uses actions/cache@v4, which targets the deprecated Node.js 20 runtime");
 }
 
 console.log("Checked desktop nightly workflow");
