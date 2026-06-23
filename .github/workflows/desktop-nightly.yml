@@ -132,7 +132,7 @@ jobs:
           Move-Item -LiteralPath $msiFile.FullName -Destination "output\windows\libchecker-webui-windows-x64.msi" -Force
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: output/${{ matrix.output_dir }}/*
@@ -154,7 +154,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download package artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: nightly-assets
           merge-multiple: true
