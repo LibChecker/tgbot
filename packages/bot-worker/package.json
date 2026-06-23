@@ -22,6 +22,6 @@
     "check": "node --check src/index.js && node --check src/apk-url-preview.js && node --check src/i18n.js && node --check src/icons.js && node --check src/observability.js && node --check src/report-viewer.js && node --check src/telegraph.js && node --check src/upload-view.js && node --check scripts/manage-webhook.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.103.0"
   }
 }
