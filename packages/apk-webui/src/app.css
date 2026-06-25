@@ -522,6 +522,11 @@ svg {
   white-space: nowrap;
 }
 
+.brand-title.is-switching-title .brand-title__layer,
+.brand-title.is-switching-title .brand-title__text {
+  text-overflow: clip;
+}
+
 .brand-title__blur-word {
   display: inline-block;
   white-space: pre;
