@@ -15,7 +15,6 @@ const requiredSnippets = [
   ["manual trigger", "workflow_dispatch:"],
   ["scheduled trigger", "schedule:"],
   ["release write permission", "contents: write"],
-  ["Node 24 cache action", "actions/cache@v5"],
   ["Windows runner", "windows-latest"],
   ["macOS Apple Silicon runner", "macos-15"],
   ["macOS arm64 guard", 'test "$(uname -m)" = "arm64"'],
@@ -37,8 +36,19 @@ for (const [label, snippet] of requiredSnippets) {
   }
 }
 
-if (workflow.includes("actions/cache@v4")) {
-  fail("Desktop nightly workflow still uses actions/cache@v4, which targets the deprecated Node.js 20 runtime");
+const cacheActionVersions = Array.from(
+  workflow.matchAll(/uses:\s+actions\/cache@v(\d+)(?:\s|$)/g),
+  (match) => Number(match[1]),
+);
+
+if (cacheActionVersions.length === 0) {
+  fail("Desktop nightly workflow missing Node 24-compatible cache action: actions/cache@v5 or newer");
+}
+
+const unsupportedCacheVersions = cacheActionVersions.filter((version) => version < 5);
+if (unsupportedCacheVersions.length > 0) {
+  const versions = unsupportedCacheVersions.map((version) => `v${version}`).join(", ");
+  fail(`Desktop nightly workflow uses unsupported actions/cache version(s): ${versions}`);
 }
 
 console.log("Checked desktop nightly workflow");
