@@ -819,13 +819,9 @@ function selectTargetUrl(message, command, isEdited, botMentioned) {
     return null;
   }
 
-  const directApkLink = directLinks.find(isLikelyApkUrl);
-  if (directApkLink) {
-    return directApkLink;
-  }
-
   if (isPrivateChat(message.chat)) {
-    return directLinks[0] || null;
+    const directApkLink = directLinks.find(isLikelyApkUrl);
+    return directApkLink || directLinks[0] || null;
   }
 
   return null;
@@ -837,7 +833,7 @@ function shouldAutoAnalyzeMessage(message) {
     return false;
   }
 
-  return isPrivateChat(message.chat) || isGroupOrChannelChat(message.chat) || isForwardedMessage(message);
+  return isPrivateChat(message.chat);
 }
 
 function getApkDocument(message) {
@@ -1679,10 +1675,6 @@ function isPrivateChat(chat) {
   return chat?.type === "private";
 }
 
-function isGroupOrChannelChat(chat) {
-  return chat?.type === "group" || chat?.type === "supergroup" || chat?.type === "channel";
-}
-
 function isForwardedMessage(message) {
   return Boolean(
     message?.forward_origin ||
@@ -2367,3 +2359,8 @@ function getErrorStack(error) {
 
   return null;
 }
+
+export const __botWorkerTestInternals = {
+  selectTargetDocument,
+  selectTargetUrl,
+};

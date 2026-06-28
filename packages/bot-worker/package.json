@@ -19,7 +19,8 @@
     "commands:set": "node scripts/manage-webhook.mjs commands:set",
     "commands:info": "node scripts/manage-webhook.mjs commands:info",
     "commands:delete": "node scripts/manage-webhook.mjs commands:delete",
-    "check": "node --check src/index.js && node --check src/apk-url-preview.js && node --check src/i18n.js && node --check src/icons.js && node --check src/observability.js && node --check src/report-viewer.js && node --check src/telegraph.js && node --check src/upload-view.js && node --check scripts/manage-webhook.mjs"
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/index.js && node --check src/apk-url-preview.js && node --check src/i18n.js && node --check src/icons.js && node --check src/observability.js && node --check src/report-viewer.js && node --check src/telegraph.js && node --check src/upload-view.js && node --check scripts/manage-webhook.mjs && npm test"
   },
   "devDependencies": {
     "wrangler": "^4.103.0"
