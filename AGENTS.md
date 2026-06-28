@@ -106,6 +106,7 @@
 ## Worker Notes
 
 - `packages/bot-worker/src/index.js` is intentionally broad: webhook routing, Telegram response flow, admin routes, uploads, and report redirects.
+- Worker HTTP routing is Hono-based. Keep route declarations near the top of `index.js`, use `context.env` and `context.executionCtx`, and leave heavy business logic in existing handler modules/functions.
 - Keep remote APK URL/range preview logic in `apk-url-preview.js`.
 - Remote URL preview is not the same as full local package analysis. APKS/APKM/XAPK containers may need inner APK extraction; range parsing works best for direct APKs or stored inner APK entries. For deflated inner APKs, return a clear unsupported/limited diagnostic rather than a misleading "missing AndroidManifest.xml" report.
 - Keep Worker HTML page rendering in `upload-view.js` and `report-viewer.js`.

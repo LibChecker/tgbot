@@ -1,3 +1,4 @@
+import { Hono } from "hono";
 import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
@@ -36,81 +37,132 @@ let sdkRuleAnnotatorPromise = null;
 let telegraphModulePromise = null;
 let uploadViewModulePromise = null;
 
-export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const telemetry = createRequestTelemetryContext(request, url, env);
+const app = new Hono();
 
-    const iconResponse = handleIconRequest(url.pathname);
-    if (iconResponse) {
-      return await iconResponse;
-    }
+app.use("*", async (context, next) => {
+  const request = context.req.raw;
+  const url = new URL(request.url);
+  const iconResponse = handleIconRequest(url.pathname);
+  if (iconResponse) {
+    return await iconResponse;
+  }
 
-    logInfoEvent(env, telemetry, "worker.request.received", {
-      result: "received",
-      content_length: parseContentLengthHeader(request.headers.get("content-length")),
-    }, { analytics: false });
+  const telemetry = createRequestTelemetryContext(request, url, context.env);
+  context.set("url", url);
+  context.set("telemetry", telemetry);
 
-    if (request.method === "GET" && url.pathname === "/") {
-      logInfoEvent(env, telemetry, "worker.status_viewed", {
-        result: "success",
-        http_status: 200,
-      });
-      return new Response(
-        "Telegram APK info bot is running on Cloudflare Workers. Send Telegram webhook updates to /webhook. Admin endpoints: GET /admin/webhook, POST /admin/webhook/set, POST /admin/webhook/delete.",
-        {
-          headers: TEXT_CONTENT_HEADERS,
-        },
-      );
-    }
+  logInfoEvent(context.env, telemetry, "worker.request.received", {
+    result: "received",
+    content_length: parseContentLengthHeader(request.headers.get("content-length")),
+  }, { analytics: false });
 
-    if (request.method === "GET" && url.pathname === "/report") {
-      const startedAt = Date.now();
-      const reportPath = url.searchParams.get("path") || null;
-      const { handleReportRequest } = await loadReportViewerModule();
-      const response = await handleReportRequest(url, env);
-      const logFields = {
-        result: response.ok ? "success" : "error",
-        http_status: response.status,
-        report_path: reportPath,
-        duration_ms: Date.now() - startedAt,
-      };
+  await next();
+});
 
-      if (response.ok) {
-        logInfoEvent(env, telemetry, "report.viewed", logFields);
-      } else {
-        logWarnEvent(env, telemetry, "report.view_failed", logFields);
-      }
+app.get("/", (context) => {
+  const telemetry = getRequestTelemetry(context);
+  logInfoEvent(context.env, telemetry, "worker.status_viewed", {
+    result: "success",
+    http_status: 200,
+  });
+  return new Response(
+    "Telegram APK info bot is running on Cloudflare Workers. Send Telegram webhook updates to /webhook. Admin endpoints: GET /admin/webhook, POST /admin/webhook/set, POST /admin/webhook/delete.",
+    {
+      headers: TEXT_CONTENT_HEADERS,
+    },
+  );
+});
 
-      return response;
-    }
+app.get("/report", async (context) => {
+  const url = getRequestUrl(context);
+  const telemetry = getRequestTelemetry(context);
+  const startedAt = Date.now();
+  const reportPath = url.searchParams.get("path") || null;
+  const { handleReportRequest } = await loadReportViewerModule();
+  const response = await handleReportRequest(url, context.env);
+  const logFields = {
+    result: response.ok ? "success" : "error",
+    http_status: response.status,
+    report_path: reportPath,
+    duration_ms: Date.now() - startedAt,
+  };
 
-    if ((request.method === "GET" || request.method === "POST") && url.pathname === "/upload") {
-      return handleUploadRequest(request, env, url, telemetry);
-    }
+  if (response.ok) {
+    logInfoEvent(context.env, telemetry, "report.viewed", logFields);
+  } else {
+    logWarnEvent(context.env, telemetry, "report.view_failed", logFields);
+  }
 
-    if (isAdminPath(url.pathname)) {
-      return handleAdminRequest(request, env, url, telemetry);
-    }
+  return response;
+});
 
-    if (request.method === "POST" && isWebhookPath(url.pathname)) {
-      return handleWebhookRequest(request, env, ctx, url.origin, telemetry);
-    }
+app.on(["GET", "POST"], "/upload", (context) => {
+  return handleUploadRequest(
+    context.req.raw,
+    context.env,
+    getRequestUrl(context),
+    getRequestTelemetry(context),
+  );
+});
 
-    logWarnEvent(
-      env,
-      telemetry,
-      "worker.route_not_found",
-      {
-        result: "not_found",
-        http_status: 404,
-      },
-      { analytics: false },
-    );
+app.all("/admin/webhook", handleAdminRoute);
+app.all("/admin/webhook/set", handleAdminRoute);
+app.all("/admin/webhook/delete", handleAdminRoute);
+app.all("/admin/commands", handleAdminRoute);
+app.all("/admin/commands/set", handleAdminRoute);
+app.all("/admin/commands/delete", handleAdminRoute);
 
-    return new Response("Not Found", { status: 404 });
-  },
-};
+app.post("/", handleWebhookRoute);
+app.post("/webhook", handleWebhookRoute);
+
+app.notFound((context) => {
+  logWarnEvent(
+    context.env,
+    getRequestTelemetry(context),
+    "worker.route_not_found",
+    {
+      result: "not_found",
+      http_status: 404,
+    },
+    { analytics: false },
+  );
+
+  return new Response("Not Found", { status: 404 });
+});
+
+export default app;
+
+function handleAdminRoute(context) {
+  return handleAdminRequest(
+    context.req.raw,
+    context.env,
+    getRequestUrl(context),
+    getRequestTelemetry(context),
+  );
+}
+
+function handleWebhookRoute(context) {
+  const url = getRequestUrl(context);
+  return handleWebhookRequest(
+    context.req.raw,
+    context.env,
+    context.executionCtx,
+    url.origin,
+    getRequestTelemetry(context),
+  );
+}
+
+function getRequestUrl(context) {
+  return context.get("url") || new URL(context.req.raw.url);
+}
+
+function getRequestTelemetry(context) {
+  return context.get("telemetry") || createRequestTelemetryContext(
+    context.req.raw,
+    getRequestUrl(context),
+    context.env,
+  );
+}
 
 async function handleWebhookRequest(request, env, ctx, requestOrigin, telemetry) {
   if (!env.BOT_TOKEN) {
@@ -1332,21 +1384,6 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       message.message_id,
     );
   }
-}
-
-function isWebhookPath(pathname) {
-  return pathname === "/" || pathname === "/webhook";
-}
-
-function isAdminPath(pathname) {
-  return (
-    pathname === "/admin/webhook" ||
-    pathname === "/admin/webhook/set" ||
-    pathname === "/admin/webhook/delete" ||
-    pathname === "/admin/commands" ||
-    pathname === "/admin/commands/set" ||
-    pathname === "/admin/commands/delete"
-  );
 }
 
 function isWebhookSecretValid(request, env) {
