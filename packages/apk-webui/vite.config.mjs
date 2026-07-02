@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, minify } from "vite";
+import {
+  WEBUI_SITE_URL,
+  WEBUI_SOCIAL_PREVIEW_URL,
+  WEBUI_SOURCE_REPOSITORY_URL,
+} from "./site-config.mjs";
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
 const repoDir = resolve(projectDir, "../..");
@@ -57,6 +62,7 @@ export default defineConfig({
   base: "./",
   publicDir: false,
   plugins: [
+    siteMetadataHtmlReplacements(),
     pagesFunctionDevProxy(),
     minifyGeneratedJsAssets(),
   ],
@@ -104,11 +110,46 @@ export default defineConfig({
   },
 });
 
+function siteMetadataHtmlReplacements() {
+  const replacements = {
+    "%WEBUI_SITE_URL%": WEBUI_SITE_URL,
+    "%WEBUI_SOCIAL_PREVIEW_URL%": WEBUI_SOCIAL_PREVIEW_URL,
+    "%WEBUI_SOURCE_REPOSITORY_URL%": WEBUI_SOURCE_REPOSITORY_URL,
+  };
+
+  return {
+    name: "site-metadata-html-replacements",
+    transformIndexHtml(html) {
+      return Object.entries(replacements).reduce(
+        (result, [placeholder, value]) => result.replaceAll(placeholder, value),
+        html,
+      );
+    },
+  };
+}
+
 function pagesFunctionDevProxy() {
   return {
     name: "pages-function-dev-proxy",
     apply: "serve",
     configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        try {
+          const { handleMarkdownRequest } = await import("./functions/_middleware.js");
+          const response = handleMarkdownRequest(createMetadataOnlyDevRequest(req));
+          if (!response) {
+            next();
+            return;
+          }
+          await sendDevResponse(res, response);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to handle Markdown response";
+          res.statusCode = 500;
+          res.setHeader("content-type", "text/plain; charset=UTF-8");
+          res.end(message);
+        }
+      });
+
       server.middlewares.use("/url-report", async (req, res) => {
         try {
           const { onRequest } = await import("./functions/url-report.js");
@@ -128,7 +169,27 @@ function pagesFunctionDevProxy() {
   };
 }
 
+function createMetadataOnlyDevRequest(req) {
+  const method = req.method || "GET";
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  return new Request(url, {
+    method,
+    headers: createDevHeaders(req),
+  });
+}
+
 async function createDevRequest(req) {
+  const headers = createDevHeaders(req);
+  const method = req.method || "GET";
+  const body = method === "GET" || method === "HEAD" ? undefined : await readDevRequestBody(req);
+  return new Request("http://127.0.0.1/url-report", {
+    method,
+    headers,
+    body,
+  });
+}
+
+function createDevHeaders(req) {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
     if (Array.isArray(value)) {
@@ -140,13 +201,7 @@ async function createDevRequest(req) {
     }
   }
 
-  const method = req.method || "GET";
-  const body = method === "GET" || method === "HEAD" ? undefined : await readDevRequestBody(req);
-  return new Request("http://127.0.0.1/url-report", {
-    method,
-    headers,
-    body,
-  });
+  return headers;
 }
 
 async function readDevRequestBody(req) {

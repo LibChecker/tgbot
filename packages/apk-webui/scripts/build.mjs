@@ -2,10 +2,11 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
+import { DISCOVERY_LINK_HEADER, HOMEPAGE_MARKDOWN } from "../functions/_middleware.js";
+import { WEBUI_SITE_ORIGIN } from "../site-config.mjs";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = resolve(projectDir, "dist");
-const siteUrl = "https://lc.absinthe.life";
 
 await build({
   configFile: resolve(projectDir, "vite.config.mjs"),
@@ -14,6 +15,7 @@ await build({
 await disableRocketLoaderForExternalScripts(resolve(distDir, "index.html"));
 await copyStableSocialPreview();
 await writeSeoFiles();
+await writeAgentFiles();
 
 await writeFile(
   resolve(distDir, "_headers"),
@@ -22,6 +24,7 @@ await writeFile(
     "  X-Content-Type-Options: nosniff",
     "  Referrer-Policy: strict-origin-when-cross-origin",
     "  Permissions-Policy: camera=(), microphone=(), geolocation=()",
+    `  Link: ${DISCOVERY_LINK_HEADER}`,
     "",
     "/index.html",
     "  Cache-Control: no-cache",
@@ -35,6 +38,10 @@ await writeFile(
     "/sitemap.xml",
     "  Cache-Control: public, max-age=3600",
     "",
+    "/index.md",
+    "  Content-Type: text/markdown; charset=UTF-8",
+    "  Cache-Control: public, max-age=3600",
+    "",
     "/assets/*",
     "  Cache-Control: public, max-age=31536000, immutable",
     "",
@@ -42,6 +49,14 @@ await writeFile(
 );
 
 await writeFile(resolve(distDir, "_redirects"), "/* /index.html 200\n");
+await writeFile(
+  resolve(distDir, "_routes.json"),
+  `${JSON.stringify({
+    version: 1,
+    include: ["/", "/index.html", "/url-report", "/analytics"],
+    exclude: [],
+  }, null, 2)}\n`,
+);
 
 console.log(`Built Cloudflare Pages site at ${distDir}`);
 
@@ -71,7 +86,7 @@ async function writeSeoFiles() {
       "User-agent: *",
       "Allow: /",
       "Disallow: /url-report",
-      `Sitemap: ${siteUrl}/sitemap.xml`,
+      `Sitemap: ${WEBUI_SITE_ORIGIN}/sitemap.xml`,
       "",
     ].join("\n"),
   );
@@ -82,7 +97,7 @@ async function writeSeoFiles() {
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
       "  <url>",
-      `    <loc>${siteUrl}/</loc>`,
+      `    <loc>${WEBUI_SITE_ORIGIN}/</loc>`,
       "    <changefreq>monthly</changefreq>",
       "    <priority>1.0</priority>",
       "  </url>",
@@ -90,4 +105,8 @@ async function writeSeoFiles() {
       "",
     ].join("\n"),
   );
+}
+
+async function writeAgentFiles() {
+  await writeFile(resolve(distDir, "index.md"), HOMEPAGE_MARKDOWN);
 }

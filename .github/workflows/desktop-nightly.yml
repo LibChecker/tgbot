@@ -5,8 +5,7 @@ on:
     inputs:
       app_url:
         description: Web UI URL to package with Pake
-        required: true
-        default: https://lc.absinthe.life/
+        required: false
       pake_cli_version:
         description: pake-cli npm version or dist tag
         required: true
@@ -23,7 +22,6 @@ concurrency:
 
 env:
   APP_NAME: LibChecker WebUI
-  APP_URL: ${{ github.event.inputs.app_url || 'https://lc.absinthe.life/' }}
   PAKE_CLI_VERSION: ${{ github.event.inputs.pake_cli_version || 'latest' }}
   PAKE_WIDTH: "1280"
   PAKE_HEIGHT: "860"
@@ -55,6 +53,21 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      - name: Resolve Web UI URL
+        shell: bash
+        env:
+          INPUT_APP_URL: ${{ github.event.inputs.app_url }}
+          WEBUI_SITE_URL_OVERRIDE: ${{ vars.WEBUI_SITE_URL }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'EOF'
+          import { appendFileSync } from "node:fs";
+          import { WEBUI_SITE_URL } from "./packages/apk-webui/site-config.mjs";
+
+          const appUrl = process.env.INPUT_APP_URL || process.env.WEBUI_SITE_URL_OVERRIDE || WEBUI_SITE_URL;
+          appendFileSync(process.env.GITHUB_ENV, `APP_URL=${appUrl}\n`);
+          EOF
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

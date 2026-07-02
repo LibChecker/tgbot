@@ -188,7 +188,7 @@ POST /admin/commands/delete
 
 `.github/workflows/deploy.yml` checks both parts with `npm run check`, then deploys the Worker on pushes to `main` or `master`.
 
-`.github/workflows/desktop-nightly.yml` packages `https://lc.absinthe.life/` with Pake into Windows x64 and macOS arm64 desktop installers. It runs nightly, can be triggered manually with a custom URL or `pake-cli` version, and replaces assets on the reusable `nightly` prerelease.
+`.github/workflows/desktop-nightly.yml` packages the Web UI URL from `packages/apk-webui/site-config.mjs` with Pake into Windows x64 and macOS arm64 desktop installers. It runs nightly, can be triggered manually with a custom URL or `pake-cli` version, supports a `WEBUI_SITE_URL` repository variable override, and replaces assets on the reusable `nightly` prerelease.
 
 Required repository secrets:
 

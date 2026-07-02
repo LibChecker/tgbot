@@ -17,6 +17,8 @@ const requiredSnippets = [
   ["release write permission", "contents: write"],
   ["Windows runner", "windows-latest"],
   ["macOS Apple Silicon runner", "macos-15"],
+  ["site config URL fallback", "site-config.mjs"],
+  ["repository URL override", "WEBUI_SITE_URL_OVERRIDE"],
   ["macOS arm64 guard", 'test "$(uname -m)" = "arm64"'],
   ["Pake CLI invocation", "pake-cli@"],
   ["Windows x64 target", '"x64"'],
