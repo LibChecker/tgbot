@@ -22,6 +22,7 @@ ICONS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-sdk-icons.js"
 
 DEFAULT_RULES_REF = "main"
 DEFAULT_RULE_DETAILS_REF = "v4"
+MIN_EXPECTED_SDK_ICON_COUNT = 50
 
 RELEVANT_RULE_TYPES = {0, 1, 2, 3, 4, 9}
 
@@ -65,6 +66,10 @@ MANUAL_SVGS = {
 
 
 def main() -> int:
+    if "--self-test" in sys.argv[1:]:
+        run_self_test()
+        return 0
+
     rules_ref = parse_rules_ref(sys.argv[1:])
     rules_root = build_rules_bundle_root(rules_ref)
     rule_db_url = f"{rules_root}/assets/lcrules/rules.db"
@@ -106,6 +111,12 @@ def main() -> int:
             for icon_name, svg in list(icon_svgs.items()):
                 if not svg:
                     icon_svgs[icon_name] = placeholder_svg
+
+        if len(icon_svgs) < MIN_EXPECTED_SDK_ICON_COUNT:
+            raise ValueError(
+                f"parsed only {len(icon_svgs)} SDK icons from IconResMap; "
+                "update parse_icon_res_map for the upstream format"
+            )
     except Exception as exc:
         print(f"Failed to sync rules bundle from GitHub: {exc}", file=sys.stderr)
         return 1
@@ -188,12 +199,60 @@ def parse_icon_res_map(text: str) -> tuple[dict[int, str], set[int]]:
         index = int(match.group(1))
         icon_map[index] = match.group(2)
 
-    set_match = re.search(r"SINGLE_COLOR_ICON_SET = setOf\((.*?)\)", text, flags=re.S)
+    array_match = re.search(r"iconResIds\s*=\s*intArrayOf\((.*?)\)", text, flags=re.S)
+    if array_match:
+        array_body = array_match.group(1)
+        indexed_matches = list(re.finditer(r"/\*\s*(-?\d+)\s*\*/\s*R\.drawable\.(\w+)", array_body))
+        if indexed_matches:
+            for match in indexed_matches:
+                icon_map[int(match.group(1))] = match.group(2)
+        else:
+            for index, icon_name in enumerate(re.findall(r"R\.drawable\.(\w+)", array_body)):
+                icon_map[index] = icon_name
+
+    set_match = re.search(
+        r"(?:SINGLE_COLOR_ICON_SET|singleColorIconIndexes)\s*=\s*setOf\((.*?)\)",
+        text,
+        flags=re.S,
+    )
     if set_match:
-        for number in re.findall(r"-?\d+", set_match.group(1)):
+        set_body = set_match.group(1).replace("PLACEHOLDER_INDEX", "-1")
+        for number in re.findall(r"-?\d+", set_body):
             single_color.add(int(number))
 
     return icon_map, single_color
+
+
+def run_self_test() -> None:
+    old_format = """
+        object IconResMap {
+            val SINGLE_COLOR_ICON_SET = setOf(-1, 2)
+            init {
+                put(-1, R.drawable.ic_sdk_placeholder)
+                put(2, R.drawable.ic_lib_old)
+            }
+        }
+    """
+    old_map, old_single_color = parse_icon_res_map(old_format)
+    assert old_map == {-1: "ic_sdk_placeholder", 2: "ic_lib_old"}
+    assert old_single_color == {-1, 2}
+
+    new_format = """
+        object IconResMap {
+            private const val PLACEHOLDER_INDEX = -1
+            private val iconResIds = intArrayOf(
+                /* 0 */ R.drawable.ic_lib_zero,
+                /* 1 */ R.drawable.ic_lib_one,
+            )
+            private val singleColorIconIndexes = setOf(
+                PLACEHOLDER_INDEX, 1,
+            )
+        }
+    """
+    new_map, new_single_color = parse_icon_res_map(new_format)
+    assert new_map == {0: "ic_lib_zero", 1: "ic_lib_one"}
+    assert new_single_color == {-1, 1}
+    print("generate_libchecker_bundle self-test passed")
 
 
 def load_rules(
