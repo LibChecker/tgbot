@@ -46,8 +46,6 @@ const ANALYTICS_DOUBLE_KEYS = [
   "client_time_offset_ms",
   "downloaded_bytes",
   "range_request_count",
-  "reserved_1",
-  "reserved_2",
 ];
 
 const PRIVATE_EVENT_KEYS = new Set([

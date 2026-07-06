@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,6 +16,7 @@ const extraSyntaxFiles = [
 ];
 
 await runNpm(["run", "i18n:check", "--workspace", "@tgbot/shared"], repoDir);
+await validateAnalyticsEngineKeyBudgets();
 
 const syntaxFiles = (await collectSyntaxFiles(sourceRoots))
   .concat(extraSyntaxFiles)
@@ -76,6 +77,25 @@ function runNpm(args, cwd) {
   }
 
   return run("cmd.exe", ["/d", "/s", "/c", ["npm", ...args].join(" ")], cwd);
+}
+
+async function validateAnalyticsEngineKeyBudgets() {
+  const analyticsPath = resolve(projectDir, "functions/analytics.js");
+  const source = await readFile(analyticsPath, "utf8");
+  for (const name of ["ANALYTICS_BLOB_KEYS", "ANALYTICS_DOUBLE_KEYS"]) {
+    const values = readStringArray(source, name);
+    if (values.length > 20) {
+      throw new Error(`${name} has ${values.length} entries; Analytics Engine supports at most 20`);
+    }
+  }
+}
+
+function readStringArray(source, name) {
+  const match = source.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`));
+  if (!match) {
+    throw new Error(`Missing ${name}`);
+  }
+  return [...match[1].matchAll(/"([^"]+)"/gu)].map((item) => item[1]);
 }
 
 function formatCommand(command, args) {

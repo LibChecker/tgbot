@@ -21,8 +21,8 @@ const ANALYTICS_BLOB_KEYS = [
   "worker_version_tag",
   "error_name",
   "ui_mode",
-  "operation",
-  "input_source",
+  "file_name",
+  "package_name",
 ];
 
 const ANALYTICS_DOUBLE_KEYS = [
@@ -63,8 +63,6 @@ const ANALYTICS_PRIVATE_TELEMETRY_KEYS = new Set([
   ...CONSOLE_PRIVATE_TELEMETRY_KEYS,
   "app_icon_path",
   "error_message",
-  "file_name",
-  "package_name",
   "report_path",
   "url_host",
   "url_path",

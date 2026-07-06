@@ -102,6 +102,7 @@
 - Keep runtime log export/share/download code lazy-loaded; it is not first-screen behavior and can tip the tight initial JS gzip budget.
 - For slow Web UI link analysis, inspect runtime log split timings (`client_duration_ms`, `server_duration_ms`, `fetch_headers_ms`, `response_text_ms`, `json_parse_ms`, `render_ms`) before blaming rendering, history writes, or remote parsing. Large reports can justify moving noncritical work off the visible-result path, but they are not evidence of multi-second stalls by themselves.
 - Static Web UI text should stay non-selectable for drag/long-press copy. Only application/report data values should opt into selection, using the existing `app-data-text` whitelist class or an equivalent narrowly scoped report-data selector.
+- Cloudflare Analytics Engine exposes only `blob1`-`blob20` and `double1`-`double20`. Keep Web UI `functions/analytics.js` blob/double key arrays at 20 entries or fewer, and let `npm run pages:check` catch budget overflows before deploy.
 
 ## Worker Notes
 
