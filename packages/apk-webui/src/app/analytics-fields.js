@@ -11,6 +11,7 @@ export function getFileAnalyticsFields(file) {
   }
 
   return compactAnalyticsObject({
+    file_name: file.name || "",
     file_extension: getFileExtension(file.name),
     size_bucket: formatSizeBucket(file.size),
   });
@@ -25,6 +26,8 @@ export function getReportAnalyticsFields(report) {
   const archive = info.archive || null;
 
   return compactAnalyticsObject({
+    file_name: report?.fileName || "",
+    package_name: info.packageName || "",
     file_extension: getFileExtension(report?.fileName),
     size_bucket: formatSizeBucket(report?.fileSizeBytes),
     duration_ms: Number(report?.durationMs) || 0,

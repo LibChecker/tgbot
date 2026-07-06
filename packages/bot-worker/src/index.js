@@ -2214,6 +2214,8 @@ function buildMessageTelemetryFields(update, message, command, botMentioned, loc
     update_type: getUpdateType(update),
     locale,
     chat_type: message.chat?.type || null,
+    chat_title: isTelegramGroupChat(message.chat) ? message.chat?.title || null : null,
+    chat_username: isTelegramGroupChat(message.chat) ? formatTelegramUsername(message.chat?.username) : null,
     chat_id: message.chat?.id != null ? String(message.chat.id) : null,
     message_id: message.message_id || null,
     message_thread_id: message.message_thread_id || null,
@@ -2228,6 +2230,15 @@ function buildMessageTelemetryFields(update, message, command, botMentioned, loc
     has_apk_url: links.some(isLikelyApkUrl),
     source_label: describeMessageSource(message),
   };
+}
+
+function isTelegramGroupChat(chat) {
+  return chat?.type === "group" || chat?.type === "supergroup" || chat?.type === "channel";
+}
+
+function formatTelegramUsername(username) {
+  const value = String(username || "").trim().replace(/^@/u, "");
+  return value ? `@${value}` : null;
 }
 
 function getUpdateType(update) {

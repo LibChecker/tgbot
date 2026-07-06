@@ -88,6 +88,13 @@ async function validateAnalyticsEngineKeyBudgets() {
       throw new Error(`${name} has ${values.length} entries; Analytics Engine supports at most 20`);
     }
   }
+
+  const blobKeys = readStringArray(source, "ANALYTICS_BLOB_KEYS");
+  for (const key of ["file_name", "package_name"]) {
+    if (!blobKeys.includes(key)) {
+      throw new Error(`ANALYTICS_BLOB_KEYS must include ${key}`);
+    }
+  }
 }
 
 function readStringArray(source, name) {

@@ -21,8 +21,8 @@ const ANALYTICS_BLOB_KEYS = [
   "source_label",
   "error_name",
   "viewport_bucket",
-  "route",
-  "method",
+  "file_name",
+  "package_name",
 ];
 
 const ANALYTICS_DOUBLE_KEYS = [
@@ -54,8 +54,6 @@ const PRIVATE_EVENT_KEYS = new Set([
   "error_message",
   "error_stack",
   "file_size_bytes",
-  "file_name",
-  "package_name",
   "report_path",
   "url_host",
   "url_path",
