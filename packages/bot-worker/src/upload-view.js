@@ -402,7 +402,8 @@ export function renderUploadPage({
 
       function isReportUrl(value) {
         try {
-          return new URL(value, window.location.href).pathname === "/report";
+          const url = new URL(value, window.location.href);
+          return url.pathname === "/report-data" || url.searchParams.has("r");
         } catch {
           return false;
         }

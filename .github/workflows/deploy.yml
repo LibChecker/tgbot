@@ -58,10 +58,14 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      TEST_BOT_TOKEN: ${{ secrets.TEST_BOT_TOKEN }}
       ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+      TEST_TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TEST_TELEGRAM_WEBHOOK_SECRET }}
       TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
+      PREVIEW_WORKER_URL: ${{ vars.PREVIEW_WORKER_URL || secrets.PREVIEW_WORKER_URL }}
+      PREVIEW_WEBUI_SITE_URL: ${{ vars.PREVIEW_WEBUI_SITE_URL || secrets.PREVIEW_WEBUI_SITE_URL }}
+      WEBUI_SITE_URL: ${{ vars.PREVIEW_WEBUI_SITE_URL || secrets.PREVIEW_WEBUI_SITE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -79,19 +83,24 @@ jobs:
 
       - name: Validate preview deployment secrets
         run: |
-          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets: ' + missing.join(', ')); process.exit(1); }"
-
-      - name: Build WebUI assets
-        run: npm run pages:build
+          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','TEST_BOT_TOKEN','ADMIN_TOKEN','PREVIEW_WORKER_URL'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
 
       - name: Deploy preview Worker and Pages
         run: npm run deploy:preview -- --skip-preflight
 
       - name: Sync preview Worker secrets
         run: |
-          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || undefined, TELEGRAPH_ACCESS_TOKEN: process.env.TELEGRAPH_ACCESS_TOKEN || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
+          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.TEST_BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TEST_TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET || undefined, TELEGRAPH_ACCESS_TOKEN: process.env.TELEGRAPH_ACCESS_TOKEN || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
           npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml --env preview
           rm .cloudflare-secrets.json
+
+      - name: Register preview test bot webhook
+        if: ${{ env.PREVIEW_WORKER_URL != '' }}
+        env:
+          BOT_TOKEN: ${{ secrets.TEST_BOT_TOKEN }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TEST_TELEGRAM_WEBHOOK_SECRET || secrets.TELEGRAM_WEBHOOK_SECRET }}
+          PUBLIC_WEBHOOK_URL: ${{ vars.PREVIEW_WORKER_URL || secrets.PREVIEW_WORKER_URL }}
+        run: npm run webhook:set -- --direct-telegram
 
   deploy_production:
     name: Deploy production
@@ -108,6 +117,8 @@ jobs:
       ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
       TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
+      WORKER_URL: ${{ vars.WORKER_URL || secrets.WORKER_URL }}
+      WEBUI_SITE_URL: ${{ vars.WEBUI_SITE_URL || secrets.WEBUI_SITE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -125,7 +136,7 @@ jobs:
 
       - name: Validate production deployment secrets
         run: |
-          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets: ' + missing.join(', ')); process.exit(1); }"
+          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN','WORKER_URL','WEBUI_SITE_URL'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
 
       - name: Build WebUI assets
         run: npm run pages:build
@@ -140,4 +151,6 @@ jobs:
           rm .cloudflare-secrets.json
 
       - name: Register Telegram webhook
+        env:
+          PUBLIC_WEBHOOK_URL: ${{ vars.WORKER_URL || secrets.WORKER_URL }}
         run: npm run webhook:set -- --direct-telegram

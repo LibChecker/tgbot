@@ -1,21 +1,63 @@
-import {
-  WEBUI_SITE_ORIGIN,
-  WEBUI_SITE_URL,
-  WEBUI_SOCIAL_PREVIEW_URL,
-  WEBUI_SOURCE_REPOSITORY_URL,
-} from "../site-config.mjs";
+import { resolveWebUiSiteConfig } from "../site-config.mjs";
 
 const HOMEPAGE_PATHS = new Set(["/", "/index.html"]);
 
-export const DISCOVERY_LINK_HEADER = [
-  `<${WEBUI_SITE_ORIGIN}/sitemap.xml>; rel="sitemap"; type="application/xml"`,
-  `<${WEBUI_SITE_ORIGIN}/index.md>; rel="alternate"; type="text/markdown"`,
-].join(", ");
+export const DISCOVERY_LINK_HEADER = getDiscoveryLinkHeader();
+export const HOMEPAGE_MARKDOWN = getHomepageMarkdown();
 
-export const HOMEPAGE_MARKDOWN = `---
+export async function onRequest(context) {
+  const markdownResponse = handleMarkdownRequest(context.request, context.env);
+  if (markdownResponse) {
+    return markdownResponse;
+  }
+
+  const response = await context.next();
+  if (!isHomepageRequest(context.request)) {
+    return response;
+  }
+
+  return withHomepageDiscoveryHeaders(response, context.env);
+}
+
+export function handleMarkdownRequest(request, env = {}) {
+  if (!isHomepageRequest(request) || !["GET", "HEAD"].includes(request.method) || !acceptsMarkdown(request)) {
+    return null;
+  }
+
+  return createHomepageMarkdownResponse(request.method, env);
+}
+
+export function createHomepageMarkdownResponse(method = "GET", env = {}) {
+  const markdown = getHomepageMarkdown(env);
+  return new Response(method === "HEAD" ? null : markdown, {
+    headers: buildHomepageHeaders({
+      "cache-control": "public, max-age=3600",
+      "content-type": "text/markdown; charset=UTF-8",
+      "x-markdown-tokens": String(countApproximateTokens(markdown)),
+    }, env),
+  });
+}
+
+function getDiscoveryLinkHeader(env = {}) {
+  const { siteOrigin } = resolveWebUiSiteConfig(env);
+  return [
+    `<${siteOrigin}/sitemap.xml>; rel="sitemap"; type="application/xml"`,
+    `<${siteOrigin}/index.md>; rel="alternate"; type="text/markdown"`,
+  ].join(", ");
+}
+
+function getHomepageMarkdown(env = {}) {
+  const {
+    siteOrigin,
+    siteUrl,
+    socialPreviewUrl,
+    sourceRepositoryUrl,
+  } = resolveWebUiSiteConfig(env);
+
+  return `---
 title: LibChecker WebUI
 description: Analyze APK/APKS/APKM/XAPK packages in your browser with local parsing, SDK markers, signatures, and reports.
-image: ${WEBUI_SOCIAL_PREVIEW_URL}
+image: ${socialPreviewUrl}
 ---
 
 # LibChecker WebUI
@@ -40,56 +82,23 @@ LibChecker WebUI is a browser-first Android package analyzer for APK, APKS, APKM
 
 ## Important URLs
 
-- Web UI: ${WEBUI_SITE_URL}
-- Sitemap: ${WEBUI_SITE_ORIGIN}/sitemap.xml
-- Source repository: ${WEBUI_SOURCE_REPOSITORY_URL}
+- Web UI: ${siteUrl}
+- Sitemap: ${siteOrigin}/sitemap.xml
+- Source repository: ${sourceRepositoryUrl}
 `;
-
-export const HOMEPAGE_MARKDOWN_TOKENS = String(countApproximateTokens(HOMEPAGE_MARKDOWN));
-
-export async function onRequest(context) {
-  const markdownResponse = handleMarkdownRequest(context.request);
-  if (markdownResponse) {
-    return markdownResponse;
-  }
-
-  const response = await context.next();
-  if (!isHomepageRequest(context.request)) {
-    return response;
-  }
-
-  return withHomepageDiscoveryHeaders(response);
 }
 
-export function handleMarkdownRequest(request) {
-  if (!isHomepageRequest(request) || !["GET", "HEAD"].includes(request.method) || !acceptsMarkdown(request)) {
-    return null;
-  }
-
-  return createHomepageMarkdownResponse(request.method);
-}
-
-export function createHomepageMarkdownResponse(method = "GET") {
-  return new Response(method === "HEAD" ? null : HOMEPAGE_MARKDOWN, {
-    headers: buildHomepageHeaders({
-      "cache-control": "public, max-age=3600",
-      "content-type": "text/markdown; charset=UTF-8",
-      "x-markdown-tokens": HOMEPAGE_MARKDOWN_TOKENS,
-    }),
-  });
-}
-
-function withHomepageDiscoveryHeaders(response) {
+function withHomepageDiscoveryHeaders(response, env = {}) {
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers: buildHomepageHeaders(response.headers),
+    headers: buildHomepageHeaders(response.headers, env),
   });
 }
 
-function buildHomepageHeaders(sourceHeaders) {
+function buildHomepageHeaders(sourceHeaders, env = {}) {
   const headers = new Headers(sourceHeaders);
-  headers.set("Link", DISCOVERY_LINK_HEADER);
+  headers.set("Link", getDiscoveryLinkHeader(env));
   headers.set("Content-Signal", "search=yes,ai-input=yes,ai-train=no,use=reference");
   headers.set("Vary", mergeVary(headers.get("Vary"), "Accept"));
   return headers;

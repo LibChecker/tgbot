@@ -67,11 +67,19 @@ npm run pages:dev
 Configure Worker secrets:
 
 ```bash
-npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml
-npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml
-npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml
-npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml
+npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml --env production
+npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml --env preview
+npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml --env production
+npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml --env preview
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml --env production
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml --env preview
+npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml --env production
+npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml --env preview
 ```
+
+Use a dedicated test bot token for the preview environment. In GitHub Actions,
+set `TEST_BOT_TOKEN`; the workflow syncs it into the preview Worker as
+`BOT_TOKEN` so production `BOT_TOKEN` stays isolated.
 
 `TELEGRAM_WEBHOOK_SECRET` and `TELEGRAPH_ACCESS_TOKEN` are optional, but recommended for production.
 
@@ -97,8 +105,8 @@ npm run deploy:setup
 
 The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.toml`:
 
-- `preview`: deploys `tgbot-preview` on `workers.dev`, uses `Libchecker_TG_Bot_Preview`, and does not register a Telegram webhook.
-- `production`: deploys `tgbot` to `lcbot.absinthe.life`, uses `Libchecker_TG_Bot`, and sets `PUBLIC_WEBHOOK_URL=https://lcbot.absinthe.life`.
+- `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, uses `TEST_BOT_TOKEN` for preview bot testing, points report buttons at `PREVIEW_WEBUI_SITE_URL` or the Cloudflare Pages branch preview alias, registers the preview Web UI Pages custom domain when configured, and injects the preview Worker origin so Web UI report links can resolve `?r=...`.
+- `production`: deploys `tgbot`, binds the custom domain from repository variable `WORKER_URL`, uses `Libchecker_TG_Bot`, injects that URL as `PUBLIC_WEBHOOK_URL`, points report buttons at `WEBUI_SITE_URL`, registers the production Web UI Pages custom domain when configured, and injects the production Worker origin so Web UI report links can resolve `?r=...`.
 
 ## Web UI Deployment
 
@@ -194,14 +202,22 @@ Required repository secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
-- `BOT_TOKEN`
+- `BOT_TOKEN` for production
+- `TEST_BOT_TOKEN` for preview bot testing
 - `ADMIN_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
 - `TELEGRAPH_ACCESS_TOKEN`
 
+Optional repository secret:
+
+- `TEST_TELEGRAM_WEBHOOK_SECRET`
+
 Optional repository variable:
 
-- `WORKER_URL`
+- `PREVIEW_WORKER_URL`, the full preview Worker URL used for the preview custom domain, test bot webhook, and Web UI report-data origin.
+- `WORKER_URL`, the full production Worker URL used for the production custom domain, bot webhook, and Web UI report-data origin.
+- `PREVIEW_WEBUI_SITE_URL`, the optional full preview Web UI URL used by preview bot report buttons and preview metadata. When omitted, preview deploys use the Pages branch preview alias. For a custom preview domain, keep the DNS CNAME proxied and pointed at the Pages branch alias, for example `<branch-alias>.tgbot-apk-webui.pages.dev`.
+- `WEBUI_SITE_URL`, the full production Web UI URL used by production bot report buttons and Web UI metadata.
 
 ## Project Layout
 
@@ -211,7 +227,7 @@ packages/
     src/
       index.js       Worker entry, Telegram webhook, admin API
       apk-url-preview.js APK link preview parser
-      report-viewer.js Worker-hosted report pages
+      telegraph.js   Telegraph report data storage
       upload-view.js Worker-hosted upload page
       observability.js Logs and Analytics Engine events
     scripts/         Worker admin and webhook helpers

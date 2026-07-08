@@ -3,6 +3,7 @@ import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate
 import { clamp } from "./app/math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./app/format.js";
 import { getStats } from "./app/report-model.js";
+import { resolveBotReportUrlFromLocation } from "./app/bot-report-url.js";
 import {
   buildHistorySummary,
   createHistoryEntry,
@@ -69,6 +70,7 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
 const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
 const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
+const BOT_REPORT_DATA_ORIGIN = typeof __BOT_REPORT_DATA_ORIGIN__ === "string" ? __BOT_REPORT_DATA_ORIGIN__ : "";
 const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const RUNTIME_LOG_DETAIL_KEYS = new Set([
@@ -1152,6 +1154,16 @@ async function hydrateReportSdkIconsForHistory(report) {
   return hydrateReportSdkIcons(report);
 }
 
+async function hydrateReportSdkIconImagesForRender(report) {
+  try {
+    const { hydrateReportSdkIconImages } = await loadReportSdkMetadataModule();
+    await hydrateReportSdkIconImages(report);
+  } catch {
+    // SDK icons are visual metadata; the report should still render if generated chunks fail to load.
+  }
+  return report;
+}
+
 function loadReportSdkMetadataModule() {
   if (!runtime.reportSdkMetadataModulePromise) {
     runtime.reportSdkMetadataModulePromise = import("./app/sdk-icon-cache.js")
@@ -1209,6 +1221,11 @@ function scheduleReportSdkRuleDetailHydration(report) {
 }
 
 function resolveInitialLocale() {
+  const urlLocale = new URLSearchParams(window.location.search).get("lang");
+  if (urlLocale) {
+    return normalizeLocale(urlLocale);
+  }
+
   const browserLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
     ? navigator.languages
     : [navigator.language];
@@ -1251,6 +1268,7 @@ appendRuntimeLog("info", "WebUI ready", {
   version: APP_VERSION,
   locale: state.locale,
 });
+void loadBotReportFromUrlIfPresent();
 
 function bindEvents() {
   elements.modeChipGroup.addEventListener("click", handleModeChipGroupClick);
@@ -3537,6 +3555,11 @@ async function analyzeDownloadUrl() {
       return;
     }
 
+    await hydrateReportSdkIconImagesForRender(payload.report);
+    if (!state.jobs.has(jobId)) {
+      return;
+    }
+
     state.jobs.delete(jobId);
     state.activeAnalyzeJobId = null;
     state.linkAbortController = null;
@@ -3595,6 +3618,59 @@ async function analyzeDownloadUrl() {
       ...getClientErrorTelemetryFields(error),
     });
   }
+}
+
+function loadBotReportFromUrlIfPresent() {
+  const reportUrl = getBotReportUrlFromLocation();
+  if (!reportUrl) {
+    return;
+  }
+
+  void import("./app/bot-report-loader.js")
+    .then(({ loadBotReportFromUrl }) => loadBotReportFromUrl([
+      reportUrl,
+      state,
+      elements,
+      t,
+      cancelLcappsReportActivation,
+      finishAnalysis,
+      getClientErrorTelemetryFields,
+      getElapsedMs,
+      getErrorMessage,
+      getReportAnalyticsFields,
+      hideError,
+      preloadReportRenderer,
+      renderLinkStatus,
+      renderReport,
+      renderSelectedFile,
+      revealReportHeroAfterAnalysis,
+      scheduleHistoryReportSave,
+      scheduleReportSdkRuleDetailHydration,
+      hydrateReportSdkIconImagesForRender,
+      setAppMode,
+      setBusy,
+      showError,
+      showProgress,
+      startTimer,
+      trackWebEvent,
+      updateClearButton,
+    ]))
+    .catch((error) => {
+      showError(getErrorMessage(error) || t("unknownError"));
+      trackWebEvent("webui.bot_report.failed", {
+        result: "error",
+        input_source: "bot",
+        ...getClientErrorTelemetryFields(error),
+      });
+    });
+}
+
+function getBotReportUrlFromLocation() {
+  return resolveBotReportUrlFromLocation(
+    window.location.search,
+    BOT_REPORT_DATA_ORIGIN,
+    state.locale,
+  );
 }
 
 function ensureWorker() {

@@ -7,6 +7,7 @@ const repoDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workerConfigPath = resolve(repoDir, "packages/bot-worker/wrangler.toml");
 const webuiDir = resolve(repoDir, "packages/apk-webui");
 const webuiDistDir = resolve(webuiDir, "dist");
+const pagesProjectName = "tgbot-apk-webui";
 const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 const wranglerBin = resolve(repoDir, "node_modules/.bin", process.platform === "win32" ? "wrangler.cmd" : "wrangler");
 
@@ -17,14 +18,20 @@ process.on("unhandledRejection", (error) => {
   fail(error instanceof Error ? error.message : String(error));
 });
 
+const previewPagesBranch = resolvePreviewBranch();
+
 const TARGETS = {
   preview: {
     workerEnv: "preview",
-    pagesBranch: resolvePreviewBranch(),
+    pagesBranch: previewPagesBranch,
+    workerUrl: normalizeOptionalUrl(process.env.PREVIEW_WORKER_URL, "PREVIEW_WORKER_URL"),
+    webuiUrl: resolvePreviewWebUiUrl(previewPagesBranch),
   },
   production: {
     workerEnv: "production",
     pagesBranch: "main",
+    workerUrl: normalizeOptionalUrl(process.env.WORKER_URL, "WORKER_URL"),
+    webuiUrl: normalizeOptionalUrl(process.env.WEBUI_SITE_URL, "WEBUI_SITE_URL"),
   },
 };
 
@@ -42,9 +49,9 @@ if (!existsSync(wranglerBin)) {
 
 if (!options["skip-preflight"]) {
   await run(npmBin, ["run", "check"]);
-  await run(npmBin, ["run", "pages:build"]);
+  await run(npmBin, ["run", "pages:build"], { env: buildWebUiBuildEnv(target) });
   await run(npmBin, ["run", "perf:check"]);
-  await runWorkerDryRun(target.workerEnv);
+  await runWorkerDryRun(target);
 }
 
 if (options["preflight-only"]) {
@@ -52,7 +59,15 @@ if (options["preflight-only"]) {
   process.exit(0);
 }
 
-requireDeployEnvironment(targetName);
+if (options["skip-preflight"]) {
+  if (!options["worker-only"]) {
+    await run(npmBin, ["run", "pages:build"], { env: buildWebUiBuildEnv(target) });
+  } else if (!options["pages-only"]) {
+    await run(npmBin, ["run", "generated:generate"]);
+  }
+}
+
+requireDeployEnvironment(targetName, target);
 
 if (!options["pages-only"]) {
   await run(wranglerBin, [
@@ -61,6 +76,7 @@ if (!options["pages-only"]) {
     workerConfigPath,
     "--env",
     target.workerEnv,
+    ...buildWorkerDeployArgs(target),
   ]);
 }
 
@@ -72,21 +88,23 @@ if (!options["worker-only"]) {
     "pages",
     "deploy",
     "dist",
-    "--project-name=tgbot-apk-webui",
+    `--project-name=${pagesProjectName}`,
     `--branch=${target.pagesBranch}`,
   ], { cwd: webuiDir });
+  await ensurePagesCustomDomain(target);
 }
 
 process.stdout.write(`Cloudflare ${targetName} deploy finished.\n`);
 
-async function runWorkerDryRun(workerEnv) {
+async function runWorkerDryRun(targetValue) {
   const output = await run(wranglerBin, [
     "deploy",
     "--config",
     workerConfigPath,
     "--env",
-    workerEnv,
+    targetValue.workerEnv,
     "--dry-run",
+    ...buildWorkerDeployArgs(targetValue),
   ], { capture: true });
 
   const match = output.match(/Total Upload:\s+([\d.]+)\s+KiB\s+\/\s+gzip:\s+([\d.]+)\s+KiB/u);
@@ -112,8 +130,143 @@ async function runWorkerDryRun(workerEnv) {
   );
 }
 
-function requireDeployEnvironment(targetNameValue) {
+function buildWorkerDeployArgs(targetValue) {
+  const args = [];
+  if (targetValue.workerUrl) {
+    args.push(
+      "--domain",
+      targetValue.workerUrl.hostname,
+      "--var",
+      `PUBLIC_WEBHOOK_URL:${targetValue.workerUrl.origin}`,
+    );
+  }
+
+  if (targetValue.webuiUrl) {
+    args.push(
+      "--var",
+      `WEBUI_SITE_URL:${targetValue.webuiUrl.origin}`,
+    );
+  }
+
+  return args;
+}
+
+function buildWebUiBuildEnv(targetValue) {
+  const env = {};
+
+  if (targetValue.webuiUrl) {
+    env.WEBUI_SITE_ORIGIN = targetValue.webuiUrl.origin;
+    env.WEBUI_SITE_URL = targetValue.webuiUrl.origin;
+  }
+
+  if (targetValue.workerUrl) {
+    env.BOT_REPORT_DATA_ORIGIN = targetValue.workerUrl.origin;
+  }
+
+  return env;
+}
+
+async function ensurePagesCustomDomain(targetValue) {
+  if (!targetValue.webuiUrl || targetValue.webuiUrl.hostname.endsWith(".pages.dev")) {
+    return;
+  }
+
+  const hostname = targetValue.webuiUrl.hostname;
+  const domains = await cloudflareApi(
+    `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(pagesProjectName)}/domains`,
+  );
+
+  if ((domains || []).some((domain) => domain?.name === hostname)) {
+    process.stdout.write(`Pages custom domain already registered: ${hostname}\n`);
+    return;
+  }
+
+  const domain = await cloudflareApi(
+    `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(pagesProjectName)}/domains`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name: hostname }),
+    },
+  );
+  process.stdout.write(`Registered Pages custom domain: ${domain?.name || hostname}\n`);
+  logPagesCustomDomainDnsHint(targetValue, hostname);
+}
+
+function logPagesCustomDomainDnsHint(targetValue, hostname) {
+  if (targetValue.workerEnv !== "preview") {
+    return;
+  }
+
+  const targetHostname = `${toPagesPreviewAlias(targetValue.pagesBranch)}.${pagesProjectName}.pages.dev`;
+  if (hostname === targetHostname) {
+    return;
+  }
+
+  process.stdout.write(
+    `Preview branch DNS target: ${hostname} CNAME ${targetHostname} (proxied)\n`,
+  );
+}
+
+async function cloudflareApi(pathname, options = {}) {
+  const response = await fetch(`https://api.cloudflare.com/client/v4${pathname}`, {
+    method: options.method || "GET",
+    headers: {
+      authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+      ...(options.body ? { "content-type": "application/json" } : {}),
+    },
+    body: options.body,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.success) {
+    const message = data?.errors?.map((error) => error.message).filter(Boolean).join("; ")
+      || `HTTP ${response.status}`;
+    fail(`Cloudflare API request failed: ${message}`);
+  }
+  return data.result;
+}
+
+function resolvePreviewWebUiUrl(pagesBranch) {
+  const configured = normalizeOptionalUrl(process.env.PREVIEW_WEBUI_SITE_URL, "PREVIEW_WEBUI_SITE_URL");
+  if (configured) {
+    return configured;
+  }
+
+  return new URL(`https://${toPagesPreviewAlias(pagesBranch)}.${pagesProjectName}.pages.dev`);
+}
+
+function toPagesPreviewAlias(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "") || "preview";
+}
+
+function normalizeOptionalUrl(value, envName) {
+  if (!value) {
+    return undefined;
+  }
+
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    fail(`${envName} must be an HTTPS origin URL, for example https://example.com`);
+  }
+  if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash) {
+    fail(`${envName} must be an HTTPS origin URL, for example https://example.com`);
+  }
+  return url;
+}
+
+function requireDeployEnvironment(targetNameValue, targetValue) {
   const required = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"];
+  if (!targetValue.workerUrl) {
+    required.push(targetNameValue === "preview" ? "PREVIEW_WORKER_URL" : "WORKER_URL");
+  }
+  if (!targetValue.webuiUrl) {
+    required.push(targetNameValue === "preview" ? "PREVIEW_WEBUI_SITE_URL" : "WEBUI_SITE_URL");
+  }
   const missing = required.filter((name) => !process.env[name]);
   if (missing.length) {
     fail(`Missing Cloudflare deploy environment for ${targetNameValue}: ${missing.join(", ")}`);
@@ -153,7 +306,7 @@ function run(command, args, options = {}) {
     const spawnSpec = resolveSpawnSpec(command, args);
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: options.cwd || repoDir,
-      env: process.env,
+      env: { ...process.env, ...(options.env || {}) },
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
     });
     let output = "";

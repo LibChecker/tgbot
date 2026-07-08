@@ -69,7 +69,7 @@ const ANALYTICS_PRIVATE_TELEMETRY_KEYS = new Set([
 ]);
 
 export function createRequestTelemetryContext(request, url, env) {
-  const versionMetadata = env.CF_VERSION_METADATA || {};
+  const versionMetadata = env?.CF_VERSION_METADATA || {};
 
   return compactObject({
     surface: "worker",
@@ -283,8 +283,8 @@ function classifyRoute(pathname) {
     return "telegram_webhook";
   }
 
-  if (pathname === "/report") {
-    return "report_viewer";
+  if (pathname === "/report-data") {
+    return "report_data";
   }
 
   if (pathname === "/upload") {

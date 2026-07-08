@@ -71,52 +71,55 @@ def main() -> int:
         return 0
 
     rules_ref = parse_rules_ref(sys.argv[1:])
-    rules_root = build_rules_bundle_root(rules_ref)
-    rule_db_url = f"{rules_root}/assets/lcrules/rules.db"
-    icon_res_map_url = (
-        f"{rules_root}/java/com/absinthe/rulesbundle/IconResMap.kt"
-    )
-    drawable_base_url = f"{rules_root}/res/drawable"
-
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     temp_rule_db_path: Path | None = None
 
     try:
-        temp_rule_db_path = download_rule_db_to_temp(rule_db_url)
         print(f"Using LibChecker-Rules-Bundle ref: {rules_ref}")
-        icon_map_text = fetch_text(icon_res_map_url)
-        icon_index_map, single_color_indexes = parse_icon_res_map(icon_map_text)
-        rules = load_rules(temp_rule_db_path, icon_index_map, single_color_indexes)
-        detail_count = attach_rule_details(rules, DEFAULT_RULE_DETAILS_REF)
-        icon_names = sorted(
-            {
-                rule["iconName"]
-                for rule in rules
-                if rule.get("iconName")
-            }
-        )
-        icon_svgs = {}
-        placeholder_svg = None
-
-        for icon_name in icon_names:
-            svg = MANUAL_SVGS.get(icon_name)
-            if svg is None:
-                xml_text = fetch_text(f"{drawable_base_url}/{icon_name}.xml")
-                svg = convert_vector_xml_to_svg(xml_text, icon_name)
-            if icon_name == "ic_sdk_placeholder":
-                placeholder_svg = svg
-            icon_svgs[icon_name] = svg
-
-        if placeholder_svg:
-            for icon_name, svg in list(icon_svgs.items()):
-                if not svg:
-                    icon_svgs[icon_name] = placeholder_svg
-
-        if len(icon_svgs) < MIN_EXPECTED_SDK_ICON_COUNT:
-            raise ValueError(
-                f"parsed only {len(icon_svgs)} SDK icons from IconResMap; "
-                "update parse_icon_res_map for the upstream format"
+        archive_bytes = fetch_bytes(build_rules_bundle_archive_url(rules_ref))
+        with zipfile.ZipFile(BytesIO(archive_bytes)) as rules_archive:
+            temp_rule_db_path = write_rule_db_to_temp(
+                read_archive_bytes(rules_archive, "library/src/main/assets/lcrules/rules.db")
             )
+            icon_map_text = read_archive_text(
+                rules_archive,
+                "library/src/main/java/com/absinthe/rulesbundle/IconResMap.kt",
+            )
+            icon_index_map, single_color_indexes = parse_icon_res_map(icon_map_text)
+            rules = load_rules(temp_rule_db_path, icon_index_map, single_color_indexes)
+            detail_count = attach_rule_details(rules, DEFAULT_RULE_DETAILS_REF)
+            icon_names = sorted(
+                {
+                    rule["iconName"]
+                    for rule in rules
+                    if rule.get("iconName")
+                }
+            )
+            icon_svgs = {}
+            placeholder_svg = None
+
+            for icon_name in icon_names:
+                svg = MANUAL_SVGS.get(icon_name)
+                if svg is None:
+                    xml_text = read_archive_text(
+                        rules_archive,
+                        f"library/src/main/res/drawable/{icon_name}.xml",
+                    )
+                    svg = convert_vector_xml_to_svg(xml_text, icon_name)
+                if icon_name == "ic_sdk_placeholder":
+                    placeholder_svg = svg
+                icon_svgs[icon_name] = svg
+
+            if placeholder_svg:
+                for icon_name, svg in list(icon_svgs.items()):
+                    if not svg:
+                        icon_svgs[icon_name] = placeholder_svg
+
+            if len(icon_svgs) < MIN_EXPECTED_SDK_ICON_COUNT:
+                raise ValueError(
+                    f"parsed only {len(icon_svgs)} SDK icons from IconResMap; "
+                    "update parse_icon_res_map for the upstream format"
+                )
     except Exception as exc:
         print(f"Failed to sync rules bundle from GitHub: {exc}", file=sys.stderr)
         return 1
@@ -154,20 +157,19 @@ def parse_rules_ref(args: list[str]) -> str:
     raise SystemExit("Usage: python packages/shared/scripts/generate_libchecker_bundle.py [--ref <branch|tag|commit>]")
 
 
-def build_rules_bundle_root(rules_ref: str) -> str:
+def build_rules_bundle_archive_url(rules_ref: str) -> str:
     return (
-        "https://raw.githubusercontent.com/"
-        f"LibChecker/LibChecker-Rules-Bundle/{rules_ref}/library/src/main"
+        "https://github.com/LibChecker/LibChecker-Rules-Bundle/archive/"
+        f"{quote(rules_ref, safe='/')}.zip"
     )
 
 
-def download_rule_db_to_temp(rule_db_url: str) -> Path:
+def write_rule_db_to_temp(rule_db_bytes: bytes) -> Path:
     fd, temp_path = tempfile.mkstemp(prefix="libchecker-rules-", suffix=".db")
     os.close(fd)
     db_path = Path(temp_path)
 
-    with urllib.request.urlopen(rule_db_url) as response:  # noqa: S310 - trusted upstream input
-        db_path.write_bytes(response.read())
+    db_path.write_bytes(rule_db_bytes)
 
     return db_path
 
@@ -189,6 +191,18 @@ def fetch_text(url: str) -> str:
 def fetch_bytes(url: str) -> bytes:
     with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 - trusted upstream input
         return response.read()
+
+
+def read_archive_text(archive: zipfile.ZipFile, relative_path: str) -> str:
+    return read_archive_bytes(archive, relative_path).decode("utf-8")
+
+
+def read_archive_bytes(archive: zipfile.ZipFile, relative_path: str) -> bytes:
+    suffix = f"/{relative_path.lstrip('/')}"
+    for item in archive.infolist():
+        if not item.is_dir() and item.filename.endswith(suffix):
+            return archive.read(item)
+    raise FileNotFoundError(relative_path)
 
 
 def parse_icon_res_map(text: str) -> tuple[dict[int, str], set[int]]:
@@ -252,6 +266,13 @@ def run_self_test() -> None:
     new_map, new_single_color = parse_icon_res_map(new_format)
     assert new_map == {0: "ic_lib_zero", 1: "ic_lib_one"}
     assert new_single_color == {-1, 1}
+
+    archive_buffer = BytesIO()
+    with zipfile.ZipFile(archive_buffer, "w") as archive:
+        archive.writestr("repo-main/library/src/main/file.txt", "ok")
+    with zipfile.ZipFile(BytesIO(archive_buffer.getvalue())) as archive:
+        assert read_archive_text(archive, "library/src/main/file.txt") == "ok"
+
     print("generate_libchecker_bundle self-test passed")
 
 
