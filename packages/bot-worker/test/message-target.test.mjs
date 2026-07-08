@@ -7,6 +7,7 @@ const {
   buildLinkReplyMarkup,
   buildWebUiReportUrl,
   formatSdkMarkerSummary,
+  stripTelegramCustomEmojiTags,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
@@ -203,4 +204,11 @@ test("targeted group messages still expose group identity in analytics telemetry
 
   assert.equal(fields.chat_title, "LibChecker Group");
   assert.equal(fields.chat_username, "@libchecker_group");
+});
+
+test("custom emoji fallback keeps the readable SDK summary text", () => {
+  assert.equal(
+    stripTelegramCustomEmojiTags('<tg-emoji emoji-id="123456">🔹</tg-emoji> <code>Android</code>'),
+    '🔹 <code>Android</code>',
+  );
 });

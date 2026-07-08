@@ -2013,14 +2013,24 @@ async function downloadTelegramFile(env, fileId, locale = undefined) {
 }
 
 async function sendText(env, chatId, text, replyToMessageId, replyMarkup = undefined) {
-  await telegramApi(env, "sendMessage", {
+  const payload = {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
     reply_to_message_id: replyToMessageId,
     reply_markup: replyMarkup,
-  });
+  };
+
+  try {
+    await telegramApi(env, "sendMessage", payload);
+  } catch (error) {
+    const fallbackText = stripTelegramCustomEmojiTags(text);
+    if (fallbackText === text) {
+      throw error;
+    }
+    await telegramApi(env, "sendMessage", { ...payload, text: fallbackText });
+  }
 }
 
 async function sendChatAction(env, chatId, action) {
@@ -2037,32 +2047,42 @@ async function telegramApi(env, method, payload, locale = undefined) {
     headers: JSON_CONTENT_HEADERS,
     body: JSON.stringify(payload),
   });
+  const text = await response.text();
+  const data = tryParseJson(text);
 
   if (!response.ok) {
+    const description = data?.description || text.trim();
     logErrorEvent(env, { surface: "worker", route: "telegram_api" }, "telegram.api.failed", {
       command: method,
       telegram_method: method,
       http_status: response.status,
       duration_ms: Date.now() - startedAt,
+      error_message: description || null,
       result: "error",
     });
     const { t } = createI18n(locale);
-    throw new Error(t("errors.telegram_api_request_failed", { method, status: response.status }));
+    const error = new Error(description || t("errors.telegram_api_request_failed", { method, status: response.status }));
+    error.status = response.status;
+    error.method = method;
+    throw error;
   }
 
-  const data = await response.json();
-  if (!data.ok) {
+  if (!data?.ok) {
     logWarnEvent(env, { surface: "worker", route: "telegram_api" }, "telegram.api.failed", {
       command: method,
       telegram_method: method,
       http_status: response.status,
       duration_ms: Date.now() - startedAt,
-      error_code: data.error_code || null,
+      error_code: data?.error_code || null,
       error_name: "TelegramApiResultError",
+      error_message: data?.description || text.trim() || null,
       result: "error",
     });
     const { t } = createI18n(locale);
-    throw new Error(data.description || t("errors.telegram_api_result_failed", { method }));
+    const error = new Error(data?.description || t("errors.telegram_api_result_failed", { method }));
+    error.status = response.status;
+    error.method = method;
+    throw error;
   }
 
   logInfoEvent(env, { surface: "worker", route: "telegram_api" }, "telegram.api.succeeded", {
@@ -2343,6 +2363,18 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function stripTelegramCustomEmojiTags(text) {
+  return String(text).replaceAll(/<tg-emoji\b[^>]*>([\s\S]*?)<\/tg-emoji>/gu, "$1");
+}
+
+function tryParseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 function getErrorMessage(error) {
   if (error instanceof Error) {
     return error.message;
@@ -2450,6 +2482,7 @@ export const __botWorkerTestInternals = {
   buildWebUiReportUrl,
   formatApkSummary,
   formatSdkMarkerSummary,
+  stripTelegramCustomEmojiTags,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
