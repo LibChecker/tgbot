@@ -21,12 +21,12 @@ const TARGETS = {
   preview: {
     workerEnv: "preview",
     pagesBranch: resolvePreviewBranch(),
-    workerUrl: normalizeOptionalUrl(process.env.PREVIEW_WORKER_URL),
+    workerUrl: normalizeOptionalUrl(process.env.PREVIEW_WORKER_URL, "PREVIEW_WORKER_URL"),
   },
   production: {
     workerEnv: "production",
     pagesBranch: "main",
-    workerUrl: undefined,
+    workerUrl: normalizeOptionalUrl(process.env.WORKER_URL, "WORKER_URL"),
   },
 };
 
@@ -129,7 +129,7 @@ function buildWorkerDeployArgs(targetValue) {
   ];
 }
 
-function normalizeOptionalUrl(value) {
+function normalizeOptionalUrl(value, envName) {
   if (!value) {
     return undefined;
   }
@@ -138,10 +138,10 @@ function normalizeOptionalUrl(value) {
   try {
     url = new URL(value);
   } catch {
-    fail("PREVIEW_WORKER_URL must be an HTTPS origin URL, for example https://preview.example.com");
+    fail(`${envName} must be an HTTPS origin URL, for example https://example.com`);
   }
   if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash) {
-    fail("PREVIEW_WORKER_URL must be an HTTPS origin URL, for example https://preview.example.com");
+    fail(`${envName} must be an HTTPS origin URL, for example https://example.com`);
   }
   return url;
 }

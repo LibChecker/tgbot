@@ -2,12 +2,10 @@ name = "tgbot"
 main = "src/index.js"
 compatibility_date = "2026-04-12"
 workers_dev = false
-routes = [
-  { pattern = "lcbot.absinthe.life", custom_domain = true }
-]
+routes = []
 
 [vars]
-PUBLIC_WEBHOOK_URL = "https://lcbot.absinthe.life"
+PUBLIC_WEBHOOK_URL = ""
 
 [observability]
 enabled = true
@@ -43,13 +41,11 @@ dataset = "Libchecker_TG_Bot_Preview"
 [env.production]
 name = "tgbot"
 workers_dev = false
-routes = [
-  { pattern = "lcbot.absinthe.life", custom_domain = true }
-]
+routes = []
 
 [env.production.vars]
 APP_ENV = "production"
-PUBLIC_WEBHOOK_URL = "https://lcbot.absinthe.life"
+PUBLIC_WEBHOOK_URL = ""
 
 [env.production.observability]
 enabled = true

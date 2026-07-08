@@ -63,7 +63,7 @@ jobs:
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
       TEST_TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TEST_TELEGRAM_WEBHOOK_SECRET }}
       TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
-      PREVIEW_WORKER_URL: ${{ vars.PREVIEW_WORKER_URL }}
+      PREVIEW_WORKER_URL: ${{ vars.PREVIEW_WORKER_URL || secrets.PREVIEW_WORKER_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -100,7 +100,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TEST_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TEST_TELEGRAM_WEBHOOK_SECRET || secrets.TELEGRAM_WEBHOOK_SECRET }}
-          PUBLIC_WEBHOOK_URL: ${{ env.PREVIEW_WORKER_URL }}
+          PUBLIC_WEBHOOK_URL: ${{ vars.PREVIEW_WORKER_URL || secrets.PREVIEW_WORKER_URL }}
         run: npm run webhook:set -- --direct-telegram
 
   deploy_production:
@@ -118,6 +118,7 @@ jobs:
       ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
       TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
+      WORKER_URL: ${{ vars.WORKER_URL || secrets.WORKER_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -135,7 +136,7 @@ jobs:
 
       - name: Validate production deployment secrets
         run: |
-          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets: ' + missing.join(', ')); process.exit(1); }"
+          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN','WORKER_URL'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
 
       - name: Build WebUI assets
         run: npm run pages:build
@@ -150,4 +151,6 @@ jobs:
           rm .cloudflare-secrets.json
 
       - name: Register Telegram webhook
+        env:
+          PUBLIC_WEBHOOK_URL: ${{ vars.WORKER_URL || secrets.WORKER_URL }}
         run: npm run webhook:set -- --direct-telegram

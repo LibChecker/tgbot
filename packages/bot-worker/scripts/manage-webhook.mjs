@@ -43,7 +43,9 @@ const actionHandlers = {
       options["webhook-url"] ||
         process.env.WEBHOOK_URL ||
         (directTelegram
-          ? process.env.PUBLIC_WEBHOOK_URL || readPublicWebhookUrlFromWrangler()
+          ? process.env.PUBLIC_WEBHOOK_URL ||
+            process.env.WORKER_URL ||
+            readPublicWebhookUrlFromWrangler()
           : undefined),
     );
     const dropPendingUpdates = getBooleanFlag(
@@ -55,7 +57,7 @@ const actionHandlers = {
       requireBotToken();
       if (!webhookUrl) {
         fail(
-          "Missing webhook URL. Set WEBHOOK_URL, PUBLIC_WEBHOOK_URL, or configure PUBLIC_WEBHOOK_URL in wrangler.toml.",
+          "Missing webhook URL. Set WEBHOOK_URL, PUBLIC_WEBHOOK_URL, WORKER_URL, or configure PUBLIC_WEBHOOK_URL in wrangler.toml.",
         );
       }
 

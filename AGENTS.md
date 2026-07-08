@@ -66,6 +66,7 @@
 - Do not deploy or change Cloudflare/Telegram webhook state unless the user explicitly asks.
 - Preview bot deployments must use `TEST_BOT_TOKEN` for `tgbot-preview`; do not point the production `BOT_TOKEN` webhook at preview.
 - Preview custom domains must come from `PREVIEW_WORKER_URL`; do not hard-code private preview hostnames in repo config or workflows.
+- Production custom domains must come from `WORKER_URL`; do not hard-code private production hostnames in repo config or workflows.
 - In this sandbox, `git add` and `git commit` may need escalation because writing `.git/index.lock` is blocked. Confirm staged diff boundaries before escalating.
 - Preflight success requires every check table row, especially `npm run perf:check` size budgets, to be `OK`. Treat any `FAIL` budget row as a real preflight failure even if later logs include Wrangler dry-run output.
 - Wrangler can emit non-fatal `EPERM` log-write warnings under sandboxed macOS paths. Treat these as noise only when command exit status is 0, the preflight reports passed, and all budget/check rows are `OK`.

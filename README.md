@@ -103,7 +103,7 @@ npm run deploy:setup
 The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.toml`:
 
 - `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, and uses `TEST_BOT_TOKEN` for preview bot testing.
-- `production`: deploys `tgbot` to `lcbot.absinthe.life`, uses `Libchecker_TG_Bot`, and sets `PUBLIC_WEBHOOK_URL=https://lcbot.absinthe.life`.
+- `production`: deploys `tgbot`, binds the custom domain from repository variable `WORKER_URL`, uses `Libchecker_TG_Bot`, and injects that URL as `PUBLIC_WEBHOOK_URL`.
 
 ## Web UI Deployment
 
@@ -212,7 +212,7 @@ Optional repository secret:
 Optional repository variable:
 
 - `PREVIEW_WORKER_URL`, the full preview Worker URL used for the preview custom domain and test bot webhook.
-- `WORKER_URL`
+- `WORKER_URL`, the full production Worker URL used for the production custom domain and bot webhook.
 
 ## Project Layout
 
