@@ -37,7 +37,8 @@ const dryRun = getBooleanOption("dry-run") || getBooleanOption("check");
 const botToken = options["bot-token"] || process.env.BOT_TOKEN;
 const ownerId = options["owner-id"] || process.env.TELEGRAM_STICKER_OWNER_ID;
 const botUsername = normalizeBotUsername(options["bot-username"] || process.env.TELEGRAM_BOT_USERNAME);
-const setBase = normalizeSetBase(options["set-base"] || process.env.TELEGRAM_SDK_EMOJI_SET_BASE);
+const requestedSetBase = normalizeSetBase(options["set-base"] || process.env.TELEGRAM_SDK_EMOJI_SET_BASE);
+const setBase = buildVersionedSetBase(requestedSetBase);
 const setTitle = normalizeText(options["set-title"] || process.env.TELEGRAM_SDK_EMOJI_SET_TITLE) || DEFAULT_SET_TITLE;
 
 if (options["render-check"]) {
@@ -67,7 +68,7 @@ if (!username) {
 
 const sourceIcons = getSourceIcons(LIBCHECKER_SDK_ICON_SVGS);
 const storedManifest = kvConfig ? await readKvManifest(kvConfig) : null;
-const manifest = normalizeManifest(storedManifest);
+const manifest = filterManifestForSetBase(normalizeManifest(storedManifest), username, setBase);
 const shouldReadRemoteState = Boolean(botToken);
 const remoteState = shouldReadRemoteState
   ? await getRemoteSetState(botToken, manifest.sets, {
@@ -1076,6 +1077,47 @@ function buildSetName(base, botUsername, index) {
   return `${nameBase.slice(0, maxBaseLength).replace(/_+$/u, "")}${suffix}`;
 }
 
+function buildVersionedSetBase(base) {
+  return normalizeSetBase(`${base}_${stickerFormat}_v${STICKER_RENDER_VERSION}`);
+}
+
+function filterManifestForSetBase(manifest, botUsername, setBase) {
+  const filteredIcons = Object.entries(manifest.icons || {})
+    .filter(([, entry]) => isSetNameForSetBase(entry?.setName, botUsername, setBase));
+  const sets = new Map(
+    (manifest.sets || [])
+      .filter((set) => isSetNameForSetBase(set?.name, botUsername, setBase))
+      .map((set) => [set.name, { ...set }]),
+  );
+  for (const [, entry] of filteredIcons) {
+    if (entry?.setName && !sets.has(entry.setName)) {
+      sets.set(entry.setName, { name: entry.setName, title: entry.setName });
+    }
+  }
+  return {
+    ...manifest,
+    sets: [...sets.values()],
+    icons: Object.fromEntries(filteredIcons),
+  };
+}
+
+function isSetNameForSetBase(setName, botUsername, setBase) {
+  const name = normalizeText(setName);
+  const username = normalizeBotUsername(botUsername);
+  if (!name || !username) {
+    return false;
+  }
+  const suffix = `_by_${username}`;
+  if (!name.endsWith(suffix)) {
+    return false;
+  }
+  const prefix = name.slice(0, -suffix.length);
+  if (prefix === setBase) {
+    return true;
+  }
+  return prefix.startsWith(`${setBase}_`) && /^\d+$/u.test(prefix.slice(setBase.length + 1));
+}
+
 function normalizeSetBase(value) {
   const normalized = normalizeText(value || DEFAULT_SET_BASE)
     .toLowerCase()
@@ -1247,6 +1289,21 @@ function runSelfTest() {
   assert(plan.sets.length === 2, "rollover creates a second sticker set");
   assert(plan.actions.filter((action) => action.type === "create").length === 2, "first sticker in each set creates it");
   assert(plan.actions.filter((action) => action.type === "add").length === 199, "remaining stickers are appended");
+  const currentSetBase = buildVersionedSetBase("libchecker_sdk");
+  const currentSetName = buildSetName(currentSetBase, "examplebot", 1);
+  const legacySetName = buildSetName("libchecker_sdk", "examplebot", 1);
+  const filteredManifest = filterManifestForSetBase(normalizeManifest({
+    sets: [
+      { name: legacySetName, title: "Legacy SDK Icons" },
+      { name: currentSetName, title: "Current SDK Icons" },
+    ],
+    icons: {
+      ic_lib_test_000: { setName: legacySetName, stickerFileId: "legacy_file", customEmojiId: "legacy_custom" },
+      ic_lib_test_001: { setName: currentSetName, stickerFileId: "current_file", customEmojiId: "current_custom" },
+    },
+  }), "examplebot", currentSetBase);
+  assert(!filteredManifest.icons.ic_lib_test_000, "legacy sticker set mappings are ignored");
+  assert(filteredManifest.icons.ic_lib_test_001?.customEmojiId === "current_custom", "current sticker set mappings are kept");
 
   const oldSetName = "libchecker_sdk_by_examplebot";
   const incompatibleSticker = stickerFormat === "animated"
