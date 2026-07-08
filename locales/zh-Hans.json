@@ -57,7 +57,8 @@
     "features": "特性: {value}",
     "open_report_hint": "完整报告请使用下方按钮打开。",
     "sdk_summary_native": "原生库 <b>{count}</b>",
-    "sdk_summary_components": "组件 <b>{count}</b>"
+    "sdk_summary_components": "组件 <b>{count}</b>",
+    "sdk_summary_more": "另有 <b>{count}</b> 个"
   },
   "errors": {
     "unknown": "未知错误",
