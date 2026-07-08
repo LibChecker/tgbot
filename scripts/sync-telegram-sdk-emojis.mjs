@@ -1118,6 +1118,10 @@ function buildAddEmojiUrl(setName) {
   return `https://t.me/addemoji/${encodeURIComponent(setName)}`;
 }
 
+function buildAddStickerUrl(setName) {
+  return `https://t.me/addstickers/${encodeURIComponent(setName)}`;
+}
+
 function buildVersionedSetBase(base) {
   return normalizeSetBase(`${base}_${stickerFormat}_v${STICKER_RENDER_VERSION}`);
 }
@@ -1230,14 +1234,22 @@ function hashText(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function getPlanSetNames(plan) {
+  return [...new Set((plan.actions || [])
+    .map((action) => action.setName || action.current?.setName)
+    .filter(Boolean))];
+}
+
 function printPlan(plan, { dryRun, kvKey }) {
   const summary = plan.actions.reduce((counts, action) => {
     counts[action.type] = (counts[action.type] || 0) + 1;
     return counts;
   }, {});
-  const addEmojiUrls = plan.sets.map((set) => buildAddEmojiUrl(set.name));
+  const setNames = getPlanSetNames(plan);
+  const addEmojiUrls = setNames.map((setName) => buildAddEmojiUrl(setName));
+  const addStickerUrls = setNames.map((setName) => buildAddStickerUrl(setName));
   process.stdout.write(`${dryRun ? "dry-run " : ""}telegram sdk emoji sync\n`);
-  process.stdout.write(`${JSON.stringify({ format: stickerFormat, setBase, addEmojiUrls, ...summary, sets: plan.sets.length, kvKey }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ format: stickerFormat, setBase, addEmojiUrls, addStickerUrls, ...summary, sets: setNames.length, kvKey }, null, 2)}\n`);
 }
 
 async function runRenderCheck() {
@@ -1337,6 +1349,10 @@ function runSelfTest() {
     buildAddEmojiUrl(currentSetName) === `https://t.me/addemoji/${currentSetName}`,
     "sync output includes the actual addemoji set link",
   );
+  assert(
+    buildAddStickerUrl(currentSetName) === `https://t.me/addstickers/${currentSetName}`,
+    "sync output includes the official addstickers set link",
+  );
   const legacySetName = buildSetName("libchecker_sdk", "examplebot", 1);
   const filteredManifest = filterManifestForSetBase(normalizeManifest({
     sets: [
@@ -1400,6 +1416,8 @@ function runSelfTest() {
   });
   assert(deletedSetPlan.actions[0].type === "create", "deleted sticker sets are recreated instead of kept");
   assert(deletedSetPlan.actions[0].setName !== oldSetName, "deleted sticker sets do not reuse stale set names");
+  assert(!getPlanSetNames(deletedSetPlan).includes(oldSetName), "printed set links omit deleted manifest-only sets");
+  assert(getPlanSetNames(deletedSetPlan).includes(deletedSetPlan.actions[0].setName), "printed set links include the actual replacement set");
 
   const missingStickerPlan = buildSyncPlan({
     sourceIcons: sourceIcons.slice(0, 1),
