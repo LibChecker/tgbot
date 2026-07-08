@@ -43,7 +43,7 @@ const botToken = options["bot-token"] || process.env.BOT_TOKEN;
 const ownerId = options["owner-id"] || process.env.TELEGRAM_STICKER_OWNER_ID;
 const botUsername = normalizeBotUsername(options["bot-username"] || process.env.TELEGRAM_BOT_USERNAME);
 const requestedSetBase = normalizeSetBase(options["set-base"] || process.env.TELEGRAM_SDK_EMOJI_SET_BASE);
-const setBase = buildVersionedSetBase(requestedSetBase);
+const setBase = requestedSetBase;
 const setTitle = normalizeText(options["set-title"] || process.env.TELEGRAM_SDK_EMOJI_SET_TITLE) || DEFAULT_SET_TITLE;
 
 if (options["render-check"]) {
@@ -181,17 +181,27 @@ function buildSyncPlan({
   const counts = new Map(remoteCounts);
   const actions = [];
   const replaceCursors = new Map();
+  const resetSetNames = new Set();
   const hasRemoteObservations = (remoteSetStickers?.size || 0) > 0;
   const hasRemoteSetState = (setName) => remoteSetStickers?.has(setName) || false;
-  const isCurrentRemoteSet = (setName) => hasRemoteSetState(setName) && isRemoteSetCurrentFormat(remoteSetStickers.get(setName));
+  for (const [setName, stickers] of remoteSetStickers || []) {
+    if (Array.isArray(stickers) && !isRemoteSetCurrentFormat(stickers)) {
+      resetSetNames.add(setName);
+      counts.set(setName, 0);
+    }
+  }
+  const isCurrentRemoteSet = (setName) => hasRemoteSetState(setName) && !resetSetNames.has(setName) && isRemoteSetCurrentFormat(remoteSetStickers.get(setName));
   const remoteSetHasSticker = (setName, stickerFileId) => {
     if (!hasRemoteObservations || !stickerFileId) {
       return true;
     }
+    if (resetSetNames.has(setName)) {
+      return false;
+    }
     const stickers = remoteSetStickers?.get(setName);
     return Array.isArray(stickers) && stickers.some((sticker) => sticker?.file_id === stickerFileId);
   };
-  const isWritableSet = (setName) => !hasRemoteSetState(setName) || isCurrentRemoteSet(setName);
+  const isWritableSet = (setName) => !hasRemoteSetState(setName) || resetSetNames.has(setName) || remoteSetStickers.get(setName) === null || isCurrentRemoteSet(setName);
 
   for (const icon of sourceIcons) {
     const current = manifest.icons[icon.name];
@@ -207,8 +217,8 @@ function buildSyncPlan({
     }
 
     const set = selectWritableSet({ sets, counts, botUsername, setBase, setTitle, isWritableSet });
-    const remoteStickers = remoteSetStickers?.get(set.name) || [];
-    const hasRemoteSet = remoteSetStickers?.has(set.name);
+    const remoteStickers = resetSetNames.has(set.name) ? [] : remoteSetStickers?.get(set.name) || [];
+    const hasRemoteSet = !resetSetNames.has(set.name) && remoteSetStickers?.has(set.name) && remoteSetStickers.get(set.name) !== null;
     const replaceCursor = replaceCursors.get(set.name) || 0;
     if (replaceCursor < remoteStickers.length) {
       const sticker = remoteStickers[replaceCursor];
@@ -236,7 +246,7 @@ function buildSyncPlan({
     counts.set(set.name, (counts.get(set.name) || 0) + 1);
   }
 
-  return { actions, sets: [...sets.values()] };
+  return { actions, sets: [...sets.values()], resetSetNames: [...resetSetNames] };
 }
 
 function selectWritableSet({ sets, counts, botUsername, setBase, setTitle, isWritableSet = () => true }) {
@@ -261,6 +271,15 @@ function selectWritableSet({ sets, counts, botUsername, setBase, setTitle, isWri
 async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {}) {
   const updated = normalizeManifest(manifest);
   updated.sets = plan.sets;
+
+  for (const setName of plan.resetSetNames || []) {
+    await callTelegramJson(botToken, "deleteStickerSet", { name: setName });
+    for (const [iconName, entry] of Object.entries(updated.icons)) {
+      if (entry?.setName === setName) {
+        delete updated.icons[iconName];
+      }
+    }
+  }
 
   for (const action of plan.actions) {
     if (action.type === "keep") {
@@ -1122,9 +1141,6 @@ function buildAddStickerUrl(setName) {
   return `https://t.me/addstickers/${encodeURIComponent(setName)}`;
 }
 
-function buildVersionedSetBase(base) {
-  return normalizeSetBase(`${base}_${stickerFormat}_v${STICKER_RENDER_VERSION}`);
-}
 
 function filterManifestForSetBase(manifest, botUsername, setBase) {
   const filteredIcons = Object.entries(manifest.icons || {})
@@ -1248,8 +1264,9 @@ function printPlan(plan, { dryRun, kvKey }) {
   const setNames = getPlanSetNames(plan);
   const addEmojiUrls = setNames.map((setName) => buildAddEmojiUrl(setName));
   const addStickerUrls = setNames.map((setName) => buildAddStickerUrl(setName));
+  const reset = plan.resetSetNames?.length || undefined;
   process.stdout.write(`${dryRun ? "dry-run " : ""}telegram sdk emoji sync\n`);
-  process.stdout.write(`${JSON.stringify({ format: stickerFormat, setBase, addEmojiUrls, addStickerUrls, ...summary, sets: setNames.length, kvKey }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ format: stickerFormat, setBase, addEmojiUrls, addStickerUrls, reset, ...summary, sets: setNames.length, kvKey }, null, 2)}\n`);
 }
 
 async function runRenderCheck() {
@@ -1343,7 +1360,7 @@ function runSelfTest() {
   assert(plan.sets.length === 2, "rollover creates a second sticker set");
   assert(plan.actions.filter((action) => action.type === "create").length === 2, "first sticker in each set creates it");
   assert(plan.actions.filter((action) => action.type === "add").length === 199, "remaining stickers are appended");
-  const currentSetBase = buildVersionedSetBase("libchecker_sdk");
+  const currentSetBase = normalizeSetBase("libchecker_sdk");
   const currentSetName = buildSetName(currentSetBase, "examplebot", 1);
   assert(
     buildAddEmojiUrl(currentSetName) === `https://t.me/addemoji/${currentSetName}`,
@@ -1364,8 +1381,7 @@ function runSelfTest() {
       ic_lib_test_001: { setName: currentSetName, stickerFileId: "current_file", customEmojiId: "current_custom" },
     },
   }), "examplebot", currentSetBase);
-  assert(!filteredManifest.icons.ic_lib_test_000, "legacy sticker set mappings are ignored");
-  assert(filteredManifest.icons.ic_lib_test_001?.customEmojiId === "current_custom", "current sticker set mappings are kept");
+  assert(filteredManifest.icons.ic_lib_test_000?.customEmojiId === "legacy_custom", "stable sticker set mappings are kept");
 
   const oldSetName = "libchecker_sdk_by_examplebot";
   const incompatibleSticker = stickerFormat === "animated"
@@ -1391,8 +1407,9 @@ function runSelfTest() {
     setTitle: "LibChecker SDK Icons",
     remoteCounts: new Map([[oldSetName, 1]]),
   });
-  assert(migrationPlan.actions[0].type === "create", "format migration creates a fresh sticker set");
-  assert(migrationPlan.actions.every((action) => action.setName !== oldSetName), "format migration skips incompatible sticker sets");
+  assert(migrationPlan.actions[0].type === "create", "format migration recreates the sticker set");
+  assert(migrationPlan.actions.every((action) => action.setName === oldSetName), "format migration keeps the stable sticker set name");
+  assert(migrationPlan.resetSetNames.includes(oldSetName), "format migration deletes incompatible existing sticker sets before recreating them");
 
   const deletedSetPlan = buildSyncPlan({
     sourceIcons: sourceIcons.slice(0, 1),
@@ -1415,9 +1432,9 @@ function runSelfTest() {
     remoteCounts: new Map([[oldSetName, 0]]),
   });
   assert(deletedSetPlan.actions[0].type === "create", "deleted sticker sets are recreated instead of kept");
-  assert(deletedSetPlan.actions[0].setName !== oldSetName, "deleted sticker sets do not reuse stale set names");
-  assert(!getPlanSetNames(deletedSetPlan).includes(oldSetName), "printed set links omit deleted manifest-only sets");
-  assert(getPlanSetNames(deletedSetPlan).includes(deletedSetPlan.actions[0].setName), "printed set links include the actual replacement set");
+  assert(deletedSetPlan.actions[0].setName === oldSetName, "deleted sticker sets reuse the stable set name");
+  assert(!deletedSetPlan.resetSetNames.includes(oldSetName), "missing sticker sets do not need deletion before recreation");
+  assert(getPlanSetNames(deletedSetPlan).includes(oldSetName), "printed set links include the stable replacement set");
 
   const missingStickerPlan = buildSyncPlan({
     sourceIcons: sourceIcons.slice(0, 1),
