@@ -79,6 +79,7 @@
 - Runtime generated files live under `packages/shared/src/generated/` and are ignored by git. Do not hand-edit them.
 - Scripts usually run `generated:generate` before checks/builds. If locale or generated-source behavior changes, run `npm run i18n:check` or `npm run check`.
 - LibChecker rules/icons are large generated assets. Use `npm run generated:refresh` or `npm run rules:update` only when intentionally refreshing those bundles.
+- Keep LibChecker rules/icon generation archive-based, not one raw.githubusercontent.com request per file; GitHub Actions can hit HTTP 429 during fresh builds.
 - LibChecker upstream rule metadata can change shape. Keep `generate_libchecker_bundle.py` compatible with current `IconResMap.kt` formats and fail fast on suspiciously low icon counts instead of letting Web UI perf budgets catch empty generated chunks.
 - Do not add custom metadata fields to Crowdin JSON locale files; the generator expects string trees. For brand names, file extensions, protocol names, JSON field names, SDK/ABI/signing terms, and other non-translatable Web UI constants, use runtime constants such as `NON_TRANSLATABLE_MESSAGES` in `packages/apk-webui/src/app/i18n.js`.
 - If using the Crowdin Translator MCP, it is configured as a remote MCP with `CROWDIN_API_TOKEN`; running Codex sessions may need a restart before a newly added MCP appears.
