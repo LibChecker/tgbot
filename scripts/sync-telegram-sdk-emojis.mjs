@@ -16,9 +16,9 @@ const DEFAULT_EMOJI = "🔹";
 const STICKER_EMOJI_SIZE = 100;
 const STICKER_SVG_DENSITY = 384;
 const TGS_CANVAS_SIZE = 512;
-const STICKER_RENDER_VERSION = 4;
+const STICKER_RENDER_VERSION = 5;
 const MONOCHROME_ICON_COLOR = "#74777F";
-const DEFAULT_STICKER_FORMAT = "static";
+const DEFAULT_STICKER_FORMAT = "animated";
 const STICKER_FORMATS = new Set(["animated", "static"]);
 const TELEGRAM_MAX_RETRIES = 8;
 const TELEGRAM_RETRY_BUFFER_SECONDS = 1;
@@ -129,11 +129,14 @@ function refreshManifestFromRemote(manifest, sourceIcons, remoteState) {
       }
 
       const previous = refreshed.icons[icon.name] || {};
+      if (previous.stickerFileId || previous.customEmojiId) {
+        continue;
+      }
       refreshed.icons[icon.name] = {
         setName: set.name,
         stickerFileId: sticker.file_id,
-        customEmojiId: sticker.custom_emoji_id || previous.customEmojiId || "",
-        sha256: isRemoteStickerCurrentFormat(sticker) ? icon.sha256 : previous.sha256 || "",
+        customEmojiId: sticker.custom_emoji_id || "",
+        sha256: "",
         updatedAt: previous.updatedAt || new Date().toISOString(),
       };
     }
@@ -171,16 +174,24 @@ function buildSyncPlan({
   const hasRemoteObservations = (remoteSetStickers?.size || 0) > 0;
   const hasRemoteSetState = (setName) => remoteSetStickers?.has(setName) || false;
   const isCurrentRemoteSet = (setName) => hasRemoteSetState(setName) && isRemoteSetCurrentFormat(remoteSetStickers.get(setName));
+  const remoteSetHasSticker = (setName, stickerFileId) => {
+    if (!hasRemoteObservations || !stickerFileId) {
+      return true;
+    }
+    const stickers = remoteSetStickers?.get(setName);
+    return Array.isArray(stickers) && stickers.some((sticker) => sticker?.file_id === stickerFileId);
+  };
   const isWritableSet = (setName) => !hasRemoteSetState(setName) || isCurrentRemoteSet(setName);
 
   for (const icon of sourceIcons) {
     const current = manifest.icons[icon.name];
-    if (current?.customEmojiId && current.sha256 === icon.sha256 && (!hasRemoteObservations || isCurrentRemoteSet(current.setName))) {
+    const currentStickerExists = remoteSetHasSticker(current?.setName, current?.stickerFileId);
+    if (current?.customEmojiId && current.sha256 === icon.sha256 && (!hasRemoteObservations || isCurrentRemoteSet(current.setName)) && currentStickerExists) {
       actions.push({ type: "keep", icon, current });
       continue;
     }
 
-    if (current?.stickerFileId && current.setName && (!hasRemoteObservations || isCurrentRemoteSet(current.setName))) {
+    if (current?.stickerFileId && current.setName && (!hasRemoteObservations || isCurrentRemoteSet(current.setName)) && currentStickerExists) {
       actions.push({ type: "replace", icon, current, setName: current.setName });
       continue;
     }
@@ -1237,54 +1248,105 @@ function runSelfTest() {
   assert(plan.actions.filter((action) => action.type === "create").length === 2, "first sticker in each set creates it");
   assert(plan.actions.filter((action) => action.type === "add").length === 199, "remaining stickers are appended");
 
-  if (stickerFormat === "static") {
-    const oldSetName = "libchecker_sdk_by_examplebot";
-    const migrationPlan = buildSyncPlan({
-      sourceIcons: sourceIcons.slice(0, 2),
-      manifest: normalizeManifest({
-        sets: [{ name: oldSetName, title: "Old SDK Icons" }],
-        icons: {
-          ic_lib_test_000: {
-            setName: oldSetName,
-            stickerFileId: "old_file",
-            customEmojiId: "old_custom",
-            sha256: "old_hash",
-          },
+  const oldSetName = "libchecker_sdk_by_examplebot";
+  const incompatibleSticker = stickerFormat === "animated"
+    ? { file_id: "old_file", is_animated: false, is_video: false }
+    : { file_id: "old_file", is_animated: true, is_video: false };
+  const migrationPlan = buildSyncPlan({
+    sourceIcons: sourceIcons.slice(0, 2),
+    manifest: normalizeManifest({
+      sets: [{ name: oldSetName, title: "Old SDK Icons" }],
+      icons: {
+        ic_lib_test_000: {
+          setName: oldSetName,
+          stickerFileId: "old_file",
+          customEmojiId: "old_custom",
+          sha256: "old_hash",
         },
-      }),
-      remoteSetInfos: [{ name: oldSetName, title: "Old SDK Icons" }],
-      remoteSetStickers: new Map([[oldSetName, [{ file_id: "old_file", is_animated: true }]]]),
-      botUsername: "examplebot",
-      setBase: "libchecker_sdk",
-      setTitle: "LibChecker SDK Icons",
-      remoteCounts: new Map([[oldSetName, 1]]),
-    });
-    assert(migrationPlan.actions[0].type === "create", "format migration creates a fresh sticker set");
-    assert(migrationPlan.actions.every((action) => action.setName !== oldSetName), "format migration skips incompatible sticker sets");
+      },
+    }),
+    remoteSetInfos: [{ name: oldSetName, title: "Old SDK Icons" }],
+    remoteSetStickers: new Map([[oldSetName, [incompatibleSticker]]]),
+    botUsername: "examplebot",
+    setBase: "libchecker_sdk",
+    setTitle: "LibChecker SDK Icons",
+    remoteCounts: new Map([[oldSetName, 1]]),
+  });
+  assert(migrationPlan.actions[0].type === "create", "format migration creates a fresh sticker set");
+  assert(migrationPlan.actions.every((action) => action.setName !== oldSetName), "format migration skips incompatible sticker sets");
 
-    const deletedSetPlan = buildSyncPlan({
-      sourceIcons: sourceIcons.slice(0, 1),
-      manifest: normalizeManifest({
-        sets: [{ name: oldSetName, title: "Old SDK Icons" }],
-        icons: {
-          ic_lib_test_000: {
-            setName: oldSetName,
-            stickerFileId: "deleted_file",
-            customEmojiId: "deleted_custom",
-            sha256: "0",
-          },
+  const deletedSetPlan = buildSyncPlan({
+    sourceIcons: sourceIcons.slice(0, 1),
+    manifest: normalizeManifest({
+      sets: [{ name: oldSetName, title: "Old SDK Icons" }],
+      icons: {
+        ic_lib_test_000: {
+          setName: oldSetName,
+          stickerFileId: "deleted_file",
+          customEmojiId: "deleted_custom",
+          sha256: "0",
         },
-      }),
-      remoteSetInfos: [{ name: oldSetName, title: "Old SDK Icons" }],
-      remoteSetStickers: new Map([[oldSetName, null]]),
-      botUsername: "examplebot",
-      setBase: "libchecker_sdk",
-      setTitle: "LibChecker SDK Icons",
-      remoteCounts: new Map([[oldSetName, 0]]),
-    });
-    assert(deletedSetPlan.actions[0].type === "create", "deleted sticker sets are recreated instead of kept");
-    assert(deletedSetPlan.actions[0].setName !== oldSetName, "deleted sticker sets do not reuse stale set names");
-  }
+      },
+    }),
+    remoteSetInfos: [{ name: oldSetName, title: "Old SDK Icons" }],
+    remoteSetStickers: new Map([[oldSetName, null]]),
+    botUsername: "examplebot",
+    setBase: "libchecker_sdk",
+    setTitle: "LibChecker SDK Icons",
+    remoteCounts: new Map([[oldSetName, 0]]),
+  });
+  assert(deletedSetPlan.actions[0].type === "create", "deleted sticker sets are recreated instead of kept");
+  assert(deletedSetPlan.actions[0].setName !== oldSetName, "deleted sticker sets do not reuse stale set names");
+
+  const missingStickerPlan = buildSyncPlan({
+    sourceIcons: sourceIcons.slice(0, 1),
+    manifest: normalizeManifest({
+      sets: [{ name: oldSetName, title: "Old SDK Icons" }],
+      icons: {
+        ic_lib_test_000: {
+          setName: oldSetName,
+          stickerFileId: "missing_file",
+          customEmojiId: "missing_custom",
+          sha256: "0",
+        },
+      },
+    }),
+    remoteSetInfos: [{ name: oldSetName, title: "Old SDK Icons" }],
+    remoteSetStickers: new Map([[oldSetName, []]]),
+    botUsername: "examplebot",
+    setBase: "libchecker_sdk",
+    setTitle: "LibChecker SDK Icons",
+    remoteCounts: new Map([[oldSetName, 0]]),
+  });
+  assert(missingStickerPlan.actions[0].type === "add", "missing remote stickers are re-added instead of kept");
+
+  const currentFormatSticker = {
+    file_id: "remote_file",
+    custom_emoji_id: "remote_custom",
+    is_animated: stickerFormat === "animated",
+    is_video: false,
+  };
+  const inferredManifest = refreshManifestFromRemote(normalizeManifest({}), sourceIcons.slice(0, 1), {
+    sets: [{ name: oldSetName, title: "Old SDK Icons" }],
+    stickersBySet: new Map([[oldSetName, [currentFormatSticker]]]),
+  });
+  assert(inferredManifest.icons.ic_lib_test_000.sha256 === "", "remote order inferences are marked stale");
+
+  const preservedManifest = refreshManifestFromRemote(normalizeManifest({
+    sets: [{ name: oldSetName, title: "Old SDK Icons" }],
+    icons: {
+      ic_lib_test_000: {
+        setName: oldSetName,
+        stickerFileId: "manifest_file",
+        customEmojiId: "manifest_custom",
+        sha256: "manifest_hash",
+      },
+    },
+  }), sourceIcons.slice(0, 1), {
+    sets: [{ name: oldSetName, title: "Old SDK Icons" }],
+    stickersBySet: new Map([[oldSetName, [currentFormatSticker]]]),
+  });
+  assert(preservedManifest.icons.ic_lib_test_000.stickerFileId === "manifest_file", "remote order refresh does not overwrite existing manifest mappings");
 
   assert(
     isTelegramStickerAlreadyDeletedError(createTelegramApiError("replaceStickerInSet", "Bad Request: STICKER_ALREADY_DELETED", { status: 400, retryAfter: 0 })),
