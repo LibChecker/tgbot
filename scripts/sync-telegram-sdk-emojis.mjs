@@ -25,6 +25,7 @@ const TELEGRAM_RETRY_BUFFER_SECONDS = 1;
 
 const [, , ...argv] = process.argv;
 const options = parseArgs(argv);
+const stickerFormat = normalizeStickerFormat(options["sticker-format"] || process.env.TELEGRAM_SDK_EMOJI_FORMAT);
 
 if (options["self-test"]) {
   runSelfTest();
@@ -38,7 +39,6 @@ const ownerId = options["owner-id"] || process.env.TELEGRAM_STICKER_OWNER_ID;
 const botUsername = normalizeBotUsername(options["bot-username"] || process.env.TELEGRAM_BOT_USERNAME);
 const setBase = normalizeSetBase(options["set-base"] || process.env.TELEGRAM_SDK_EMOJI_SET_BASE);
 const setTitle = normalizeText(options["set-title"] || process.env.TELEGRAM_SDK_EMOJI_SET_TITLE) || DEFAULT_SET_TITLE;
-const stickerFormat = normalizeStickerFormat(options["sticker-format"] || process.env.TELEGRAM_SDK_EMOJI_FORMAT);
 
 if (options["render-check"]) {
   await runRenderCheck();
@@ -118,6 +118,9 @@ function refreshManifestFromRemote(manifest, sourceIcons, remoteState) {
 
   for (const set of remoteSets) {
     const stickers = stickersBySet.get(set.name) || [];
+    if (!isRemoteSetCurrentFormat(stickers)) {
+      continue;
+    }
     for (const sticker of stickers) {
       const icon = sourceIcons[iconIndex];
       iconIndex += 1;
@@ -147,6 +150,10 @@ function isRemoteStickerCurrentFormat(sticker) {
   return !sticker?.is_animated && !sticker?.is_video;
 }
 
+function isRemoteSetCurrentFormat(stickers) {
+  return (stickers || []).every((sticker) => isRemoteStickerCurrentFormat(sticker));
+}
+
 function buildSyncPlan({
   sourceIcons,
   manifest,
@@ -161,6 +168,7 @@ function buildSyncPlan({
   const counts = new Map(remoteCounts);
   const actions = [];
   const replaceCursors = new Map();
+  const isWritableSet = (setName) => !remoteSetStickers?.has(setName) || isRemoteSetCurrentFormat(remoteSetStickers.get(setName));
 
   for (const icon of sourceIcons) {
     const current = manifest.icons[icon.name];
@@ -169,12 +177,12 @@ function buildSyncPlan({
       continue;
     }
 
-    if (current?.stickerFileId && current.setName) {
+    if (current?.stickerFileId && current.setName && isWritableSet(current.setName)) {
       actions.push({ type: "replace", icon, current, setName: current.setName });
       continue;
     }
 
-    const set = selectWritableSet({ sets, counts, botUsername, setBase, setTitle });
+    const set = selectWritableSet({ sets, counts, botUsername, setBase, setTitle, isWritableSet });
     const remoteStickers = remoteSetStickers?.get(set.name) || [];
     const hasRemoteSet = remoteSetStickers?.has(set.name);
     const replaceCursor = replaceCursors.get(set.name) || 0;
@@ -207,8 +215,11 @@ function buildSyncPlan({
   return { actions, sets: [...sets.values()] };
 }
 
-function selectWritableSet({ sets, counts, botUsername, setBase, setTitle }) {
+function selectWritableSet({ sets, counts, botUsername, setBase, setTitle, isWritableSet = () => true }) {
   for (const set of sets.values()) {
+    if (!isWritableSet(set.name)) {
+      continue;
+    }
     if ((counts.get(set.name) || 0) < SET_CAPACITY) {
       return set;
     }
@@ -235,6 +246,14 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
 
     const stickerFile = await renderStickerFile(action.icon);
     const inputSticker = buildInputSticker(action.icon.name, stickerFile.name);
+    const addSticker = async () => {
+      await callTelegramMultipart(botToken, "addStickerToSet", {
+        user_id: ownerId,
+        name: action.setName,
+        sticker: inputSticker,
+      }, [stickerFile]);
+      return getStickerAt(botToken, action.setName, -1);
+    };
     let sticker;
 
     if (action.type === "create") {
@@ -247,22 +266,28 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
       }, [stickerFile]);
       sticker = await getStickerAt(botToken, action.setName, 0);
     } else if (action.type === "add") {
-      await callTelegramMultipart(botToken, "addStickerToSet", {
-        user_id: ownerId,
-        name: action.setName,
-        sticker: inputSticker,
-      }, [stickerFile]);
-      sticker = await getStickerAt(botToken, action.setName, -1);
+      sticker = await addSticker();
     } else if (action.type === "replace") {
       const before = await callTelegramJson(botToken, "getStickerSet", { name: action.setName });
-      const index = Math.max(0, before.stickers.findIndex((item) => item.file_id === action.current.stickerFileId));
-      await callTelegramMultipart(botToken, "replaceStickerInSet", {
-        user_id: ownerId,
-        name: action.setName,
-        old_sticker: action.current.stickerFileId,
-        sticker: inputSticker,
-      }, [stickerFile]);
-      sticker = await getStickerAt(botToken, action.setName, index);
+      const index = before.stickers.findIndex((item) => item.file_id === action.current.stickerFileId);
+      if (index < 0) {
+        sticker = await addSticker();
+      } else {
+        try {
+          await callTelegramMultipart(botToken, "replaceStickerInSet", {
+            user_id: ownerId,
+            name: action.setName,
+            old_sticker: action.current.stickerFileId,
+            sticker: inputSticker,
+          }, [stickerFile]);
+          sticker = await getStickerAt(botToken, action.setName, index);
+        } catch (error) {
+          if (!isTelegramStickerAlreadyDeletedError(error)) {
+            throw error;
+          }
+          sticker = await addSticker();
+        }
+      }
     }
 
     updated.icons[action.icon.name] = {
@@ -1025,6 +1050,10 @@ function createTelegramApiError(method, message, { status, retryAfter }) {
   return error;
 }
 
+function isTelegramStickerAlreadyDeletedError(error) {
+  return error?.name === "TelegramApiError" && String(error.message || "").includes("STICKER_ALREADY_DELETED");
+}
+
 function buildSetName(base, botUsername, index) {
   const suffix = `_by_${botUsername}`;
   const nameBase = index <= 1 ? base : `${base}_${index}`;
@@ -1203,6 +1232,41 @@ function runSelfTest() {
   assert(plan.sets.length === 2, "rollover creates a second sticker set");
   assert(plan.actions.filter((action) => action.type === "create").length === 2, "first sticker in each set creates it");
   assert(plan.actions.filter((action) => action.type === "add").length === 199, "remaining stickers are appended");
+
+  if (stickerFormat === "static") {
+    const oldSetName = "libchecker_sdk_by_examplebot";
+    const migrationPlan = buildSyncPlan({
+      sourceIcons: sourceIcons.slice(0, 2),
+      manifest: normalizeManifest({
+        sets: [{ name: oldSetName, title: "Old SDK Icons" }],
+        icons: {
+          ic_lib_test_000: {
+            setName: oldSetName,
+            stickerFileId: "old_file",
+            customEmojiId: "old_custom",
+            sha256: "old_hash",
+          },
+        },
+      }),
+      remoteSetInfos: [{ name: oldSetName, title: "Old SDK Icons" }],
+      remoteSetStickers: new Map([[oldSetName, [{ file_id: "old_file", is_animated: true }]]]),
+      botUsername: "examplebot",
+      setBase: "libchecker_sdk",
+      setTitle: "LibChecker SDK Icons",
+      remoteCounts: new Map([[oldSetName, 1]]),
+    });
+    assert(migrationPlan.actions[0].type === "create", "format migration creates a fresh sticker set");
+    assert(migrationPlan.actions.every((action) => action.setName !== oldSetName), "format migration skips incompatible sticker sets");
+  }
+
+  assert(
+    isTelegramStickerAlreadyDeletedError(createTelegramApiError("replaceStickerInSet", "Bad Request: STICKER_ALREADY_DELETED", { status: 400, retryAfter: 0 })),
+    "deleted sticker replace errors are detected",
+  );
+  assert(
+    !isTelegramStickerAlreadyDeletedError(createTelegramApiError("addStickerToSet", "Bad Request: wrong file type", { status: 400, retryAfter: 0 })),
+    "unrelated Telegram errors are not swallowed",
+  );
 
   assert(
     normalizeStickerSvg('<svg><path fill="#000000" d="M0,0" /></svg>').includes(`fill="${MONOCHROME_ICON_COLOR}"`),
