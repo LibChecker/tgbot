@@ -1114,6 +1114,10 @@ function buildSetName(base, botUsername, index) {
   return `${nameBase.slice(0, maxBaseLength).replace(/_+$/u, "")}${suffix}`;
 }
 
+function buildAddEmojiUrl(setName) {
+  return `https://t.me/addemoji/${encodeURIComponent(setName)}`;
+}
+
 function buildVersionedSetBase(base) {
   return normalizeSetBase(`${base}_${stickerFormat}_v${STICKER_RENDER_VERSION}`);
 }
@@ -1231,8 +1235,9 @@ function printPlan(plan, { dryRun, kvKey }) {
     counts[action.type] = (counts[action.type] || 0) + 1;
     return counts;
   }, {});
+  const addEmojiUrls = plan.sets.map((set) => buildAddEmojiUrl(set.name));
   process.stdout.write(`${dryRun ? "dry-run " : ""}telegram sdk emoji sync\n`);
-  process.stdout.write(`${JSON.stringify({ format: stickerFormat, setBase, ...summary, sets: plan.sets.length, kvKey }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ format: stickerFormat, setBase, addEmojiUrls, ...summary, sets: plan.sets.length, kvKey }, null, 2)}\n`);
 }
 
 async function runRenderCheck() {
@@ -1328,6 +1333,10 @@ function runSelfTest() {
   assert(plan.actions.filter((action) => action.type === "add").length === 199, "remaining stickers are appended");
   const currentSetBase = buildVersionedSetBase("libchecker_sdk");
   const currentSetName = buildSetName(currentSetBase, "examplebot", 1);
+  assert(
+    buildAddEmojiUrl(currentSetName) === `https://t.me/addemoji/${currentSetName}`,
+    "sync output includes the actual addemoji set link",
+  );
   const legacySetName = buildSetName("libchecker_sdk", "examplebot", 1);
   const filteredManifest = filterManifestForSetBase(normalizeManifest({
     sets: [
