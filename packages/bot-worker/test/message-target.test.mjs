@@ -6,6 +6,7 @@ import app, { __botWorkerTestInternals } from "../src/index.js";
 const {
   buildLinkReplyMarkup,
   buildWebUiReportUrl,
+  formatSdkMarkerSummary,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
@@ -101,6 +102,28 @@ test("report URLs fall back to Worker report data when WebUI is not configured",
   assert.equal(url.pathname, "/report-data");
   assert.equal(url.searchParams.get("path"), "Sample-07-08");
   assert.equal(url.searchParams.get("lang"), "zh-Hans");
+});
+
+test("SDK marker summary includes top marker labels", () => {
+  const summary = formatSdkMarkerSummary({
+    native: [
+      { key: "android", label: "Android", iconName: "ic_lib_android", count: 2 },
+      { key: "react", label: "React Native", iconName: "ic_lib_react", count: 1 },
+    ],
+    components: [
+      { key: "android", label: "Android", iconName: "ic_lib_android", count: 3 },
+    ],
+  }, (key, values = {}) => {
+    if (key === "summary.sdk_summary_native") {
+      return `Native ${values.count}`;
+    }
+    if (key === "summary.sdk_summary_components") {
+      return `Components ${values.count}`;
+    }
+    return key;
+  });
+
+  assert.equal(summary, "Native 2 · Components 1 · <code>Android</code> <code>React Native</code>");
 });
 
 test("report data route handles CORS preflight through Hono middleware", async () => {

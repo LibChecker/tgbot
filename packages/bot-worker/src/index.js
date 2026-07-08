@@ -4,6 +4,7 @@ import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
+import { SDK_ICON_CUSTOM_EMOJI_IDS } from "./sdk-emoji-map.js";
 import {
   createRequestTelemetryContext,
   extendTelemetryContext,
@@ -2148,7 +2149,40 @@ function formatSdkMarkerSummary(sdkSummary, t) {
     parts.push(t("summary.sdk_summary_components", { count: sdkSummary.components.length }));
   }
 
+  const topSdkMarkers = formatTopSdkMarkers(sdkSummary);
+  if (topSdkMarkers) {
+    parts.push(topSdkMarkers);
+  }
+
   return parts.join(" · ");
+}
+
+function formatTopSdkMarkers(sdkSummary, limit = 5) {
+  const entries = getTopSdkSummaryEntries(sdkSummary, limit);
+  return entries.map(formatSdkMarkerChip).join(" ");
+}
+
+function getTopSdkSummaryEntries(sdkSummary, limit) {
+  const merged = new Map();
+  for (const entry of [...(sdkSummary.native || []), ...(sdkSummary.components || [])]) {
+    const key = entry.key || `${entry.iconName}:${entry.label}`;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...entry });
+      continue;
+    }
+    existing.count += entry.count || 0;
+  }
+
+  return [...merged.values()]
+    .sort((left, right) => (right.count || 0) - (left.count || 0) || left.label.localeCompare(right.label))
+    .slice(0, limit);
+}
+
+function formatSdkMarkerChip(entry) {
+  const emojiId = SDK_ICON_CUSTOM_EMOJI_IDS[entry.iconName];
+  const icon = emojiId ? `<tg-emoji emoji-id="${escapeHtml(emojiId)}">🔹</tg-emoji> ` : "";
+  return `${icon}<code>${escapeHtml(entry.label)}</code>`;
 }
 
 function formatFeatureChipsHtml(buildFeatures) {
@@ -2405,6 +2439,8 @@ function getErrorStack(error) {
 export const __botWorkerTestInternals = {
   buildLinkReplyMarkup,
   buildWebUiReportUrl,
+  formatApkSummary,
+  formatSdkMarkerSummary,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
