@@ -16,7 +16,7 @@ const DEFAULT_EMOJI = "🔹";
 const STICKER_EMOJI_SIZE = 100;
 const STICKER_SVG_DENSITY = 384;
 const TGS_CANVAS_SIZE = 512;
-const STICKER_RENDER_VERSION = 3;
+const STICKER_RENDER_VERSION = 4;
 const MONOCHROME_ICON_COLOR = "#74777F";
 const DEFAULT_STICKER_FORMAT = "animated";
 const STICKER_FORMATS = new Set(["animated", "static"]);
@@ -342,9 +342,10 @@ function buildLottieFromSvg(svg, name) {
   const translateX = (TGS_CANVAS_SIZE - viewBox.width * scale) / 2 - viewBox.x * scale;
   const translateY = (TGS_CANVAS_SIZE - viewBox.height * scale) / 2 - viewBox.y * scale;
   const gradients = parseSvgGradients(svg);
+  const visibleSvg = stripSvgDefinitions(svg);
   const shapes = [];
 
-  for (const match of svg.matchAll(/<path\b([^>]*)\/?>/gu)) {
+  for (const match of visibleSvg.matchAll(/<path\b([^>]*)\/?>/gu)) {
     const attrs = parseSvgAttributes(match[1]);
     const pathData = attrs.d;
     if (!pathData) {
@@ -356,27 +357,25 @@ function buildLottieFromSvg(svg, name) {
     }
     const fill = resolveSvgPaint(attrs.fill, gradients);
     const stroke = resolveSvgPaint(attrs.stroke, gradients);
-    for (const path of paths) {
-      const items = [{ ty: "sh", ks: { a: 0, k: path }, nm: "Path", hd: false }];
-      if (fill) {
-        items.push(buildLottieFill(fill, attrs));
-      }
-      if (stroke) {
-        items.push(buildLottieStroke(stroke, attrs, scale));
-      }
-      items.push({
-        ty: "tr",
-        p: { a: 0, k: [0, 0] },
-        a: { a: 0, k: [0, 0] },
-        s: { a: 0, k: [100, 100] },
-        r: { a: 0, k: 0 },
-        o: { a: 0, k: 100 },
-        sk: { a: 0, k: 0 },
-        sa: { a: 0, k: 0 },
-        nm: "Transform",
-      });
-      shapes.push({ ty: "gr", it: items, nm: "Path Group", hd: false });
+    const items = paths.map((path) => ({ ty: "sh", ks: { a: 0, k: path }, nm: "Path", hd: false }));
+    if (fill) {
+      items.push(buildLottieFill(fill, attrs));
     }
+    if (stroke) {
+      items.push(buildLottieStroke(stroke, attrs, scale));
+    }
+    items.push({
+      ty: "tr",
+      p: { a: 0, k: [0, 0] },
+      a: { a: 0, k: [0, 0] },
+      s: { a: 0, k: [100, 100] },
+      r: { a: 0, k: 0 },
+      o: { a: 0, k: 100 },
+      sk: { a: 0, k: 0 },
+      sa: { a: 0, k: 0 },
+      nm: "Transform",
+    });
+    shapes.push({ ty: "gr", it: items, nm: "Path Group", hd: false });
   }
 
   if (shapes.length === 0) {
@@ -564,6 +563,10 @@ function parseSvgAttributes(text) {
     attrs[match[1]] = match[2];
   }
   return attrs;
+}
+
+function stripSvgDefinitions(svg) {
+  return String(svg || "").replace(/<defs\b[\s\S]*?<\/defs>/gu, "");
 }
 
 function parseSvgGradients(svg) {
@@ -1208,6 +1211,14 @@ function runSelfTest() {
   const vector = renderIconTgs('<svg viewBox="0 0 24 24"><path fill="#000000" d="M4,4L20,4L20,20L4,20Z" /></svg>', "test");
   assert(vector[0] === 0x1f && vector[1] === 0x8b, "TGS output is gzip-compressed Lottie");
   assert(vector.length < 64 * 1024, "TGS output stays inside Telegram animated sticker limit");
+
+  const clipped = buildLottieFromSvg('<svg viewBox="0 0 24 24"><defs><clipPath id="c"><path d="M0,0H24V24H0Z" /></clipPath></defs><path fill="#000000" d="M4,4H20V20H4Z" /></svg>', "clip-test");
+  assert(clipped.layers[0].shapes.length === 1, "clipPath definition paths are not rendered as visible sticker paths");
+
+  const compound = buildLottieFromSvg('<svg viewBox="0 0 24 24"><path fill="#000000" fill-rule="evenodd" d="M2,2H22V22H2Z M8,8H16V16H8Z" /></svg>', "compound-test");
+  const items = compound.layers[0].shapes[0].it;
+  assert(items.filter((item) => item.ty === "sh").length === 2, "compound path subpaths stay in one fill group");
+  assert(items.filter((item) => item.ty === "fl").length === 1, "compound path uses one shared fill");
 }
 
 function assert(condition, message) {
