@@ -60,12 +60,15 @@ test("private chats still auto-analyze direct APK links", () => {
 test("private chat report buttons use regular URLs", () => {
   const markup = buildLinkReplyMarkup(
     { id: 1, type: "private" },
-    "https://example.com/report?path=sample",
+    "https://example.com/?botReportUrl=https%3A%2F%2Fworker.example.com%2Freport-data%3Fpath%3Dsample",
     "Open report",
   );
   const button = markup.inline_keyboard[0][0];
 
-  assert.equal(button.url, "https://example.com/report?path=sample");
+  assert.equal(
+    button.url,
+    "https://example.com/?botReportUrl=https%3A%2F%2Fworker.example.com%2Freport-data%3Fpath%3Dsample",
+  );
   assert.equal(button.web_app, undefined);
 });
 

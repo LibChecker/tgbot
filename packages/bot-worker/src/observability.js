@@ -283,8 +283,8 @@ function classifyRoute(pathname) {
     return "telegram_webhook";
   }
 
-  if (pathname === "/report" || pathname === "/report-data") {
-    return "report_viewer";
+  if (pathname === "/report-data") {
+    return "report_data";
   }
 
   if (pathname === "/upload") {

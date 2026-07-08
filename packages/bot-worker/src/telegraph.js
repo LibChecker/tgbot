@@ -1,10 +1,6 @@
 import { createI18n } from "./i18n.js";
 import { logErrorEvent, logInfoEvent, logWarnEvent } from "./observability.js";
-import {
-  buildApkReportViewModel,
-  getNativeLibraryLabels,
-  getStats,
-} from "../../shared/src/report-model.js";
+import { getStats } from "../../shared/src/report-model.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 
 /** @typedef {import("../../shared/src/contracts.js").TelegramApkReport} TelegramApkReport */
@@ -49,42 +45,6 @@ let cachedAccessToken = null;
  * @param {Record<string, unknown>} env
  * @param {TelegramApkReport} report
  */
-export async function createApkTelegraphPage(env, report) {
-  const accessToken = await getTelegraphAccessToken(env);
-  const { t } = createI18n(report.locale);
-
-  try {
-    return await createTelegraphPageResilient(env, accessToken, report, t);
-  } catch (error) {
-    if (!isContentTooBigError(error)) {
-      throw error;
-    }
-  }
-
-  for (const limits of COMPACT_LEVELS) {
-    try {
-      return await createTelegraphPageResilient(env, accessToken, compactReport(report, limits), t);
-    } catch (error) {
-      if (!isContentTooBigError(error)) {
-        throw error;
-      }
-    }
-  }
-
-  try {
-    return await createTelegraphPageResilient(env, accessToken, buildMinimalReport(report), t);
-  } catch (error) {
-    if (report.apkInfo.icon?.dataUri && isContentTooBigError(error)) {
-      return createTelegraphPageResilient(env, accessToken, stripReportIcon(buildMinimalReport(report)), t);
-    }
-    throw error;
-  }
-}
-
-/**
- * @param {Record<string, unknown>} env
- * @param {TelegramApkReport} report
- */
 export async function createApkTelegraphReportDataPage(env, report) {
   const accessToken = await getTelegraphAccessToken(env);
   const candidates = buildReportDataCandidates(report);
@@ -102,7 +62,7 @@ export async function createApkTelegraphReportDataPage(env, report) {
   throw new Error("CONTENT_TOO_BIG");
 }
 
-export async function fetchTelegraphPage(path, locale = undefined, env = {}) {
+async function fetchTelegraphPage(path, locale = undefined, env = {}) {
   const startedAt = Date.now();
   const { t } = createI18n(locale);
   const normalizedPath = normalizeTelegraphPath(path);
@@ -271,18 +231,6 @@ async function telegraphApi(env, method, payload, locale = undefined) {
   return data.result;
 }
 
-async function createTelegraphPage(env, accessToken, report, t) {
-  const content = buildTelegraphContent(report, t);
-  return telegraphApi(env, "createPage", {
-    access_token: accessToken,
-    title: buildPageTitle(report, t),
-    author_name: getAuthorName(env),
-    author_url: normalizeText(env.TELEGRAPH_AUTHOR_URL) || undefined,
-    content: JSON.stringify(content),
-    return_content: false,
-  }, report.locale);
-}
-
 async function createTelegraphReportDataPage(env, accessToken, report) {
   const payload = JSON.stringify({
     version: REPORT_DATA_SCHEMA_VERSION,
@@ -298,26 +246,8 @@ async function createTelegraphReportDataPage(env, accessToken, report) {
   }, report.locale);
 }
 
-async function createTelegraphPageResilient(env, accessToken, report, t) {
-  try {
-    return await createTelegraphPage(env, accessToken, report, t);
-  } catch (error) {
-    if (report.apkInfo.icon?.dataUri && isPotentialIconContentError(error)) {
-      return createTelegraphPage(env, accessToken, stripReportIcon(report), t);
-    }
-    throw error;
-  }
-}
-
 function isContentTooBigError(error) {
   return error instanceof Error && error.message.includes("CONTENT_TOO_BIG");
-}
-
-function isPotentialIconContentError(error) {
-  return (
-    error instanceof Error &&
-    /CONTENT_FORMAT_INVALID|IMG|IMAGE|SRC/i.test(error.message)
-  );
 }
 
 function stripReportIcon(report) {
@@ -328,10 +258,6 @@ function stripReportIcon(report) {
       icon: null,
     },
   };
-}
-
-function buildPageTitle(report, t) {
-  return truncateText(normalizeText(report.apkInfo.appName) || t("report.fallback_title"), 256);
 }
 
 function buildReportDataPageTitle(report) {
@@ -372,408 +298,6 @@ function buildReportDataContent(payload) {
       ],
     },
   ];
-}
-
-function buildTelegraphContent(report, t) {
-  const model = buildTelegraphReportViewModel(report, t);
-  const featureChips = buildFeatureChips(model.summary.features, report);
-  const sections = [
-    ...(report.apkInfo.icon?.dataUri ? [appIconDataMarker(report)] : []),
-    h3(t("telegraph.apk_summary")),
-    preBlock(formatSummaryLines(model, report, t)),
-    h3(t("telegraph.file_info")),
-    preBlock(formatFileInfoLines(model)),
-    hrNode(),
-  ];
-
-  if (report.isCompacted) {
-    sections.push(paragraph(t("telegraph.report_compacted_notice")));
-  }
-
-  sections.push(h3(t("telegraph.build_features")));
-  if (featureChips.length > 0) {
-    sections.push(chipParagraph(featureChips), unorderedList(buildFeatureDetails(model.summary.features)));
-  } else {
-    sections.push(paragraph(t("telegraph.no_build_features")));
-  }
-
-  sections.push(hrNode(), h3(t("telegraph.sdk_markers")));
-  pushSdkSummarySection(sections, model.sdk.native, t("telegraph.native_sdk_markers"));
-  pushSdkSummarySection(sections, model.sdk.components, t("telegraph.component_sdk_markers"));
-  if (model.sdk.native.length === 0 && model.sdk.components.length === 0) {
-    sections.push(paragraph(t("telegraph.no_sdk_markers")));
-  }
-
-  sections.push(hrNode(), h3(t("telegraph.native_libraries")));
-  pushNativeLibraries(sections, model.native.groups, t);
-
-  sections.push(hrNode(), h3(t("telegraph.components")));
-  pushComponentGroups(sections, model.components.groups, t);
-
-  sections.push(hrNode(), h3(t("telegraph.permissions")));
-  pushPermissions(sections, model.permissions.items, t);
-
-  sections.push(hrNode(), h3(t("telegraph.signatures")));
-  pushSignatures(sections, model.signatures, t);
-
-  sections.push(hrNode(), h3(t("telegraph.application_meta_data")));
-  pushMetaDataSection(sections, model.metaData.application, t);
-
-  return sections;
-}
-
-function buildTelegraphReportViewModel(report, t) {
-  const { t: webT } = createI18n(report.locale, { scope: "webui" });
-  return buildApkReportViewModel(report, {
-    labels: getTelegraphModelLabels(t, webT),
-    featureLabels: {
-      agp: t("telegraph.feature_agp"),
-      appMetadataVersion: t("telegraph.feature_app_metadata_version"),
-      compose: t("telegraph.feature_compose"),
-      detected: t("telegraph.feature_detected"),
-      gradle: t("telegraph.feature_gradle"),
-      kotlin: t("telegraph.feature_kotlin"),
-    },
-    formatBytes,
-    formatDate: (value) => String(value || ""),
-    formatSignatureDate: (value) => String(value || t("telegraph.unknown")),
-    includeTerminalSystem: false,
-  });
-}
-
-function getTelegraphModelLabels(t, webT) {
-  return {
-    activities: webLabel(webT, "activities", "Activity"),
-    analyzedAt: webLabel(webT, "analyzedAt", "Analyzed At"),
-    appName: webLabel(webT, "appName", "App Name"),
-    compileSdk: webLabel(webT, "compileSdk", "Compile SDK"),
-    components: t("telegraph.components"),
-    duration: webLabel(webT, "duration", "Duration"),
-    fileName: webLabel(webT, "fileName", "File Name"),
-    fileSize: webLabel(webT, "fileSize", "File Size"),
-    metaData: t("telegraph.meta_data"),
-    minSdk: webLabel(webT, "minSdk", "Min SDK"),
-    nativeLibraries: t("telegraph.native_libraries"),
-    packageName: webLabel(webT, "packageName", "Package Name"),
-    permissions: t("telegraph.permissions"),
-    providers: webLabel(webT, "providers", "Provider"),
-    receivers: webLabel(webT, "receivers", "Receiver"),
-    services: webLabel(webT, "services", "Service"),
-    signatures: t("telegraph.signatures"),
-    source: t("telegraph.label_message_source"),
-    signatureAlgorithmName: webLabel(webT, "signatureAlgorithmName", "Signature Algorithm"),
-    signatureAlgorithmOid: webLabel(webT, "signatureAlgorithmOid", "Signature Algorithm OID"),
-    signatureCertificate: webLabel(
-      webT,
-      "signatureCertificate",
-      "Signature Certificate {index}",
-      { index: "{index}" },
-    ),
-    signatureCharString: webLabel(webT, "signatureCharString", "CharString"),
-    signatureDerLength: webLabel(webT, "signatureDerLength", "Certificate Size"),
-    signatureIssuer: webLabel(webT, "signatureIssuer", "Issuer"),
-    signatureMd5: webLabel(webT, "signatureMd5", "MD5"),
-    signaturePublicKeyAlgorithm: webLabel(webT, "signaturePublicKeyAlgorithm", "Public Key Algorithm"),
-    signaturePublicKeyExponent: webLabel(webT, "signaturePublicKeyExponent", "Public Key Exponent"),
-    signaturePublicKeyFormat: webLabel(webT, "signaturePublicKeyFormat", "Public Key Format"),
-    signaturePublicKeyModulus: webLabel(webT, "signaturePublicKeyModulus", "Modulus"),
-    signaturePublicKeyModulusSize: webLabel(webT, "signaturePublicKeyModulusSize", "Modulus Size"),
-    signaturePublicKeyType: webLabel(webT, "signaturePublicKeyType", "Public Key Type"),
-    signaturePublicKeyY: webLabel(webT, "signaturePublicKeyY", "Public Key Y"),
-    signatureSchemes: webLabel(webT, "signatureSchemes", "Signing Schemes"),
-    signatureSerialNumber: webLabel(webT, "signatureSerialNumber", "Serial Number"),
-    signatureSha1: webLabel(webT, "signatureSha1", "SHA1"),
-    signatureSha256: webLabel(webT, "signatureSha256", "SHA256"),
-    signatureSourceEntry: webLabel(webT, "signatureSourceEntry", "Source Entry"),
-    signatureSubject: webLabel(webT, "signatureSubject", "Subject"),
-    signatureValidFrom: webLabel(webT, "signatureValidFrom", "Valid From"),
-    signatureValidTo: webLabel(webT, "signatureValidTo", "Valid To"),
-    signatureVersion: webLabel(webT, "signatureVersion", "Version"),
-    targetSdk: webLabel(webT, "targetSdk", "Target SDK"),
-    unknown: t("telegraph.unknown"),
-    versionCode: webLabel(webT, "versionCode", "versionCode"),
-    versionName: webLabel(webT, "versionName", "versionName"),
-  };
-}
-
-function webLabel(webT, key, fallback, variables = {}) {
-  const value = webT(key, variables);
-  return value === key ? fallback : value;
-}
-
-function formatSummaryLines(model, report, t) {
-  return [
-    ...model.summary.metrics.map((item) => `${item.label}: ${item.value}`),
-    "",
-    `${t("telegraph.app_icon")}: ${formatIconSummary(report, t)}`,
-    ...model.summary.rows
-      .filter((row) => !["fileName", "fileSize", "source", "analyzedAt"].includes(row.key))
-      .map((row) => `${row.label}: ${row.value}`),
-  ];
-}
-
-function formatFileInfoLines(model) {
-  return model.summary.rows
-    .filter((row) => ["fileName", "fileSize", "source", "analyzedAt"].includes(row.key))
-    .map((row) => `${row.label}: ${row.value}`);
-}
-
-function pushNativeLibraries(sections, groups, t) {
-  if (groups.length === 0) {
-    sections.push(paragraph(t("telegraph.no_native_libraries")));
-    return;
-  }
-
-  for (const group of groups) {
-    sections.push(h4(`${group.abi} (${group.items.length})`));
-    sections.push(unorderedList(group.items.map((library) => nativeLibraryItem(library))));
-  }
-}
-
-function appIconDataMarker(report) {
-  return {
-    tag: "p",
-    children: [codeNode(`LC_APP_ICON_DATA:${report.apkInfo.icon.dataUri}`)],
-  };
-}
-
-function pushPermissions(sections, permissions, t) {
-  if (permissions.length === 0) {
-    sections.push(paragraph(t("telegraph.no_permissions")));
-    return;
-  }
-
-  sections.push(unorderedList(permissions.map((permission) => permissionItem(permission))));
-}
-
-function pushComponentGroups(sections, groups, t) {
-  for (const group of groups) {
-    pushComponentSection(sections, group.label, group.items, t);
-  }
-}
-
-function pushComponentSection(sections, title, components, t) {
-  sections.push(h4(`${title} (${components.length})`));
-
-  if (components.length === 0) {
-    sections.push(paragraph(t("telegraph.no_component", { title })));
-    return;
-  }
-
-  sections.push(unorderedList(components.map((component) => componentItem(component, t))));
-}
-
-function pushSignatures(sections, signatures, t) {
-  if (signatures.certificates.length === 0 && signatures.schemes.length === 0) {
-    sections.push(paragraph(t("telegraph.no_signatures")));
-    return;
-  }
-
-  if (signatures.schemes.length > 0) {
-    sections.push(h4(t("telegraph.signature_schemes")));
-    sections.push(chipParagraph(signatures.schemes.map((scheme) => [codeNode(scheme)])));
-  }
-
-  for (const certificate of signatures.certificates) {
-    sections.push(h4(certificate.title));
-    sections.push(unorderedList(certificate.rows.map((row) => signatureFieldItem(row))));
-  }
-}
-
-function pushMetaDataSection(sections, metaDataItems, t) {
-  if (metaDataItems.length === 0) {
-    sections.push(paragraph(t("telegraph.no_application_meta_data")));
-    return;
-  }
-
-  sections.push(unorderedList(metaDataItems.map((item) => metaDataItem(item, t))));
-}
-
-function pushSdkSummarySection(sections, entries, title) {
-  if (!entries || entries.length === 0) {
-    return;
-  }
-
-  sections.push(h4(title));
-  sections.push(unorderedList(entries.map((entry) => sdkSummaryItem(entry))));
-}
-
-function nativeLibraryItem(library) {
-  const children = [codeNode(library.name)];
-
-  if (library.sdk) {
-    children.push(brNode(), ...sdkChipNodes(library.sdk));
-  }
-
-  const labels = getNativeLibraryLabels(library).map((label) => label.text).join(" · ");
-  children.push(brNode(), emNode([
-    formatBytes(library.size),
-    labels,
-    library.path,
-  ].filter(Boolean).join(" · ")));
-
-  return {
-    tag: "li",
-    children,
-  };
-}
-
-function permissionItem(permission) {
-  return {
-    tag: "li",
-    children: [codeNode(permission)],
-  };
-}
-
-function componentItem(component, t) {
-  const children = [codeNode(component.shortName || component.name)];
-
-  if (component.shortName && component.shortName !== component.name) {
-    children.push(brNode(), emNode(component.name));
-  }
-
-  if (component.sdk) {
-    children.push(brNode(), ...sdkChipNodes(component.sdk));
-  }
-
-  const detailLines = [];
-  if (component.type === "activity-alias") {
-    detailLines.push(
-      t("telegraph.alias_target", {
-        target: component.targetActivity || t("telegraph.unknown"),
-      }),
-    );
-  }
-  if (component.authorities) {
-    detailLines.push(`authorities=${component.authorities}`);
-  }
-  if (component.permission) {
-    detailLines.push(`permission=${component.permission}`);
-  }
-  if (component.process) {
-    detailLines.push(`process=${component.process}`);
-  }
-  if (component.exported != null) {
-    detailLines.push(`exported=${component.exported}`);
-  }
-  if (component.enabled != null) {
-    detailLines.push(`enabled=${component.enabled}`);
-  }
-
-  if (detailLines.length > 0) {
-    children.push(brNode(), emNode(detailLines.join(" · ")));
-  }
-
-  return {
-    tag: "li",
-    children,
-  };
-}
-
-function metaDataItem(item, t, scopeLabel = null) {
-  const children = [];
-
-  if (scopeLabel) {
-    children.push(strongNode(scopeLabel), brNode());
-  }
-
-  children.push(codeNode(item.name), " = ", codeNode(item.value || "<empty>"));
-
-  if (item.resolvedFromResource) {
-    children.push(brNode(), emNode(t("telegraph.resource_resolved")));
-  } else if (item.hasResourceReference) {
-    children.push(brNode(), emNode(t("telegraph.resource_reference")));
-  }
-
-  return {
-    tag: "li",
-    children,
-  };
-}
-
-function buildFeatureChips(features, report) {
-  return features.map((feature) => featureChip(report.featureIcons?.[feature.key], feature.text));
-}
-
-function formatIconSummary(report, t) {
-  if (!report.apkInfo.icon?.dataUri) {
-    return t("telegraph.icon_missing");
-  }
-
-  return report.apkInfo.icon.path
-    ? t("telegraph.icon_detected_with_path", { path: report.apkInfo.icon.path })
-    : t("telegraph.icon_detected");
-}
-
-function buildFeatureDetails(features) {
-  return features.map((feature) => textLine(`${feature.name}: ${feature.value}`));
-}
-
-function sdkSummaryItem(entry) {
-  const children = [
-    imageNode(entry.iconUrl),
-    " ",
-    strongNode(entry.label),
-    " ",
-    codeNode(String(entry.count)),
-  ];
-
-  if (entry.detail) {
-    children.push(brNode(), emNode(entry.detail));
-  }
-
-  if (entry.previewItems?.length > 0) {
-    children.push(brNode(), ...codeListNodes(entry.previewItems));
-  }
-
-  return {
-    tag: "li",
-    children,
-  };
-}
-
-function sdkChipNodes(sdk) {
-  return [
-    imageNode(sdk.iconUrl),
-    " ",
-    codeNode(sdk.label),
-  ];
-}
-
-function signatureFieldItem(row) {
-  const children = [strongNode(`${row.label}: `), ...signatureFieldValueNodes(row)];
-  return {
-    tag: "li",
-    children,
-  };
-}
-
-function signatureFieldValueNodes(row) {
-  if (row.kind === "list") {
-    return codeListNodes(row.value);
-  }
-  if (row.kind === "code" || row.kind === "blockCode") {
-    return [codeNode(row.value)];
-  }
-  return [String(row.value || "")];
-}
-
-function codeListNodes(items) {
-  const children = [];
-  items.forEach((item, index) => {
-    if (index > 0) {
-      children.push(" ");
-    }
-    children.push(codeNode(item));
-  });
-  return children;
-}
-
-function textLine(text) {
-  return {
-    tag: "li",
-    children: [text],
-  };
 }
 
 function getReportStats(report) {
@@ -854,27 +378,31 @@ function stripRuleDetail(item) {
 }
 
 function compactReport(report, limits) {
+  const components = report.apkInfo.components || {};
+  const signatures = report.apkInfo.signatures || {};
+  const metaData = report.apkInfo.metaData || {};
+
   return {
     ...report,
     isCompacted: true,
     originalStats: getReportStats(report),
     apkInfo: {
       ...report.apkInfo,
-      nativeLibraries: report.apkInfo.nativeLibraries.slice(0, limits.nativeLibraries),
-      permissions: report.apkInfo.permissions.slice(0, limits.permissions),
-        components: {
-          activities: report.apkInfo.components.activities.slice(0, limits.componentsPerType),
-          services: report.apkInfo.components.services.slice(0, limits.componentsPerType),
-          receivers: report.apkInfo.components.receivers.slice(0, limits.componentsPerType),
-          providers: report.apkInfo.components.providers.slice(0, limits.componentsPerType),
-        },
-        signatures: {
-          ...report.apkInfo.signatures,
-          certificates: (report.apkInfo.signatures?.certificates || []).slice(0, limits.signatures),
-        },
-        metaData: {
-          application: report.apkInfo.metaData.application.slice(0, limits.metaData),
-          components: [],
+      nativeLibraries: (report.apkInfo.nativeLibraries || []).slice(0, limits.nativeLibraries),
+      permissions: (report.apkInfo.permissions || []).slice(0, limits.permissions),
+      components: {
+        activities: (components.activities || []).slice(0, limits.componentsPerType),
+        services: (components.services || []).slice(0, limits.componentsPerType),
+        receivers: (components.receivers || []).slice(0, limits.componentsPerType),
+        providers: (components.providers || []).slice(0, limits.componentsPerType),
+      },
+      signatures: {
+        ...signatures,
+        certificates: (signatures.certificates || []).slice(0, limits.signatures),
+      },
+      metaData: {
+        application: (metaData.application || []).slice(0, limits.metaData),
+        components: [],
       },
       sdkSummary: compactSdkSummary(report.apkInfo.sdkSummary, limits),
     },
@@ -914,106 +442,6 @@ function compactSdkSummaryEntries(entries, limits) {
     }));
 }
 
-function paragraph(text) {
-  return {
-    tag: "p",
-    children: [text],
-  };
-}
-
-function h3(text) {
-  return {
-    tag: "h3",
-    children: [text],
-  };
-}
-
-function h4(text) {
-  return {
-    tag: "h4",
-    children: [text],
-  };
-}
-
-function unorderedList(items) {
-  return {
-    tag: "ul",
-    children: items,
-  };
-}
-
-function chipParagraph(chips) {
-  const children = [];
-  chips.forEach((chip, index) => {
-    if (index > 0) {
-      children.push(" ");
-    }
-    children.push(...chip);
-  });
-
-  return {
-    tag: "p",
-    children,
-  };
-}
-
-function preBlock(lines) {
-  return {
-    tag: "pre",
-    children: [
-      {
-        tag: "code",
-        children: [lines.join("\n")],
-      },
-    ],
-  };
-}
-
-function hrNode() {
-  return { tag: "hr" };
-}
-
-function brNode() {
-  return { tag: "br" };
-}
-
-function codeNode(text) {
-  return {
-    tag: "code",
-    children: [text],
-  };
-}
-
-function imageNode(src) {
-  return {
-    tag: "img",
-    attrs: {
-      src,
-    },
-  };
-}
-
-function featureChip(iconUrl, text) {
-  return [
-    ...(iconUrl ? [imageNode(iconUrl), " "] : []),
-    codeNode(text),
-  ];
-}
-
-function strongNode(text) {
-  return {
-    tag: "strong",
-    children: [text],
-  };
-}
-
-function emNode(text) {
-  return {
-    tag: "em",
-    children: [text],
-  };
-}
-
 function normalizeText(value) {
   if (value == null) {
     return null;
@@ -1025,24 +453,6 @@ function normalizeText(value) {
 
 function truncateText(value, maxLength) {
   return value.length <= maxLength ? value : value.slice(0, maxLength);
-}
-
-function formatBytes(bytes) {
-  if (!bytes) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let index = 0;
-
-  while (value >= 1024 && index < units.length - 1) {
-    value /= 1024;
-    index += 1;
-  }
-
-  const precision = value >= 10 || index === 0 ? 0 : 1;
-  return `${value.toFixed(precision)} ${units[index]}`;
 }
 
 function findReportDataJson(content) {
@@ -1069,7 +479,6 @@ function collectNodeText(value) {
 }
 
 export const __telegraphTestInternals = {
-  buildTelegraphContent,
   buildReportDataContent,
   findReportDataJson,
   prepareReportForWebUiStorage,

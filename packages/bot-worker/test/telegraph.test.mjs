@@ -1,22 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createI18n } from "../src/i18n.js";
 import { __telegraphTestInternals } from "../src/telegraph.js";
-
-test("Instant View report content follows the shared APK report view model", () => {
-  const report = createSampleReport();
-  const { t } = createI18n("en");
-  const content = __telegraphTestInternals.buildTelegraphContent(report, t);
-  const text = collectNodeText(content);
-
-  assert.match(text, /Signatures/u);
-  assert.match(text, /SHA256/u);
-  assert.match(text, /AA:BB/u);
-  assert.match(text, /16 KB/u);
-  assert.match(text, /Kotlin 2\.0/u);
-  assert.match(text, /Android Gradle Plugin: 8\.7/u);
-});
 
 test("Telegraph report data content stores a WebUI-readable Telegram report", () => {
   const report = createSampleReport();
@@ -134,17 +119,4 @@ function createSampleReport() {
       },
     },
   };
-}
-
-function collectNodeText(value) {
-  if (Array.isArray(value)) {
-    return value.map(collectNodeText).join("\n");
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  if (!value || typeof value !== "object") {
-    return "";
-  }
-  return collectNodeText(value.children || []);
 }

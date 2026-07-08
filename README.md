@@ -224,7 +224,7 @@ packages/
     src/
       index.js       Worker entry, Telegram webhook, admin API
       apk-url-preview.js APK link preview parser
-      report-viewer.js Worker-hosted report pages
+      telegraph.js   Telegraph report data storage
       upload-view.js Worker-hosted upload page
       observability.js Logs and Analytics Engine events
     scripts/         Worker admin and webhook helpers

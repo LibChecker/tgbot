@@ -66,7 +66,7 @@ test("APK report view model keeps shared report sections aligned", () => {
   assert.equal(model.signatures.certificates[0].rows.some((row) => row.key === "sha256"), true);
 });
 
-test("native library labels are shared by WebUI and Instant View renderers", () => {
+test("native library labels are shared by WebUI report renderers", () => {
   assert.deepEqual(
     getNativeLibraryLabels({ elfPageSize: 16384, zipAlignment: 4096 }),
     [

@@ -29,7 +29,6 @@ and recurring pitfalls only.
 - Worker entry and Telegram flow: `packages/bot-worker/src/index.js`
 - APK link preview/range parsing: `packages/bot-worker/src/apk-url-preview.js`
 - Worker upload page: `packages/bot-worker/src/upload-view.js`
-- Worker legacy report page: `packages/bot-worker/src/report-viewer.js`
 - Worker Telegraph report storage: `packages/bot-worker/src/telegraph.js`
 - Web UI shell: `packages/apk-webui/src/index.html`
 - Web UI controller: `packages/apk-webui/src/app.js`
@@ -67,8 +66,8 @@ and recurring pitfalls only.
 
 - Browser file analysis runs locally in the Web UI worker.
 - Server-side URL analysis belongs at the Worker/Pages Function boundary.
-- Bot report buttons should open the Web UI. The Worker `/report` page remains
-  for legacy links.
+- Bot report buttons should open the Web UI. The Worker exposes report payloads
+  through `/report-data` only.
 - Remote APK URL preview is not a full local package analysis. APKS/APKM/XAPK
   containers may need inner APK extraction; for deflated inner APKs, return a
   clear unsupported/limited diagnostic instead of a misleading missing-manifest
@@ -123,7 +122,7 @@ and recurring pitfalls only.
   `packages/bot-worker/src/index.js`, use `context.env` and
   `context.executionCtx`, and leave heavy logic in existing modules/functions.
 - Keep remote APK URL/range preview logic in `apk-url-preview.js`.
-- Keep Worker HTML rendering in `upload-view.js` and `report-viewer.js`.
+- Keep Worker HTML rendering in `upload-view.js`.
 - Store bot report data through `telegraph.js`; keep the Web UI-facing data
   shape validated with shared contracts.
 - Use `observability.js` helpers for structured logs and Analytics Engine

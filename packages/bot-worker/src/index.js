@@ -33,7 +33,6 @@ const MANAGED_COMMAND_LANGUAGE_CODES = [null, ...SUPPORTED_LOCALES.filter((local
 
 let cachedBotIdentity = null;
 let apkUrlPreviewModulePromise = null;
-let reportViewerModulePromise = null;
 let sdkRuleAnnotatorPromise = null;
 let telegraphModulePromise = null;
 let uploadViewModulePromise = null;
@@ -72,29 +71,6 @@ app.get("/", (context) => {
       headers: TEXT_CONTENT_HEADERS,
     },
   );
-});
-
-app.get("/report", async (context) => {
-  const url = getRequestUrl(context);
-  const telemetry = getRequestTelemetry(context);
-  const startedAt = Date.now();
-  const reportPath = url.searchParams.get("path") || null;
-  const { handleReportRequest } = await loadReportViewerModule();
-  const response = await handleReportRequest(url, context.env);
-  const logFields = {
-    result: response.ok ? "success" : "error",
-    http_status: response.status,
-    report_path: reportPath,
-    duration_ms: Date.now() - startedAt,
-  };
-
-  if (response.ok) {
-    logInfoEvent(context.env, telemetry, "report.viewed", logFields);
-  } else {
-    logWarnEvent(context.env, telemetry, "report.view_failed", logFields);
-  }
-
-  return response;
 });
 
 app.use("/report-data", cors({
@@ -1835,18 +1811,6 @@ function loadApkUrlPreviewModule() {
   return apkUrlPreviewModulePromise;
 }
 
-function loadReportViewerModule() {
-  if (!reportViewerModulePromise) {
-    reportViewerModulePromise = import("./report-viewer.js")
-      .catch((error) => {
-        reportViewerModulePromise = null;
-        throw error;
-      });
-  }
-
-  return reportViewerModulePromise;
-}
-
 function loadSdkRuleAnnotator() {
   if (!sdkRuleAnnotatorPromise) {
     sdkRuleAnnotatorPromise = Promise.all([
@@ -1926,14 +1890,6 @@ async function buildApkReport(
   });
 }
 
-function buildReportViewerUrl(publicBaseUrl, path, locale) {
-  const searchParams = new URLSearchParams({
-    path: path || "",
-    lang: locale,
-  });
-  return `${publicBaseUrl}/report?${searchParams.toString()}`;
-}
-
 function buildReportDataUrl(publicBaseUrl, path, locale) {
   const searchParams = new URLSearchParams({
     path: path || "",
@@ -1945,7 +1901,7 @@ function buildReportDataUrl(publicBaseUrl, path, locale) {
 function buildWebUiReportUrl(env, publicBaseUrl, path, locale) {
   const webUiBaseUrl = resolveWebUiBaseUrl(env);
   if (!webUiBaseUrl) {
-    return buildReportViewerUrl(publicBaseUrl, path, locale);
+    return buildReportDataUrl(publicBaseUrl, path, locale);
   }
 
   const searchParams = new URLSearchParams({
