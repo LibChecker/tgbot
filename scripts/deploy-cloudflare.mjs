@@ -134,7 +134,13 @@ async function resolveSdkEmojiKvNamespaceId({ create }) {
     process.env.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_TITLE
       || process.env.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME,
   ) || DEFAULT_SDK_EMOJI_KV_NAMESPACE_TITLE;
-  const existingNamespaceId = await findKvNamespaceId(title);
+  let existingNamespaceId = "";
+  try {
+    existingNamespaceId = await findKvNamespaceId(title);
+  } catch (error) {
+    process.stderr.write(`Skipping SDK emoji KV binding: ${error instanceof Error ? error.message : String(error)}\n`);
+    return "";
+  }
   if (existingNamespaceId) {
     return existingNamespaceId;
   }
@@ -142,13 +148,20 @@ async function resolveSdkEmojiKvNamespaceId({ create }) {
     return "";
   }
 
-  const namespace = await cloudflareApi(
-    `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/storage/kv/namespaces`,
-    {
-      method: "POST",
-      body: JSON.stringify({ title }),
-    },
-  );
+  let namespace;
+  try {
+    namespace = await cloudflareApi(
+      `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/storage/kv/namespaces`,
+      {
+        method: "POST",
+        body: JSON.stringify({ title }),
+        fatal: false,
+      },
+    );
+  } catch (error) {
+    process.stderr.write(`Skipping SDK emoji KV binding: ${error instanceof Error ? error.message : String(error)}\n`);
+    return "";
+  }
   const namespaceId = normalizeText(namespace?.id);
   if (!namespaceId) {
     fail(`Cloudflare KV namespace ${title} was created without an id in the API response.`);
@@ -161,6 +174,7 @@ async function findKvNamespaceId(title) {
   for (let page = 1; page <= 100; page += 1) {
     const namespaces = await cloudflareApi(
       `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/storage/kv/namespaces?per_page=100&page=${page}`,
+      { fatal: false },
     );
     const match = (namespaces || []).find((namespace) => namespace?.title === title);
     if (match?.id) {
@@ -297,6 +311,9 @@ async function cloudflareApi(pathname, options = {}) {
   if (!response.ok || !data?.success) {
     const message = data?.errors?.map((error) => error.message).filter(Boolean).join("; ")
       || `HTTP ${response.status}`;
+    if (options.fatal === false) {
+      throw new Error(`Cloudflare API request failed: ${message}`);
+    }
     fail(`Cloudflare API request failed: ${message}`);
   }
   return data.result;
