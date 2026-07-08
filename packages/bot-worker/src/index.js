@@ -2136,53 +2136,60 @@ function formatApkSummary(report) {
   return lines.join("\n");
 }
 
+const SDK_MARKER_REPLY_LIMIT = 8;
+
 function formatSdkMarkerSummary(sdkSummary, t) {
   if (!sdkSummary) {
     return "";
   }
 
-  const parts = [];
+  const headerParts = [];
   if (sdkSummary.native.length > 0) {
-    parts.push(t("summary.sdk_summary_native", { count: sdkSummary.native.length }));
+    headerParts.push(t("summary.sdk_summary_native", { count: sdkSummary.native.length }));
   }
   if (sdkSummary.components.length > 0) {
-    parts.push(t("summary.sdk_summary_components", { count: sdkSummary.components.length }));
+    headerParts.push(t("summary.sdk_summary_components", { count: sdkSummary.components.length }));
   }
 
-  const topSdkMarkers = formatTopSdkMarkers(sdkSummary);
-  if (topSdkMarkers) {
-    parts.push(topSdkMarkers);
+  const topSdkMarkers = formatTopSdkMarkers(sdkSummary, t);
+  return [headerParts.join(" · "), topSdkMarkers].filter(Boolean).join("\n");
+}
+
+function formatTopSdkMarkers(sdkSummary, t, limit = SDK_MARKER_REPLY_LIMIT) {
+  const entries = getTopSdkSummaryEntries(sdkSummary);
+  const visibleEntries = entries.slice(0, limit);
+  const lines = visibleEntries.map(formatSdkMarkerListItem);
+  const remaining = entries.length - visibleEntries.length;
+
+  if (remaining > 0) {
+    lines.push(t("summary.sdk_summary_more", { count: remaining }));
   }
 
-  return parts.join(" · ");
+  return lines.join("\n");
 }
 
-function formatTopSdkMarkers(sdkSummary, limit = 5) {
-  const entries = getTopSdkSummaryEntries(sdkSummary, limit);
-  return entries.map(formatSdkMarkerChip).join(" ");
-}
-
-function getTopSdkSummaryEntries(sdkSummary, limit) {
+function getTopSdkSummaryEntries(sdkSummary) {
   const merged = new Map();
   for (const entry of [...(sdkSummary.native || []), ...(sdkSummary.components || [])]) {
     const key = entry.key || `${entry.iconName}:${entry.label}`;
+    const count = entry.count || 0;
     const existing = merged.get(key);
     if (!existing) {
-      merged.set(key, { ...entry });
+      merged.set(key, { ...entry, count });
       continue;
     }
-    existing.count += entry.count || 0;
+    existing.count += count;
   }
 
   return [...merged.values()]
-    .sort((left, right) => (right.count || 0) - (left.count || 0) || left.label.localeCompare(right.label))
-    .slice(0, limit);
+    .sort((left, right) => (right.count || 0) - (left.count || 0) || left.label.localeCompare(right.label));
 }
 
-function formatSdkMarkerChip(entry) {
+function formatSdkMarkerListItem(entry) {
   const emojiId = SDK_ICON_CUSTOM_EMOJI_IDS[entry.iconName];
   const icon = emojiId ? `<tg-emoji emoji-id="${escapeHtml(emojiId)}">🔹</tg-emoji> ` : "";
-  return `${icon}<code>${escapeHtml(entry.label)}</code>`;
+  const count = entry.count > 1 ? ` <b>x${escapeHtml(entry.count)}</b>` : "";
+  return `${icon}<code>${escapeHtml(entry.label)}</code>${count}`;
 }
 
 function formatFeatureChipsHtml(buildFeatures) {
