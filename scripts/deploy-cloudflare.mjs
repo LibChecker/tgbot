@@ -21,10 +21,12 @@ const TARGETS = {
   preview: {
     workerEnv: "preview",
     pagesBranch: resolvePreviewBranch(),
+    workerUrl: normalizeOptionalUrl(process.env.PREVIEW_WORKER_URL),
   },
   production: {
     workerEnv: "production",
     pagesBranch: "main",
+    workerUrl: undefined,
   },
 };
 
@@ -44,7 +46,7 @@ if (!options["skip-preflight"]) {
   await run(npmBin, ["run", "check"]);
   await run(npmBin, ["run", "pages:build"]);
   await run(npmBin, ["run", "perf:check"]);
-  await runWorkerDryRun(target.workerEnv);
+  await runWorkerDryRun(target);
 }
 
 if (options["preflight-only"]) {
@@ -61,6 +63,7 @@ if (!options["pages-only"]) {
     workerConfigPath,
     "--env",
     target.workerEnv,
+    ...buildWorkerDeployArgs(target),
   ]);
 }
 
@@ -79,14 +82,15 @@ if (!options["worker-only"]) {
 
 process.stdout.write(`Cloudflare ${targetName} deploy finished.\n`);
 
-async function runWorkerDryRun(workerEnv) {
+async function runWorkerDryRun(targetValue) {
   const output = await run(wranglerBin, [
     "deploy",
     "--config",
     workerConfigPath,
     "--env",
-    workerEnv,
+    targetValue.workerEnv,
     "--dry-run",
+    ...buildWorkerDeployArgs(targetValue),
   ], { capture: true });
 
   const match = output.match(/Total Upload:\s+([\d.]+)\s+KiB\s+\/\s+gzip:\s+([\d.]+)\s+KiB/u);
@@ -110,6 +114,36 @@ async function runWorkerDryRun(workerEnv) {
   process.stdout.write(
     `Worker size budget passed: ${uploadKiB.toFixed(2)} KiB / gzip ${gzipKiB.toFixed(2)} KiB.\n`,
   );
+}
+
+function buildWorkerDeployArgs(targetValue) {
+  if (!targetValue.workerUrl) {
+    return [];
+  }
+
+  return [
+    "--domain",
+    targetValue.workerUrl.hostname,
+    "--var",
+    `PUBLIC_WEBHOOK_URL:${targetValue.workerUrl.origin}`,
+  ];
+}
+
+function normalizeOptionalUrl(value) {
+  if (!value) {
+    return undefined;
+  }
+
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    fail("PREVIEW_WORKER_URL must be an HTTPS origin URL, for example https://preview.example.com");
+  }
+  if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash) {
+    fail("PREVIEW_WORKER_URL must be an HTTPS origin URL, for example https://preview.example.com");
+  }
+  return url;
 }
 
 function requireDeployEnvironment(targetNameValue) {

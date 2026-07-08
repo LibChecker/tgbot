@@ -81,7 +81,7 @@ jobs:
 
       - name: Validate preview deployment secrets
         run: |
-          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','TEST_BOT_TOKEN','ADMIN_TOKEN'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets: ' + missing.join(', ')); process.exit(1); }"
+          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','TEST_BOT_TOKEN','ADMIN_TOKEN','PREVIEW_WORKER_URL'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
 
       - name: Build WebUI assets
         run: npm run pages:build
@@ -100,7 +100,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TEST_BOT_TOKEN }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TEST_TELEGRAM_WEBHOOK_SECRET || secrets.TELEGRAM_WEBHOOK_SECRET }}
-          PUBLIC_WEBHOOK_URL: ${{ vars.PREVIEW_WORKER_URL }}
+          PUBLIC_WEBHOOK_URL: ${{ env.PREVIEW_WORKER_URL }}
         run: npm run webhook:set -- --direct-telegram
 
   deploy_production:
