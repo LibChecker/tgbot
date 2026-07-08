@@ -1,6 +1,7 @@
 export const BOT_REPORT_PATH_PARAM = "r";
 
-const REPORT_PATH_PATTERN = /^[A-Za-z0-9_-]{1,512}$/u;
+const MAX_REPORT_PATH_LENGTH = 512;
+const REPORT_PATH_FORBIDDEN_PATTERN = /[\u0000-\u001F\u007F/?#\\]/u;
 
 export function resolveBotReportUrlFromLocation(
   search,
@@ -31,7 +32,11 @@ export function buildBotReportDataUrl(reportDataOrigin, path, locale = "en") {
 
 export function normalizeBotReportPath(value) {
   const text = String(value || "").trim();
-  return REPORT_PATH_PATTERN.test(text) ? text : "";
+  if (!text || text.length > MAX_REPORT_PATH_LENGTH || REPORT_PATH_FORBIDDEN_PATTERN.test(text)) {
+    return "";
+  }
+
+  return text;
 }
 
 function normalizeReportDataOrigin(value) {
