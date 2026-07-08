@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import app, { __botWorkerTestInternals } from "../src/index.js";
-import { SDK_ICON_CUSTOM_EMOJI_IDS } from "../src/sdk-emoji-map.js";
 
 const {
   buildLinkReplyMarkup,
@@ -106,51 +105,46 @@ test("report URLs fall back to Worker report data when WebUI is not configured",
 });
 
 test("SDK marker summary lists bounded markers with icons and overflow", () => {
-  SDK_ICON_CUSTOM_EMOJI_IDS.ic_lib_android = "123456";
-  try {
-    const summary = formatSdkMarkerSummary({
-      native: [
-        { key: "android", label: "Android", iconName: "ic_lib_android", count: 2 },
-        { key: "react", label: "React Native", iconName: "ic_test_react", count: 1 },
-        { key: "firebase", label: "Firebase", iconName: "ic_test_firebase", count: 8 },
-        { key: "adjust", label: "Adjust", iconName: "ic_test_adjust", count: 7 },
-        { key: "bugly", label: "Bugly", iconName: "ic_test_bugly", count: 6 },
-        { key: "facebook", label: "Facebook", iconName: "ic_test_facebook", count: 5 },
-        { key: "flurry", label: "Flurry", iconName: "ic_test_flurry", count: 4 },
-        { key: "unity", label: "Unity", iconName: "ic_test_unity", count: 3 },
-        { key: "x5", label: "X5", iconName: "ic_test_x5", count: 2 },
-      ],
-      components: [
-        { key: "android", label: "Android", iconName: "ic_lib_android", count: 3 },
-      ],
-    }, (key, values = {}) => {
-      if (key === "summary.sdk_summary_native") {
-        return `Native ${values.count}`;
-      }
-      if (key === "summary.sdk_summary_components") {
-        return `Components ${values.count}`;
-      }
-      if (key === "summary.sdk_summary_more") {
-        return `+${values.count} more`;
-      }
-      return key;
-    });
+  const summary = formatSdkMarkerSummary({
+    native: [
+      { key: "android", label: "Android", iconName: "ic_lib_android", count: 2 },
+      { key: "react", label: "React Native", iconName: "ic_test_react", count: 1 },
+      { key: "firebase", label: "Firebase", iconName: "ic_test_firebase", count: 8 },
+      { key: "adjust", label: "Adjust", iconName: "ic_test_adjust", count: 7 },
+      { key: "bugly", label: "Bugly", iconName: "ic_test_bugly", count: 6 },
+      { key: "facebook", label: "Facebook", iconName: "ic_test_facebook", count: 5 },
+      { key: "flurry", label: "Flurry", iconName: "ic_test_flurry", count: 4 },
+      { key: "unity", label: "Unity", iconName: "ic_test_unity", count: 3 },
+      { key: "x5", label: "X5", iconName: "ic_test_x5", count: 2 },
+    ],
+    components: [
+      { key: "android", label: "Android", iconName: "ic_lib_android", count: 3 },
+    ],
+  }, (key, values = {}) => {
+    if (key === "summary.sdk_summary_native") {
+      return `Native ${values.count}`;
+    }
+    if (key === "summary.sdk_summary_components") {
+      return `Components ${values.count}`;
+    }
+    if (key === "summary.sdk_summary_more") {
+      return `+${values.count} more`;
+    }
+    return key;
+  }, { ic_lib_android: "123456" });
 
-    assert.equal(summary, [
-      "Native 9 · Components 1",
-      "<code>Firebase</code> <b>x8</b>",
-      "<code>Adjust</code> <b>x7</b>",
-      "<code>Bugly</code> <b>x6</b>",
-      "<tg-emoji emoji-id=\"123456\">🔹</tg-emoji> <code>Android</code> <b>x5</b>",
-      "<code>Facebook</code> <b>x5</b>",
-      "<code>Flurry</code> <b>x4</b>",
-      "<code>Unity</code> <b>x3</b>",
-      "<code>X5</code> <b>x2</b>",
-      "+1 more",
-    ].join("\n"));
-  } finally {
-    delete SDK_ICON_CUSTOM_EMOJI_IDS.ic_lib_android;
-  }
+  assert.equal(summary, [
+    "Native 9 · Components 1",
+    "<code>Firebase</code> <b>x8</b>",
+    "<code>Adjust</code> <b>x7</b>",
+    "<code>Bugly</code> <b>x6</b>",
+    "<tg-emoji emoji-id=\"123456\">🔹</tg-emoji> <code>Android</code> <b>x5</b>",
+    "<code>Facebook</code> <b>x5</b>",
+    "<code>Flurry</code> <b>x4</b>",
+    "<code>Unity</code> <b>x3</b>",
+    "<code>X5</code> <b>x2</b>",
+    "+1 more",
+  ].join("\n"));
 });
 
 test("report data route handles CORS preflight through Hono middleware", async () => {

@@ -83,6 +83,12 @@ set `TEST_BOT_TOKEN`; the workflow syncs it into the preview Worker as
 
 `TELEGRAM_WEBHOOK_SECRET` and `TELEGRAPH_ACCESS_TOKEN` are optional, but recommended for production.
 
+SDK custom emoji ids are runtime data. The sync and deploy scripts resolve a
+Workers KV namespace named `tgbot-sdk-emojis`; real sync/deploy runs create it
+automatically when it does not exist. Set `TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME`
+only if you want a different namespace name. When the KV binding or key is
+absent, the Worker still lists SDK markers but omits custom emoji icons.
+
 Run the deploy preflight locally before shipping:
 
 ```bash
@@ -207,10 +213,13 @@ Required repository secrets:
 - `ADMIN_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
 - `TELEGRAPH_ACCESS_TOKEN`
+- `TELEGRAM_STICKER_OWNER_ID` for the SDK custom emoji sync workflow
 
 Optional repository secret:
 
 - `TEST_TELEGRAM_WEBHOOK_SECRET`
+- `TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID`, advanced override for an existing production KV namespace id.
+- `PREVIEW_TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID`, advanced override for an existing preview KV namespace id.
 
 Optional repository variable:
 
@@ -218,6 +227,8 @@ Optional repository variable:
 - `WORKER_URL`, the full production Worker URL used for the production custom domain, bot webhook, and Web UI report-data origin.
 - `PREVIEW_WEBUI_SITE_URL`, the optional full preview Web UI URL used by preview bot report buttons and preview metadata. When omitted, preview deploys use the Pages branch preview alias. For a custom preview domain, keep the DNS CNAME proxied and pointed at the Pages branch alias, for example `<branch-alias>.tgbot-apk-webui.pages.dev`.
 - `WEBUI_SITE_URL`, the full production Web UI URL used by production bot report buttons and Web UI metadata.
+- `TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME`, optional namespace name override for SDK custom emoji ids. Defaults to `tgbot-sdk-emojis`.
+- `PREVIEW_TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME`, optional preview namespace name override.
 
 ## Project Layout
 

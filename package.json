@@ -42,5 +42,8 @@
   },
   "devDependencies": {
     "sharp": "^0.34.5"
+  },
+  "dependencies": {
+    "svgpath": "^2.6.0"
   }
 }
