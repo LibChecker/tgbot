@@ -22,6 +22,8 @@ const DEFAULT_STICKER_FORMAT = "animated";
 const STICKER_FORMATS = new Set(["animated", "static"]);
 const TELEGRAM_MAX_RETRIES = 8;
 const TELEGRAM_RETRY_BUFFER_SECONDS = 1;
+const CUSTOM_EMOJI_READY_RETRIES = 8;
+const CUSTOM_EMOJI_READY_DELAY_MS = 1500;
 
 const [, , ...argv] = process.argv;
 const options = parseArgs(argv);
@@ -132,6 +134,10 @@ function refreshManifestFromRemote(manifest, sourceIcons, remoteState) {
         break;
       }
 
+      if (!hasCustomEmojiId(sticker)) {
+        continue;
+      }
+
       const previous = refreshed.icons[icon.name] || {};
       if (previous.stickerFileId || previous.customEmojiId) {
         continue;
@@ -139,7 +145,7 @@ function refreshManifestFromRemote(manifest, sourceIcons, remoteState) {
       refreshed.icons[icon.name] = {
         setName: set.name,
         stickerFileId: sticker.file_id,
-        customEmojiId: sticker.custom_emoji_id || "",
+        customEmojiId: sticker.custom_emoji_id,
         sha256: "",
         updatedAt: previous.updatedAt || new Date().toISOString(),
       };
@@ -214,7 +220,7 @@ function buildSyncPlan({
         current: {
           setName: set.name,
           stickerFileId: sticker.file_id,
-          customEmojiId: sticker.custom_emoji_id || "",
+          customEmojiId: sticker.custom_emoji_id,
         },
       });
       replaceCursors.set(set.name, replaceCursor + 1);
@@ -270,7 +276,7 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
         name: action.setName,
         sticker: inputSticker,
       }, [stickerFile]);
-      return getStickerAt(botToken, action.setName, -1);
+      return getStickerAt(botToken, action.setName, -1, action.icon.name);
     };
     let sticker;
 
@@ -282,7 +288,7 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
         sticker_type: "custom_emoji",
         stickers: [inputSticker],
       }, [stickerFile]);
-      sticker = await getStickerAt(botToken, action.setName, 0);
+      sticker = await getStickerAt(botToken, action.setName, 0, action.icon.name);
     } else if (action.type === "add") {
       sticker = await addSticker();
     } else if (action.type === "replace") {
@@ -298,7 +304,7 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
             old_sticker: action.current.stickerFileId,
             sticker: inputSticker,
           }, [stickerFile]);
-          sticker = await getStickerAt(botToken, action.setName, index);
+          sticker = await getStickerAt(botToken, action.setName, index, action.icon.name);
         } catch (error) {
           if (!isTelegramStickerAlreadyDeletedError(error)) {
             throw error;
@@ -308,11 +314,10 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
       }
     }
 
-    assertStickerFormat(sticker, action.icon.name);
     updated.icons[action.icon.name] = {
       setName: action.setName,
       stickerFileId: sticker.file_id,
-      customEmojiId: sticker.custom_emoji_id || action.current?.customEmojiId || "",
+      customEmojiId: sticker.custom_emoji_id,
       sha256: action.icon.sha256,
       updatedAt: new Date().toISOString(),
     };
@@ -326,14 +331,29 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
   return updated;
 }
 
-async function getStickerAt(botToken, setName, index) {
-  const set = await callTelegramJson(botToken, "getStickerSet", { name: setName });
-  const stickers = set.stickers || [];
-  const sticker = stickers[index < 0 ? stickers.length + index : index];
-  if (!sticker) {
-    fail(`Sticker set ${setName} did not contain the expected sticker.`);
+async function getStickerAt(botToken, setName, index, iconName = "") {
+  const label = iconName || `index ${index}`;
+  for (let attempt = 0; attempt <= CUSTOM_EMOJI_READY_RETRIES; attempt += 1) {
+    const set = await callTelegramJson(botToken, "getStickerSet", { name: setName });
+    const stickers = set.stickers || [];
+    const sticker = stickers[index < 0 ? stickers.length + index : index];
+    if (!sticker) {
+      fail(`Sticker set ${setName} did not contain the expected sticker for ${label}.`);
+    }
+    assertStickerFormat(sticker, label);
+    if (hasCustomEmojiId(sticker)) {
+      return sticker;
+    }
+    if (attempt < CUSTOM_EMOJI_READY_RETRIES) {
+      await delay(CUSTOM_EMOJI_READY_DELAY_MS);
+    }
   }
-  return sticker;
+
+  fail(`Telegram did not return custom_emoji_id for ${label}; refusing to write an empty SDK emoji id.`);
+}
+
+function hasCustomEmojiId(sticker) {
+  return typeof sticker?.custom_emoji_id === "string" && sticker.custom_emoji_id.length > 0;
 }
 
 function buildInputSticker(iconName, attachName) {
@@ -1430,6 +1450,8 @@ function runSelfTest() {
     !isTelegramStickerAlreadyDeletedError(createTelegramApiError("addStickerToSet", "Bad Request: wrong file type", { status: 400, retryAfter: 0 })),
     "unrelated Telegram errors are not swallowed",
   );
+  assert(hasCustomEmojiId({ custom_emoji_id: "remote_custom" }), "non-empty custom emoji ids are accepted");
+  assert(!hasCustomEmojiId({ custom_emoji_id: "" }), "empty custom emoji ids are rejected");
 
   assert(
     normalizeStickerSvg('<svg><path fill="#000000" d="M0,0" /></svg>').includes(`fill="${MONOCHROME_ICON_COLOR}"`),
