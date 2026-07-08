@@ -57,7 +57,8 @@
     "features": "Features: {value}",
     "open_report_hint": "Use the button below to open the full report.",
     "sdk_summary_native": "Native Libraries <b>{count}</b>",
-    "sdk_summary_components": "Components <b>{count}</b>"
+    "sdk_summary_components": "Components <b>{count}</b>",
+    "sdk_summary_more": "+<b>{count}</b> more"
   },
   "errors": {
     "unknown": "Unknown error",
