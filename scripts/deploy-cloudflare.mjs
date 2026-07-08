@@ -59,6 +59,14 @@ if (options["preflight-only"]) {
   process.exit(0);
 }
 
+if (options["skip-preflight"]) {
+  if (!options["worker-only"]) {
+    await run(npmBin, ["run", "pages:build"], { env: buildWebUiBuildEnv(target) });
+  } else if (!options["pages-only"]) {
+    await run(npmBin, ["run", "generated:generate"]);
+  }
+}
+
 requireDeployEnvironment(targetName, target);
 
 if (!options["pages-only"]) {
@@ -73,9 +81,6 @@ if (!options["pages-only"]) {
 }
 
 if (!options["worker-only"]) {
-  if (options["skip-preflight"]) {
-    await run(npmBin, ["run", "pages:build"], { env: buildWebUiBuildEnv(target) });
-  }
   if (!existsSync(webuiDistDir)) {
     fail("Missing WebUI dist directory. Run `npm run pages:build` before deploy.");
   }
