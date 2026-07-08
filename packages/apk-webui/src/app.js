@@ -1153,6 +1153,16 @@ async function hydrateReportSdkIconsForHistory(report) {
   return hydrateReportSdkIcons(report);
 }
 
+async function hydrateReportSdkIconImagesForRender(report) {
+  try {
+    const { hydrateReportSdkIconImages } = await loadReportSdkMetadataModule();
+    await hydrateReportSdkIconImages(report);
+  } catch {
+    // SDK icons are visual metadata; the report should still render if generated chunks fail to load.
+  }
+  return report;
+}
+
 function loadReportSdkMetadataModule() {
   if (!runtime.reportSdkMetadataModulePromise) {
     runtime.reportSdkMetadataModulePromise = import("./app/sdk-icon-cache.js")
@@ -3544,6 +3554,11 @@ async function analyzeDownloadUrl() {
       return;
     }
 
+    await hydrateReportSdkIconImagesForRender(payload.report);
+    if (!state.jobs.has(jobId)) {
+      return;
+    }
+
     state.jobs.delete(jobId);
     state.activeAnalyzeJobId = null;
     state.linkAbortController = null;
@@ -3630,6 +3645,7 @@ function loadBotReportFromUrlIfPresent() {
       revealReportHeroAfterAnalysis,
       scheduleHistoryReportSave,
       scheduleReportSdkRuleDetailHydration,
+      hydrateReportSdkIconImagesForRender,
       setAppMode,
       setBusy,
       showError,

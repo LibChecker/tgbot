@@ -19,6 +19,7 @@ export async function loadBotReportFromUrl([
   revealReportHeroAfterAnalysis,
   scheduleHistoryReportSave,
   scheduleReportSdkRuleDetailHydration,
+  hydrateReportSdkIconImagesForRender,
   setAppMode,
   setBusy,
   showError,
@@ -85,6 +86,11 @@ export async function loadBotReportFromUrl([
     }
 
     const report = assertTelegramApkReport(payload?.report);
+    if (!state.jobs.has(jobId)) {
+      return;
+    }
+
+    await hydrateReportSdkIconImagesForRender(report);
     if (!state.jobs.has(jobId)) {
       return;
     }

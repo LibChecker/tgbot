@@ -30,6 +30,31 @@ export async function hydrateReportSdkIcons(report) {
     loadSdkRuleDetailMap(),
   ]);
 
+  hydrateReportSdkIconTargets(report, iconMap, singleColorIconNames, ruleDetailMap);
+  return report;
+}
+
+/**
+ * @param {ApkReport} report
+ * @returns {Promise<ApkReport>}
+ */
+export async function hydrateReportSdkIconImages(report) {
+  const [iconMap, singleColorIconNames] = await Promise.all([
+    loadSdkIconSvgMap(),
+    loadSdkSingleColorIconNames(),
+  ]);
+
+  hydrateReportSdkIconTargets(report, iconMap, singleColorIconNames, null);
+  return report;
+}
+
+/**
+ * @param {ApkReport} report
+ * @param {Record<string, string>} iconMap
+ * @param {Set<string>} singleColorIconNames
+ * @param {SdkRuleDetailMap | null} ruleDetailMap
+ */
+function hydrateReportSdkIconTargets(report, iconMap, singleColorIconNames, ruleDetailMap) {
   const info = report.apkInfo || {};
   hydrateSdkIconList(info.sdkSummary?.native, iconMap, singleColorIconNames, ruleDetailMap);
   hydrateSdkIconList(info.sdkSummary?.components, iconMap, singleColorIconNames, ruleDetailMap);
@@ -43,8 +68,6 @@ export async function hydrateReportSdkIcons(report) {
       hydrateSdkIcon(component.sdk, iconMap, singleColorIconNames, ruleDetailMap);
     }
   }
-
-  return report;
 }
 
 /**
