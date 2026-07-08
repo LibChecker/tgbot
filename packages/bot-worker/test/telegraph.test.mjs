@@ -5,9 +5,60 @@ import { createI18n } from "../src/i18n.js";
 import { __telegraphTestInternals } from "../src/telegraph.js";
 
 test("Instant View report content follows the shared APK report view model", () => {
-  const report = {
+  const report = createSampleReport();
+  const { t } = createI18n("en");
+  const content = __telegraphTestInternals.buildTelegraphContent(report, t);
+  const text = collectNodeText(content);
+
+  assert.match(text, /Signatures/u);
+  assert.match(text, /SHA256/u);
+  assert.match(text, /AA:BB/u);
+  assert.match(text, /16 KB/u);
+  assert.match(text, /Kotlin 2\.0/u);
+  assert.match(text, /Android Gradle Plugin: 8\.7/u);
+});
+
+test("Telegraph report data content stores a WebUI-readable Telegram report", () => {
+  const report = createSampleReport();
+  report.apkInfo.sdkSummary.native.push({
+    key: "sample",
+    label: "Sample SDK",
+    iconName: "sample",
+    iconUrl: "https://example.com/sdk.svg",
+    singleColorIcon: false,
+    matchSource: "exact",
+    regexName: null,
+    detailKey: "sample:0",
+    ruleDetail: {
+      locales: {
+        en: {
+          label: "Sample SDK",
+          description: "Large hover-only detail",
+        },
+      },
+    },
+    type: 0,
+    count: 1,
+    detail: "libsample.so",
+    previewItems: ["libsample.so"],
+  });
+
+  const storedReport = __telegraphTestInternals.prepareReportForWebUiStorage(report);
+  const content = __telegraphTestInternals.buildReportDataContent(JSON.stringify({
+    version: 1,
+    report: storedReport,
+  }));
+  const payload = JSON.parse(__telegraphTestInternals.findReportDataJson(content));
+
+  assert.equal(payload.report.apkInfo.packageName, "com.example.sample");
+  assert.equal(payload.report.apkInfo.sdkSummary.native[0].ruleDetail, null);
+});
+
+function createSampleReport() {
+  return {
     locale: "en",
     fileName: "sample.apk",
+    fileSizeBytes: 2048,
     fileSizeText: "2 KB",
     sourceLabel: "Private Chat Message",
     analyzedAt: "2026-07-08T00:00:00.000Z",
@@ -83,17 +134,7 @@ test("Instant View report content follows the shared APK report view model", () 
       },
     },
   };
-  const { t } = createI18n("en");
-  const content = __telegraphTestInternals.buildTelegraphContent(report, t);
-  const text = collectNodeText(content);
-
-  assert.match(text, /Signatures/u);
-  assert.match(text, /SHA256/u);
-  assert.match(text, /AA:BB/u);
-  assert.match(text, /16 KB/u);
-  assert.match(text, /Kotlin 2\.0/u);
-  assert.match(text, /Android Gradle Plugin: 8\.7/u);
-});
+}
 
 function collectNodeText(value) {
   if (Array.isArray(value)) {

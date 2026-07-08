@@ -5,10 +5,14 @@ import {
   getNativeLibraryLabels,
   getStats,
 } from "../../shared/src/report-model.js";
+import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 
 /** @typedef {import("../../shared/src/contracts.js").TelegramApkReport} TelegramApkReport */
 
 const TELEGRAPH_API_BASE = "https://api.telegra.ph";
+const REPORT_DATA_SCHEMA_VERSION = 1;
+const REPORT_DATA_PREFIX = "LC_APK_REPORT_JSON:";
+const COMPONENT_SECTION_NAMES = ["activities", "services", "receivers", "providers"];
 const COMPACT_LEVELS = [
   {
     nativeLibraries: 160,
@@ -77,6 +81,27 @@ export async function createApkTelegraphPage(env, report) {
   }
 }
 
+/**
+ * @param {Record<string, unknown>} env
+ * @param {TelegramApkReport} report
+ */
+export async function createApkTelegraphReportDataPage(env, report) {
+  const accessToken = await getTelegraphAccessToken(env);
+  const candidates = buildReportDataCandidates(report);
+
+  for (const candidate of candidates) {
+    try {
+      return await createTelegraphReportDataPage(env, accessToken, candidate);
+    } catch (error) {
+      if (!isContentTooBigError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("CONTENT_TOO_BIG");
+}
+
 export async function fetchTelegraphPage(path, locale = undefined, env = {}) {
   const startedAt = Date.now();
   const { t } = createI18n(locale);
@@ -139,6 +164,24 @@ export async function fetchTelegraphPage(path, locale = undefined, env = {}) {
   );
 
   return data.result;
+}
+
+export async function fetchTelegraphReportData(path, locale = undefined, env = {}) {
+  const { t } = createI18n(locale);
+  const page = await fetchTelegraphPage(path, locale, env);
+  const reportJson = findReportDataJson(page?.content);
+  if (!reportJson) {
+    throw new Error(t("errors.telegraph_fetch_failed_generic"));
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(reportJson);
+  } catch {
+    throw new Error(t("errors.telegraph_fetch_failed_generic"));
+  }
+
+  return assertTelegramApkReport(payload?.report || payload);
 }
 
 async function getTelegraphAccessToken(env) {
@@ -240,6 +283,21 @@ async function createTelegraphPage(env, accessToken, report, t) {
   }, report.locale);
 }
 
+async function createTelegraphReportDataPage(env, accessToken, report) {
+  const payload = JSON.stringify({
+    version: REPORT_DATA_SCHEMA_VERSION,
+    report,
+  });
+  return telegraphApi(env, "createPage", {
+    access_token: accessToken,
+    title: buildReportDataPageTitle(report),
+    author_name: getAuthorName(env),
+    author_url: normalizeText(env.TELEGRAPH_AUTHOR_URL) || undefined,
+    content: JSON.stringify(buildReportDataContent(payload)),
+    return_content: false,
+  }, report.locale);
+}
+
 async function createTelegraphPageResilient(env, accessToken, report, t) {
   try {
     return await createTelegraphPage(env, accessToken, report, t);
@@ -276,6 +334,10 @@ function buildPageTitle(report, t) {
   return truncateText(normalizeText(report.apkInfo.appName) || t("report.fallback_title"), 256);
 }
 
+function buildReportDataPageTitle(report) {
+  return truncateText(`${normalizeText(report.apkInfo.appName) || report.apkInfo.packageName || "APK"} Report Data`, 256);
+}
+
 function getAuthorName(env) {
   return truncateText(normalizeText(env.TELEGRAPH_AUTHOR_NAME) || "Telegram APK Info Bot", 128);
 }
@@ -296,6 +358,20 @@ function normalizeTelegraphPath(value) {
   }
 
   return normalized;
+}
+
+function buildReportDataContent(payload) {
+  return [
+    {
+      tag: "pre",
+      children: [
+        {
+          tag: "code",
+          children: [`${REPORT_DATA_PREFIX}${payload}`],
+        },
+      ],
+    },
+  ];
 }
 
 function buildTelegraphContent(report, t) {
@@ -704,6 +780,79 @@ function getReportStats(report) {
   return report.originalStats || getStats(report.apkInfo);
 }
 
+function buildReportDataCandidates(report) {
+  const candidates = [];
+  pushReportDataCandidate(candidates, report);
+  if (report.apkInfo.icon?.dataUri) {
+    pushReportDataCandidate(candidates, stripReportIcon(report));
+  }
+
+  for (const limits of COMPACT_LEVELS) {
+    const compacted = compactReport(report, limits);
+    pushReportDataCandidate(candidates, compacted);
+    if (compacted.apkInfo.icon?.dataUri) {
+      pushReportDataCandidate(candidates, stripReportIcon(compacted));
+    }
+  }
+
+  const minimal = buildMinimalReport(report);
+  pushReportDataCandidate(candidates, minimal);
+  if (minimal.apkInfo.icon?.dataUri) {
+    pushReportDataCandidate(candidates, stripReportIcon(minimal));
+  }
+
+  return candidates;
+}
+
+function pushReportDataCandidate(candidates, report) {
+  candidates.push(prepareReportForWebUiStorage(report));
+}
+
+function prepareReportForWebUiStorage(report) {
+  return {
+    ...report,
+    apkInfo: {
+      ...report.apkInfo,
+      nativeLibraries: (report.apkInfo.nativeLibraries || []).map(stripSdkRuleDetailFromItem),
+      components: stripComponentSdkRuleDetails(report.apkInfo.components),
+      sdkSummary: stripSdkSummaryRuleDetails(report.apkInfo.sdkSummary),
+    },
+  };
+}
+
+function stripComponentSdkRuleDetails(components = {}) {
+  return Object.fromEntries(COMPONENT_SECTION_NAMES.map((sectionName) => [
+    sectionName,
+    (components[sectionName] || []).map(stripSdkRuleDetailFromItem),
+  ]));
+}
+
+function stripSdkSummaryRuleDetails(sdkSummary) {
+  if (!sdkSummary) {
+    return sdkSummary;
+  }
+
+  return {
+    native: (sdkSummary.native || []).map(stripRuleDetail),
+    components: (sdkSummary.components || []).map(stripRuleDetail),
+  };
+}
+
+function stripSdkRuleDetailFromItem(item) {
+  return item?.sdk ? { ...item, sdk: stripRuleDetail(item.sdk) } : item;
+}
+
+function stripRuleDetail(item) {
+  if (!item || typeof item !== "object") {
+    return item;
+  }
+
+  return {
+    ...item,
+    ruleDetail: null,
+  };
+}
+
 function compactReport(report, limits) {
   return {
     ...report,
@@ -896,6 +1045,32 @@ function formatBytes(bytes) {
   return `${value.toFixed(precision)} ${units[index]}`;
 }
 
+function findReportDataJson(content) {
+  const text = collectNodeText(content);
+  const markerIndex = text.indexOf(REPORT_DATA_PREFIX);
+  if (markerIndex < 0) {
+    return "";
+  }
+
+  return text.slice(markerIndex + REPORT_DATA_PREFIX.length).trim();
+}
+
+function collectNodeText(value) {
+  if (Array.isArray(value)) {
+    return value.map(collectNodeText).join("");
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  return collectNodeText(value.children || []);
+}
+
 export const __telegraphTestInternals = {
   buildTelegraphContent,
+  buildReportDataContent,
+  findReportDataJson,
+  prepareReportForWebUiStorage,
 };

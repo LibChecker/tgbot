@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
@@ -94,6 +95,48 @@ app.get("/report", async (context) => {
   }
 
   return response;
+});
+
+app.use("/report-data", cors({
+  origin: "*",
+  allowMethods: ["GET", "OPTIONS"],
+  allowHeaders: ["content-type"],
+  maxAge: 86400,
+}));
+
+app.get("/report-data", async (context) => {
+  const url = getRequestUrl(context);
+  const telemetry = getRequestTelemetry(context);
+  const startedAt = Date.now();
+  const reportPath = url.searchParams.get("path") || "";
+  const locale = normalizeLocale(url.searchParams.get("lang"));
+
+  try {
+    const { fetchTelegraphReportData } = await loadTelegraphModule();
+    const report = await fetchTelegraphReportData(reportPath, locale, context.env);
+    logInfoEvent(context.env, telemetry, "report.data_viewed", {
+      result: "success",
+      http_status: 200,
+      report_path: reportPath || null,
+      duration_ms: Date.now() - startedAt,
+      package_name: report.apkInfo.packageName,
+    });
+    return context.json({ report });
+  } catch (error) {
+    const status = reportPath ? 404 : 400;
+    logWarnEvent(context.env, telemetry, "report.data_view_failed", {
+      result: "error",
+      http_status: status,
+      report_path: reportPath || null,
+      duration_ms: Date.now() - startedAt,
+      ...getErrorTelemetryFields(error),
+    });
+    return context.json({
+      error: {
+        message: getLocalizedErrorMessage(error, locale),
+      },
+    }, status);
+  }
 });
 
 app.on(["GET", "POST"], "/upload", (context) => {
@@ -595,14 +638,14 @@ async function handleUploadRequest(request, env, url, telemetry) {
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
     }, { analytics: false });
 
-    const { createApkTelegraphPage } = await telegraphModuleTask;
+    const { createApkTelegraphReportDataPage } = await telegraphModuleTask;
     stageStartedAt = Date.now();
     logInfoEvent(env, telemetry, "upload.analysis.telegraph.started", {
       result: "started",
       analysis_stage: "telegraph_create",
       package_name: report.apkInfo.packageName,
     }, { analytics: false });
-    const telegraphPage = await createApkTelegraphPage(env, report);
+    const telegraphPage = await createApkTelegraphReportDataPage(env, report);
     logInfoEvent(env, telemetry, "upload.analysis.telegraph.succeeded", {
       result: "success",
       analysis_stage: "telegraph_create",
@@ -610,7 +653,7 @@ async function handleUploadRequest(request, env, url, telemetry) {
       package_name: report.apkInfo.packageName,
       report_path: telegraphPage.path || null,
     }, { analytics: false });
-    const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, formLocale);
+    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, telegraphPage.path, formLocale);
 
     logInfoEvent(env, telemetry, "upload.analysis.succeeded", {
       result: "success",
@@ -1172,14 +1215,14 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
     }, { analytics: false });
 
-    const { createApkTelegraphPage } = await telegraphModuleTask;
+    const { createApkTelegraphReportDataPage } = await telegraphModuleTask;
     stageStartedAt = Date.now();
     logInfoEvent(env, telemetry, "apk.analysis.telegraph.started", {
       result: "started",
       analysis_stage: "telegraph_create",
       package_name: report.apkInfo.packageName,
     }, { analytics: false });
-    const telegraphPage = await createApkTelegraphPage(env, report);
+    const telegraphPage = await createApkTelegraphReportDataPage(env, report);
     logInfoEvent(env, telemetry, "apk.analysis.telegraph.succeeded", {
       result: "success",
       analysis_stage: "telegraph_create",
@@ -1187,7 +1230,7 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       package_name: report.apkInfo.packageName,
       report_path: telegraphPage.path || null,
     }, { analytics: false });
-    const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
+    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, telegraphPage.path, locale);
 
     logInfoEvent(env, telemetry, "apk.analysis.succeeded", {
       result: "success",
@@ -1311,14 +1354,14 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
     }, { analytics: false });
 
-    const { createApkTelegraphPage } = await telegraphModuleTask;
+    const { createApkTelegraphReportDataPage } = await telegraphModuleTask;
     stageStartedAt = Date.now();
     logInfoEvent(env, telemetry, "apk.link_analysis.telegraph.started", {
       result: "started",
       analysis_stage: "telegraph_create",
       package_name: report.apkInfo.packageName,
     }, { analytics: false });
-    const telegraphPage = await createApkTelegraphPage(env, report);
+    const telegraphPage = await createApkTelegraphReportDataPage(env, report);
     logInfoEvent(env, telemetry, "apk.link_analysis.telegraph.succeeded", {
       result: "success",
       analysis_stage: "telegraph_create",
@@ -1326,7 +1369,7 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       package_name: report.apkInfo.packageName,
       report_path: telegraphPage.path || null,
     }, { analytics: false });
-    const reportUrl = buildReportViewerUrl(publicBaseUrl, telegraphPage.path, locale);
+    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, telegraphPage.path, locale);
 
     logInfoEvent(env, telemetry, "apk.link_analysis.succeeded", {
       result: "success",
@@ -1416,6 +1459,10 @@ function resolvePublicBaseUrl(env, requestOrigin) {
   }
 
   return normalizeBaseUrl(requestOrigin);
+}
+
+function resolveWebUiBaseUrl(env) {
+  return normalizeBaseUrl(env.WEBUI_SITE_URL) || normalizeBaseUrl(env.WEBUI_URL);
 }
 
 function normalizeBaseUrl(value) {
@@ -1867,6 +1914,7 @@ async function buildApkReport(
       ...sdkAnnotated,
     },
     fileName: document.file_name || "unknown.apk",
+    fileSizeBytes: document.file_size || 0,
     fileSizeText: formatBytes(document.file_size || 0),
     sourceLabel: describeMessageSource(message, locale),
     analyzedAt: new Date().toISOString(),
@@ -1884,6 +1932,27 @@ function buildReportViewerUrl(publicBaseUrl, path, locale) {
     lang: locale,
   });
   return `${publicBaseUrl}/report?${searchParams.toString()}`;
+}
+
+function buildReportDataUrl(publicBaseUrl, path, locale) {
+  const searchParams = new URLSearchParams({
+    path: path || "",
+    lang: locale,
+  });
+  return `${publicBaseUrl}/report-data?${searchParams.toString()}`;
+}
+
+function buildWebUiReportUrl(env, publicBaseUrl, path, locale) {
+  const webUiBaseUrl = resolveWebUiBaseUrl(env);
+  if (!webUiBaseUrl) {
+    return buildReportViewerUrl(publicBaseUrl, path, locale);
+  }
+
+  const searchParams = new URLSearchParams({
+    botReportUrl: buildReportDataUrl(publicBaseUrl, path, locale),
+    lang: locale,
+  });
+  return `${webUiBaseUrl}/?${searchParams.toString()}`;
 }
 
 function buildReportReplyMarkup(chat, reportUrl, buttonText) {
@@ -2379,6 +2448,8 @@ function getErrorStack(error) {
 
 export const __botWorkerTestInternals = {
   buildLinkReplyMarkup,
+  buildReportDataUrl,
+  buildWebUiReportUrl,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,

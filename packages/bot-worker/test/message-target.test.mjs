@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { __botWorkerTestInternals } from "../src/index.js";
+import app, { __botWorkerTestInternals } from "../src/index.js";
 
 const {
   buildLinkReplyMarkup,
+  buildWebUiReportUrl,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
@@ -66,6 +67,45 @@ test("private chat report buttons use regular URLs", () => {
 
   assert.equal(button.url, "https://example.com/report?path=sample");
   assert.equal(button.web_app, undefined);
+});
+
+test("report URLs target the configured WebUI and pass the Worker report data endpoint", () => {
+  const reportUrl = buildWebUiReportUrl(
+    { WEBUI_SITE_URL: "https://webui.example.com/" },
+    "https://worker.example.com",
+    "Sample-07-08",
+    "zh-Hans",
+  );
+  const url = new URL(reportUrl);
+  const reportDataUrl = new URL(url.searchParams.get("botReportUrl"));
+
+  assert.equal(url.origin, "https://webui.example.com");
+  assert.equal(url.pathname, "/");
+  assert.equal(url.searchParams.get("lang"), "zh-Hans");
+  assert.equal(reportDataUrl.origin, "https://worker.example.com");
+  assert.equal(reportDataUrl.pathname, "/report-data");
+  assert.equal(reportDataUrl.searchParams.get("path"), "Sample-07-08");
+  assert.equal(reportDataUrl.searchParams.get("lang"), "zh-Hans");
+});
+
+test("report data route handles CORS preflight through Hono middleware", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const response = await app.request("https://worker.example.com/report-data", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://webui.example.com",
+        "access-control-request-method": "GET",
+      },
+    });
+
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), "*");
+    assert.match(response.headers.get("access-control-allow-methods") || "", /GET/u);
+  } finally {
+    console.log = originalLog;
+  }
 });
 
 test("ignored group messages do not expose group identity in analytics telemetry", () => {

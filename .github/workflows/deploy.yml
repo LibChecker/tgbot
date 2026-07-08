@@ -64,6 +64,7 @@ jobs:
       TEST_TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TEST_TELEGRAM_WEBHOOK_SECRET }}
       TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
       PREVIEW_WORKER_URL: ${{ vars.PREVIEW_WORKER_URL || secrets.PREVIEW_WORKER_URL }}
+      WEBUI_SITE_URL: ${{ vars.PREVIEW_WEBUI_SITE_URL || secrets.PREVIEW_WEBUI_SITE_URL || vars.WEBUI_SITE_URL || secrets.WEBUI_SITE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -81,7 +82,7 @@ jobs:
 
       - name: Validate preview deployment secrets
         run: |
-          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','TEST_BOT_TOKEN','ADMIN_TOKEN','PREVIEW_WORKER_URL'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
+          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','TEST_BOT_TOKEN','ADMIN_TOKEN','PREVIEW_WORKER_URL','WEBUI_SITE_URL'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
 
       - name: Build WebUI assets
         run: npm run pages:build
@@ -119,6 +120,7 @@ jobs:
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
       TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
       WORKER_URL: ${{ vars.WORKER_URL || secrets.WORKER_URL }}
+      WEBUI_SITE_URL: ${{ vars.WEBUI_SITE_URL || secrets.WEBUI_SITE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -136,7 +138,7 @@ jobs:
 
       - name: Validate production deployment secrets
         run: |
-          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN','WORKER_URL'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
+          node -e "const missing=['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','BOT_TOKEN','ADMIN_TOKEN','WORKER_URL','WEBUI_SITE_URL'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
 
       - name: Build WebUI assets
         run: npm run pages:build

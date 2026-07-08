@@ -6,6 +6,7 @@ routes = []
 
 [vars]
 PUBLIC_WEBHOOK_URL = ""
+WEBUI_SITE_URL = ""
 
 [observability]
 enabled = true
@@ -26,6 +27,7 @@ routes = []
 [env.preview.vars]
 APP_ENV = "preview"
 PUBLIC_WEBHOOK_URL = ""
+WEBUI_SITE_URL = ""
 
 [env.preview.observability]
 enabled = true
@@ -46,6 +48,7 @@ routes = []
 [env.production.vars]
 APP_ENV = "production"
 PUBLIC_WEBHOOK_URL = ""
+WEBUI_SITE_URL = ""
 
 [env.production.observability]
 enabled = true

@@ -55,6 +55,7 @@ const ANALYTICS_IDLE_LOAD_DELAY_MS = 4000;
 const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
 const HISTORY_SAVE_IDLE_TIMEOUT_MS = 1600;
 const URL_REPORT_ENDPOINT = "/url-report";
+const BOT_REPORT_URL_PARAM = "botReportUrl";
 const URL_REPORT_PROGRESS_KEYS = Object.freeze({
   accepted: "progressPreparingLink",
   url_preview: "progressPreparingLink",
@@ -1209,6 +1210,11 @@ function scheduleReportSdkRuleDetailHydration(report) {
 }
 
 function resolveInitialLocale() {
+  const urlLocale = new URLSearchParams(window.location.search).get("lang");
+  if (urlLocale) {
+    return normalizeLocale(urlLocale);
+  }
+
   const browserLocales = Array.isArray(navigator.languages) && navigator.languages.length > 0
     ? navigator.languages
     : [navigator.language];
@@ -1251,6 +1257,7 @@ appendRuntimeLog("info", "WebUI ready", {
   version: APP_VERSION,
   locale: state.locale,
 });
+void loadBotReportFromUrlIfPresent();
 
 function bindEvents() {
   elements.modeChipGroup.addEventListener("click", handleModeChipGroupClick);
@@ -3595,6 +3602,66 @@ async function analyzeDownloadUrl() {
       ...getClientErrorTelemetryFields(error),
     });
   }
+}
+
+function loadBotReportFromUrlIfPresent() {
+  const reportUrl = getBotReportUrlFromLocation();
+  if (!reportUrl) {
+    return;
+  }
+
+  void import("./app/bot-report-loader.js")
+    .then(({ loadBotReportFromUrl }) => loadBotReportFromUrl([
+      reportUrl,
+      state,
+      elements,
+      t,
+      cancelLcappsReportActivation,
+      finishAnalysis,
+      getClientErrorTelemetryFields,
+      getElapsedMs,
+      getErrorMessage,
+      getReportAnalyticsFields,
+      hideError,
+      preloadReportRenderer,
+      renderLinkStatus,
+      renderReport,
+      renderSelectedFile,
+      revealReportHeroAfterAnalysis,
+      scheduleHistoryReportSave,
+      scheduleReportSdkRuleDetailHydration,
+      setAppMode,
+      setBusy,
+      showError,
+      showProgress,
+      startTimer,
+      trackWebEvent,
+      updateClearButton,
+    ]))
+    .catch((error) => {
+      showError(getErrorMessage(error) || t("unknownError"));
+      trackWebEvent("webui.bot_report.failed", {
+        result: "error",
+        input_source: "bot",
+        ...getClientErrorTelemetryFields(error),
+      });
+    });
+}
+
+function getBotReportUrlFromLocation() {
+  const value = new URLSearchParams(window.location.search).get(BOT_REPORT_URL_PARAM);
+  if (!value) {
+    return "";
+  }
+
+  let url;
+  try {
+    url = new URL(value, window.location.href);
+  } catch {
+    return "";
+  }
+
+  return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
 }
 
 function ensureWorker() {

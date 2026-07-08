@@ -22,11 +22,16 @@ const TARGETS = {
     workerEnv: "preview",
     pagesBranch: resolvePreviewBranch(),
     workerUrl: normalizeOptionalUrl(process.env.PREVIEW_WORKER_URL, "PREVIEW_WORKER_URL"),
+    webuiUrl: normalizeOptionalUrl(
+      process.env.PREVIEW_WEBUI_SITE_URL || process.env.WEBUI_SITE_URL,
+      "PREVIEW_WEBUI_SITE_URL or WEBUI_SITE_URL",
+    ),
   },
   production: {
     workerEnv: "production",
     pagesBranch: "main",
     workerUrl: normalizeOptionalUrl(process.env.WORKER_URL, "WORKER_URL"),
+    webuiUrl: normalizeOptionalUrl(process.env.WEBUI_SITE_URL, "WEBUI_SITE_URL"),
   },
 };
 
@@ -117,16 +122,24 @@ async function runWorkerDryRun(targetValue) {
 }
 
 function buildWorkerDeployArgs(targetValue) {
-  if (!targetValue.workerUrl) {
-    return [];
+  const args = [];
+  if (targetValue.workerUrl) {
+    args.push(
+      "--domain",
+      targetValue.workerUrl.hostname,
+      "--var",
+      `PUBLIC_WEBHOOK_URL:${targetValue.workerUrl.origin}`,
+    );
   }
 
-  return [
-    "--domain",
-    targetValue.workerUrl.hostname,
-    "--var",
-    `PUBLIC_WEBHOOK_URL:${targetValue.workerUrl.origin}`,
-  ];
+  if (targetValue.webuiUrl) {
+    args.push(
+      "--var",
+      `WEBUI_SITE_URL:${targetValue.webuiUrl.origin}`,
+    );
+  }
+
+  return args;
 }
 
 function normalizeOptionalUrl(value, envName) {
