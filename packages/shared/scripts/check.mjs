@@ -9,13 +9,9 @@ const sourceRoots = [
   resolve(projectDir, "scripts"),
   resolve(projectDir, "src"),
 ];
-const skippedSyntaxFiles = new Set([
-  "src/generated/libchecker-rules.js",
-]);
 
 const syntaxFiles = (await collectSyntaxFiles(sourceRoots))
   .map((file) => relative(projectDir, file))
-  .filter((file) => !skippedSyntaxFiles.has(file))
   .sort((a, b) => a.localeCompare(b));
 
 for (const file of syntaxFiles) {

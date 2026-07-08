@@ -1,8 +1,4 @@
-import {
-  compactAnalyticsObject as compactObject,
-  getFileAnalyticsFields,
-  getReportAnalyticsFields,
-} from "./analytics-fields.js";
+import { compactAnalyticsObject as compactObject } from "./analytics-fields.js";
 import { isAnalyticsEventName } from "@shared/contracts.js";
 
 /** @typedef {import("@shared/contracts.js").AnalyticsEventFields} AnalyticsEventFields */
@@ -21,8 +17,6 @@ const PRIVATE_EVENT_KEYS = new Set([
 ]);
 
 let readContext = () => ({});
-
-export { getFileAnalyticsFields, getReportAnalyticsFields };
 
 export function initWebAnalytics(contextProvider) {
   if (typeof contextProvider === "function") {

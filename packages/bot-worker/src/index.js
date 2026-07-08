@@ -2404,7 +2404,6 @@ function getErrorStack(error) {
 
 export const __botWorkerTestInternals = {
   buildLinkReplyMarkup,
-  buildReportDataUrl,
   buildWebUiReportUrl,
   buildMessageTelemetryFields,
   selectTargetDocument,

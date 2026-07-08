@@ -4,7 +4,6 @@ const HOMEPAGE_PATHS = new Set(["/", "/index.html"]);
 
 export const DISCOVERY_LINK_HEADER = getDiscoveryLinkHeader();
 export const HOMEPAGE_MARKDOWN = getHomepageMarkdown();
-export const HOMEPAGE_MARKDOWN_TOKENS = String(countApproximateTokens(HOMEPAGE_MARKDOWN));
 
 export async function onRequest(context) {
   const markdownResponse = handleMarkdownRequest(context.request, context.env);
