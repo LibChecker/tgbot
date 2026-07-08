@@ -2210,12 +2210,14 @@ function getUrlPreviewDiagnosticTelemetryFields(preview = {}) {
 
 function buildMessageTelemetryFields(update, message, command, botMentioned, locale) {
   const links = extractLinksFromMessage(message);
+  const isEdited = Boolean(update.edited_message || update.edited_channel_post);
+  const exposeChatIdentity = shouldExposeTelegramChatIdentity(message, command, isEdited, botMentioned);
   return {
     update_type: getUpdateType(update),
     locale,
     chat_type: message.chat?.type || null,
-    chat_title: isTelegramGroupChat(message.chat) ? message.chat?.title || null : null,
-    chat_username: isTelegramGroupChat(message.chat) ? formatTelegramUsername(message.chat?.username) : null,
+    chat_title: exposeChatIdentity ? message.chat?.title || null : null,
+    chat_username: exposeChatIdentity ? formatTelegramUsername(message.chat?.username) : null,
     chat_id: message.chat?.id != null ? String(message.chat.id) : null,
     message_id: message.message_id || null,
     message_thread_id: message.message_thread_id || null,
@@ -2230,6 +2232,19 @@ function buildMessageTelemetryFields(update, message, command, botMentioned, loc
     has_apk_url: links.some(isLikelyApkUrl),
     source_label: describeMessageSource(message),
   };
+}
+
+function shouldExposeTelegramChatIdentity(message, command, isEdited, botMentioned) {
+  if (!isTelegramGroupChat(message.chat)) {
+    return false;
+  }
+
+  return Boolean(
+    command ||
+      botMentioned ||
+      selectTargetDocument(message, command, isEdited, botMentioned) ||
+      selectTargetUrl(message, command, isEdited, botMentioned),
+  );
 }
 
 function isTelegramGroupChat(chat) {
@@ -2372,6 +2387,7 @@ function getErrorStack(error) {
 }
 
 export const __botWorkerTestInternals = {
+  buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
 };

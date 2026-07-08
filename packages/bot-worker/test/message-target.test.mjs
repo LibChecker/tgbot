@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { __botWorkerTestInternals } from "../src/index.js";
 
-const { selectTargetDocument, selectTargetUrl } = __botWorkerTestInternals;
+const { buildMessageTelemetryFields, selectTargetDocument, selectTargetUrl } = __botWorkerTestInternals;
 
 const apkDocument = {
   file_id: "apk-file",
@@ -49,4 +49,42 @@ test("private chats still auto-analyze direct APK links", () => {
   };
 
   assert.equal(selectTargetUrl(message, null, false, false), "https://example.com/sample.apk");
+});
+
+test("ignored group messages do not expose group identity in analytics telemetry", () => {
+  const message = {
+    message_id: 1,
+    chat: {
+      id: -1,
+      type: "supergroup",
+      title: "LibChecker Group",
+      username: "libchecker_group",
+    },
+    text: "ordinary group chatter",
+  };
+
+  const fields = buildMessageTelemetryFields({ message }, message, null, false, "en");
+
+  assert.equal(fields.chat_type, "supergroup");
+  assert.equal(fields.chat_title, null);
+  assert.equal(fields.chat_username, null);
+});
+
+test("targeted group messages still expose group identity in analytics telemetry", () => {
+  const message = {
+    message_id: 1,
+    chat: {
+      id: -1,
+      type: "supergroup",
+      title: "LibChecker Group",
+      username: "libchecker_group",
+    },
+    text: "@LibCheckerRoBot https://example.com/sample.apk",
+    entities: [{ type: "mention", offset: 0, length: 16 }],
+  };
+
+  const fields = buildMessageTelemetryFields({ message }, message, null, true, "en");
+
+  assert.equal(fields.chat_title, "LibChecker Group");
+  assert.equal(fields.chat_username, "@libchecker_group");
 });
