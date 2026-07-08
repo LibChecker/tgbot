@@ -99,7 +99,11 @@ printPlan(plan, {
 });
 
 if (!dryRun) {
-  const updatedManifest = await executePlan(botToken, ownerId, refreshedManifest, plan);
+  const updatedManifest = await executePlan(botToken, ownerId, refreshedManifest, plan, {
+    onUpdate: kvConfig ? async (nextManifest) => {
+      await writeKvManifest(kvConfig, nextManifest);
+    } : null,
+  });
   if (kvConfig) {
     await writeKvManifest(kvConfig, updatedManifest);
     process.stdout.write(`wrote KV ${kvConfig.namespaceId}/${kvConfig.key}\n`);
@@ -219,7 +223,7 @@ function selectWritableSet({ sets, counts, botUsername, setBase, setTitle }) {
   return set;
 }
 
-async function executePlan(botToken, ownerId, manifest, plan) {
+async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {}) {
   const updated = normalizeManifest(manifest);
   updated.sets = plan.sets;
 
@@ -268,6 +272,10 @@ async function executePlan(botToken, ownerId, manifest, plan) {
       sha256: action.icon.sha256,
       updatedAt: new Date().toISOString(),
     };
+    updated.sets = summarizeSets(updated);
+    if (onUpdate) {
+      await onUpdate(updated);
+    }
   }
 
   updated.sets = summarizeSets(updated);
