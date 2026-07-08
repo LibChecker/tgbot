@@ -151,7 +151,7 @@ function isRemoteStickerCurrentFormat(sticker) {
 }
 
 function isRemoteSetCurrentFormat(stickers) {
-  return (stickers || []).every((sticker) => isRemoteStickerCurrentFormat(sticker));
+  return Array.isArray(stickers) && stickers.every((sticker) => isRemoteStickerCurrentFormat(sticker));
 }
 
 function buildSyncPlan({
@@ -168,16 +168,19 @@ function buildSyncPlan({
   const counts = new Map(remoteCounts);
   const actions = [];
   const replaceCursors = new Map();
-  const isWritableSet = (setName) => !remoteSetStickers?.has(setName) || isRemoteSetCurrentFormat(remoteSetStickers.get(setName));
+  const hasRemoteObservations = (remoteSetStickers?.size || 0) > 0;
+  const hasRemoteSetState = (setName) => remoteSetStickers?.has(setName) || false;
+  const isCurrentRemoteSet = (setName) => hasRemoteSetState(setName) && isRemoteSetCurrentFormat(remoteSetStickers.get(setName));
+  const isWritableSet = (setName) => !hasRemoteSetState(setName) || isCurrentRemoteSet(setName);
 
   for (const icon of sourceIcons) {
     const current = manifest.icons[icon.name];
-    if (current?.customEmojiId && current.sha256 === icon.sha256) {
+    if (current?.customEmojiId && current.sha256 === icon.sha256 && (!hasRemoteObservations || isCurrentRemoteSet(current.setName))) {
       actions.push({ type: "keep", icon, current });
       continue;
     }
 
-    if (current?.stickerFileId && current.setName && isWritableSet(current.setName)) {
+    if (current?.stickerFileId && current.setName && (!hasRemoteObservations || isCurrentRemoteSet(current.setName))) {
       actions.push({ type: "replace", icon, current, setName: current.setName });
       continue;
     }
@@ -775,6 +778,7 @@ async function getRemoteSetState(botToken, sets, { botUsername, setBase, setTitl
     const remoteSet = await tryGetRemoteSet(botToken, set.name);
     if (!remoteSet) {
       counts.set(set.name, 0);
+      stickersBySet.set(set.name, null);
       continue;
     }
     counts.set(set.name, remoteSet.stickers?.length || 0);
@@ -1257,6 +1261,29 @@ function runSelfTest() {
     });
     assert(migrationPlan.actions[0].type === "create", "format migration creates a fresh sticker set");
     assert(migrationPlan.actions.every((action) => action.setName !== oldSetName), "format migration skips incompatible sticker sets");
+
+    const deletedSetPlan = buildSyncPlan({
+      sourceIcons: sourceIcons.slice(0, 1),
+      manifest: normalizeManifest({
+        sets: [{ name: oldSetName, title: "Old SDK Icons" }],
+        icons: {
+          ic_lib_test_000: {
+            setName: oldSetName,
+            stickerFileId: "deleted_file",
+            customEmojiId: "deleted_custom",
+            sha256: "0",
+          },
+        },
+      }),
+      remoteSetInfos: [{ name: oldSetName, title: "Old SDK Icons" }],
+      remoteSetStickers: new Map([[oldSetName, null]]),
+      botUsername: "examplebot",
+      setBase: "libchecker_sdk",
+      setTitle: "LibChecker SDK Icons",
+      remoteCounts: new Map([[oldSetName, 0]]),
+    });
+    assert(deletedSetPlan.actions[0].type === "create", "deleted sticker sets are recreated instead of kept");
+    assert(deletedSetPlan.actions[0].setName !== oldSetName, "deleted sticker sets do not reuse stale set names");
   }
 
   assert(
