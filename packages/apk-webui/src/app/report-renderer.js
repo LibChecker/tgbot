@@ -1,11 +1,13 @@
 import { escapeAttr, escapeHtml } from "./html.js";
 import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeImageSrc, stripDataUris } from "./format.js";
-import { COMPONENT_SECTIONS, countComponents, getStats, groupBy } from "./report-model.js";
+import {
+  buildApkReportViewModel,
+  getNativeLibraryLabels,
+} from "@shared/report-model.js";
 const ARCHIVE_CHART_CENTER = 60;
 const ARCHIVE_CHART_RADIUS = 52;
 const ARCHIVE_CHART_LABEL_MIN_PERCENT = 6;
 const ARCHIVE_CHART_SEGMENT_LIFT = 5;
-const NATIVE_PAGE_SIZE_16_KB = 0x4000;
 const ARCHIVE_CHART_COLORS = [
   "#38bdf8",
   "#22c55e",
@@ -297,34 +299,16 @@ function formatSvgNumber(value) {
 }
 
 function renderSummaryTab(report) {
-  const info = report.apkInfo;
-  const stats = getStats(info);
-  const featureHtml = renderFeaturePills(info.buildFeatures);
+  const model = buildWebReportViewModel(report);
+  const featureHtml = renderFeaturePills(model.summary.features);
 
   return sectionStack([
     `<section class="summary-grid">`,
-    metric(t("permissions"), stats.permissions),
-    metric(t("nativeLibraries"), stats.nativeLibraries),
-    metric(t("components"), stats.components),
-    metric(t("signatures"), stats.signatures),
-    metric(t("metaData"), stats.metaData),
+    model.summary.metrics.map((item) => metric(item.label, item.value)).join(""),
     `</section>`,
-    section(t("summary"), renderKeyValueTable([
-      [t("appName"), info.appName],
-      [t("packageName"), info.packageName],
-      [t("versionName"), info.versionName],
-      [t("versionCode"), info.versionCode],
-      [t("targetSdk"), info.targetSdk],
-      [t("minSdk"), info.minSdk],
-      [t("compileSdk"), info.compileSdk],
-      [t("fileName"), report.fileName],
-      [t("fileSize"), formatBytes(report.fileSizeBytes)],
-      [t("analyzedAt"), formatDate(report.analyzedAt)],
-      [t("duration"), t("completedIn", { seconds: (report.durationMs / 1000).toFixed(2) })],
-      [t("terminalSystem"), formatTerminalSystem(report)],
-    ])),
+    section(t("summary"), renderKeyValueTable(model.summary.rows.map((row) => [row.label, row.value]))),
     section(t("buildFeatures"), featureHtml || emptyList(t("noBuildFeatures"))),
-    section(t("sdk"), renderSdkSummaryPreview(info.sdkSummary)),
+    section(t("sdk"), renderSdkRows(model.summary.sdkPreview)),
   ]);
 }
 
@@ -337,24 +321,23 @@ function renderSdkTab(report) {
 }
 
 function renderNativeTab(report) {
-  const libraries = report.apkInfo.nativeLibraries || [];
-  if (libraries.length === 0) {
+  const model = buildWebReportViewModel(report);
+  const entries = model.native.groups;
+  if (entries.length === 0) {
     return emptyList(t("noNativeLibraries"));
   }
 
-  const groups = groupBy(libraries, (library) => library.abi || t("unknown"));
-  const entries = [...groups.entries()];
-  if (!groups.has(state.activeNativeAbi)) {
-    state.activeNativeAbi = entries[0]?.[0] || "";
+  if (!entries.some((entry) => entry.abi === state.activeNativeAbi)) {
+    state.activeNativeAbi = entries[0]?.abi || "";
   }
 
-  const abiTabs = entries.map(([abi, items]) => [
+  const abiTabs = entries.map(({ abi, items }) => [
     `<button type="button" class="native-abi-tab${abi === state.activeNativeAbi ? " is-active" : ""}" data-native-abi="${escapeAttr(abi)}" role="tab" aria-selected="${abi === state.activeNativeAbi ? "true" : "false"}">`,
     `<span>${escapeHtml(abi)}</span>`,
     `<span class="native-abi-count">${escapeHtml(String(items.length))}</span>`,
     `</button>`,
   ].join("")).join("");
-  const activeLibraries = groups.get(state.activeNativeAbi) || [];
+  const activeLibraries = entries.find((entry) => entry.abi === state.activeNativeAbi)?.items || [];
   const rows = activeLibraries.map((library) => {
     const sdk = library.sdk ? renderSdkChip(library.sdk) : "";
     return [
@@ -375,17 +358,7 @@ function renderNativeTab(report) {
 }
 
 function renderNativeLibraryLabels(library) {
-  const labels = [];
-  if (isNativeLibraryElf16KbAligned(library)) {
-    labels.push({ text: "16 KB", tone: "ok" });
-  }
-
-  const zipAlignment = Number(library.zipAlignment) || 0;
-  if (zipAlignment > 0 && zipAlignment < NATIVE_PAGE_SIZE_16_KB) {
-    labels.push({ text: formatNativeZipAlignmentLabel(zipAlignment), tone: "warning" });
-  }
-
-  return labels.map((label) => (
+  return getNativeLibraryLabels(library).map((label) => (
     `<span class="compare-diff-status" style="${escapeAttr(getNativeLibraryLabelStyle(label.tone))}">${escapeHtml(label.text)}</span>`
   )).join("");
 }
@@ -402,22 +375,6 @@ function getNativeLibraryLabelStyle(tone) {
   ].join(";");
 }
 
-function isNativeLibraryElf16KbAligned(library) {
-  if (library.elf16kbAligned === true) {
-    return true;
-  }
-
-  const pageSize = Number(library.elfPageSize) || 0;
-  return pageSize > 0 && pageSize % NATIVE_PAGE_SIZE_16_KB === 0;
-}
-
-function formatNativeZipAlignmentLabel(zipAlignment) {
-  if (zipAlignment >= 1024 && zipAlignment % 1024 === 0) {
-    return `${zipAlignment / 1024}KB ZIPALIGN`;
-  }
-  return `${zipAlignment}B ZIPALIGN`;
-}
-
 function renderAppTitle(title) {
   const value = title || t("unknown");
   return [
@@ -429,19 +386,17 @@ function renderAppTitle(title) {
 }
 
 function renderComponentsTab(report) {
-  const components = report.apkInfo.components || {};
-  const total = countComponents(components);
-  if (total === 0) {
+  const model = buildWebReportViewModel(report);
+  if (model.components.total === 0) {
     return emptyList(t("noComponents"));
   }
 
-  const blocks = COMPONENT_SECTIONS.map((sectionName) => {
-    const items = components[sectionName] || [];
+  const blocks = model.components.groups.map(({ label, items }) => {
     const rows = items.map(renderComponentRow).join("");
     return [
       `<details class="group-block component-group-block" open>`,
       `<summary class="component-group-summary">`,
-      `<span class="component-group-title">${escapeHtml(t(sectionName))}</span>`,
+      `<span class="component-group-title">${escapeHtml(label)}</span>`,
       `<span class="component-group-count">${escapeHtml(String(items.length))}</span>`,
       `</summary>`,
       rows ? `<div class="list-stack component-list-stack">${rows}</div>` : emptyList(t("noComponents")),
@@ -502,8 +457,7 @@ function renderComponentDetailRow(label, value) {
 }
 
 function renderPermissionsTab(report) {
-  const permissions = [...(report.apkInfo.permissions || [])]
-    .sort((left, right) => String(left || "").localeCompare(String(right || ""), "en", { sensitivity: "base" }));
+  const permissions = buildWebReportViewModel(report).permissions.items;
   if (permissions.length === 0) {
     return emptyList(t("noPermissions"));
   }
@@ -518,21 +472,17 @@ function renderPermissionsTab(report) {
 }
 
 function renderSignaturesTab(report) {
-  const signatures = report.apkInfo.signatures || {};
-  const certificates = signatures.certificates || [];
-  if (certificates.length === 0 && !(signatures.schemes || []).length) {
+  const signatures = buildWebReportViewModel(report).signatures;
+  if (signatures.certificates.length === 0 && !signatures.schemes.length) {
     return emptyList(t("noSignatures"));
   }
 
   const sections = [
-    section(t("signatureSchemes"), renderSignatureSchemePills(signatures.schemes || [])),
+    section(t("signatureSchemes"), renderSignatureSchemePills(signatures.schemes)),
   ];
 
-  certificates.forEach((certificate, index) => {
-    sections.push(section(
-      t("signatureCertificate", { index: index + 1 }),
-      renderSignatureCertificate(certificate),
-    ));
+  signatures.certificates.forEach((certificate) => {
+    sections.push(section(certificate.title, renderSignatureCertificate(certificate)));
   });
 
   return sectionStack(sections);
@@ -547,52 +497,9 @@ function renderSignatureSchemePills(schemes) {
 }
 
 function renderSignatureCertificate(certificate) {
-  const publicKey = certificate.publicKey || {};
-  const signatureAlgorithm = certificate.signatureAlgorithm || {};
-  const fingerprints = certificate.fingerprints || {};
-  const validity = certificate.validity || {};
-  const rows = [
-    [t("signatureSchemes"), renderSignatureListValue(certificate.schemes || [])],
-    [t("signatureVersion"), escapeHtml(certificate.version || t("unknown"))],
-    [t("signatureSerialNumber"), renderSignatureSerialNumber(certificate.serialNumber)],
-    [t("signatureIssuer"), renderSignatureCodeValue(certificate.issuer)],
-    [t("signatureSubject"), renderSignatureCodeValue(certificate.subject)],
-    [t("signatureValidFrom"), escapeHtml(formatSignatureDate(validity.notBefore))],
-    [t("signatureValidTo"), escapeHtml(formatSignatureDate(validity.notAfter))],
-    [t("signaturePublicKeyFormat"), escapeHtml(publicKey.format || t("unknown"))],
-    [t("signaturePublicKeyAlgorithm"), escapeHtml(publicKey.algorithm || t("unknown"))],
-    [t("signaturePublicKeyExponent"), renderSignatureInteger(publicKey.exponent)],
-    [t("signaturePublicKeyModulusSize"), publicKey.modulusSizeBits ? escapeHtml(`${publicKey.modulusSizeBits} bits`) : ""],
-    [t("signaturePublicKeyModulus"), renderSignatureModulus(publicKey.modulusHex)],
-    [t("signaturePublicKeyY"), renderSignatureCodeValue(publicKey.y)],
-    [t("signaturePublicKeyType"), escapeHtml(publicKey.type || "")],
-    [t("signatureAlgorithmName"), escapeHtml(signatureAlgorithm.name || t("unknown"))],
-    [t("signatureAlgorithmOid"), renderSignatureCodeValue(signatureAlgorithm.oid)],
-    [t("signatureMd5"), renderSignatureCodeValue(fingerprints.md5)],
-    [t("signatureSha1"), renderSignatureCodeValue(fingerprints.sha1)],
-    [t("signatureSha256"), renderSignatureCodeValue(fingerprints.sha256)],
-    [t("signatureCharString"), renderSignatureCodeValue(certificate.charString)],
-    [t("signatureSourceEntry"), renderSignatureListValue(certificate.sourceEntries || [])],
-    [t("signatureDerLength"), certificate.derLength ? escapeHtml(formatBytes(certificate.derLength)) : ""],
-  ].filter(([, value]) => String(value || "").length > 0);
-
-  return renderHtmlKeyValueTable(rows);
-}
-
-function renderSignatureSerialNumber(serialNumber) {
-  if (!serialNumber) {
-    return escapeHtml(t("unknown"));
-  }
-
-  return renderSignatureCodeValue(`${serialNumber.decimal || t("unknown")} (${serialNumber.hex || t("unknown")})`);
-}
-
-function renderSignatureInteger(value) {
-  if (!value) {
-    return "";
-  }
-
-  return renderSignatureCodeValue(`${value.decimal || t("unknown")} (${value.hex || t("unknown")})`);
+  return renderHtmlKeyValueTable(
+    certificate.rows.map((row) => [row.label, renderSignatureFieldValue(row)]),
+  );
 }
 
 function renderSignatureCodeValue(value) {
@@ -603,12 +510,25 @@ function renderSignatureCodeValue(value) {
   return `<code class="signature-code-value">${escapeHtml(value)}</code>`;
 }
 
+function renderSignatureFieldValue(row) {
+  if (row.kind === "list") {
+    return renderSignatureListValue(row.value);
+  }
+  if (row.kind === "blockCode") {
+    return renderSignatureModulus(row.value);
+  }
+  if (row.kind === "code") {
+    return renderSignatureCodeValue(row.value);
+  }
+  return escapeHtml(row.value || t("unknown"));
+}
+
 function renderSignatureModulus(value) {
   if (!value) {
     return "";
   }
 
-  return `<code class="signature-code-value signature-modulus">${escapeHtml(formatSignatureHexBlock(value))}</code>`;
+  return `<code class="signature-code-value signature-modulus">${escapeHtml(value)}</code>`;
 }
 
 function renderSignatureListValue(values) {
@@ -617,23 +537,6 @@ function renderSignatureListValue(values) {
   }
 
   return escapeHtml(values.join(", "));
-}
-
-function formatSignatureHexBlock(value) {
-  const bytes = String(value || "")
-    .split(":")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (bytes.length <= 1) {
-    return String(value || "");
-  }
-
-  const lines = [];
-  for (let index = 0; index < bytes.length; index += 16) {
-    lines.push(bytes.slice(index, index + 16).join(":"));
-  }
-
-  return lines.join("\n");
 }
 
 function renderMetaDataTab(report) {
@@ -675,32 +578,6 @@ function renderRawTab(report) {
     `</div>`,
     `<pre class="json-block app-data-text">${escapeHtml(formatExportJson(report))}</pre>`,
   ].join("");
-}
-
-function renderSdkSummaryPreview(sdkSummary) {
-  if (!sdkSummary) {
-    return emptyList(t("noSdkMarkers"));
-  }
-
-  const combined = [];
-  appendSdkSummaryEntries(combined, sdkSummary.native, t("nativeLibraries"));
-  appendSdkSummaryEntries(combined, sdkSummary.components, t("components"));
-  combined.sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
-
-  if (combined.length === 0) {
-    return emptyList(t("noSdkMarkers"));
-  }
-
-  return renderSdkRows(combined.slice(0, 8));
-}
-
-function appendSdkSummaryEntries(target, entries = [], source) {
-  for (const entry of entries || []) {
-    target.push({
-      ...entry,
-      source,
-    });
-  }
 }
 
 function renderSdkRows(entries) {
@@ -751,29 +628,12 @@ function joinTextParts(parts) {
   return values.join(" · ");
 }
 
-function renderFeaturePills(buildFeatures = {}) {
-  const features = [];
-  if (buildFeatures.kotlinDetected) {
-    features.push(buildFeatureLabel("Kotlin", buildFeatures.kotlinVersion));
-  }
-  if (buildFeatures.composeDetected) {
-    features.push(buildFeatureLabel("Compose", buildFeatures.composeVersion));
-  }
-  if (buildFeatures.gradleVersion) {
-    features.push(`Gradle ${buildFeatures.gradleVersion}`);
-  }
-  if (buildFeatures.agpVersion) {
-    features.push(`AGP ${buildFeatures.agpVersion}`);
-  }
-  if (buildFeatures.appMetadataVersion) {
-    features.push(`App Metadata ${buildFeatures.appMetadataVersion}`);
-  }
-
+function renderFeaturePills(features = []) {
   if (!features.length) {
     return "";
   }
 
-  return `<div class="feature-grid">${features.map((item) => `<span class="feature-pill app-data-text">${escapeHtml(item)}</span>`).join("")}</div>`;
+  return `<div class="feature-grid">${features.map((item) => `<span class="feature-pill app-data-text">${escapeHtml(item.text)}</span>`).join("")}</div>`;
 }
 
 function renderSdkChip(sdk) {
@@ -859,10 +719,6 @@ function inlineCodeValue(value) {
   return `<code class="inline-code-value app-data-text">${escapeHtml(value || t("unknown"))}</code>`;
 }
 
-function buildFeatureLabel(name, version) {
-  return version ? `${name} ${version}` : name;
-}
-
 function buildExportReport(report) {
   return stripDataUris({
     ...report,
@@ -900,18 +756,80 @@ function formatSignatureDate(value) {
   return formatDate(value);
 }
 
-function formatTerminalSystem(report) {
-  const system = report.terminalSystem || report.analysisProfile?.runtime?.system || {};
-  const name = String(system.name || "").trim();
-  const version = String(system.version || "").trim();
-
-  if (!name && !version) {
-    return t("unknown");
-  }
-
-  return [name, version].filter(Boolean).join(" ");
-}
-
 function emptyList(message) {
   return `<p class="empty-list">${escapeHtml(message)}</p>`;
+}
+
+function buildWebReportViewModel(report) {
+  return buildApkReportViewModel(report, {
+    labels: getReportModelLabels(),
+    featureLabels: getFeatureLabels(),
+    formatBytes,
+    formatDate,
+    formatDuration: (durationMs) => t("completedIn", { seconds: (durationMs / 1000).toFixed(2) }),
+    formatSignatureDate,
+    includeTerminalSystem: true,
+  });
+}
+
+function getReportModelLabels() {
+  return {
+    activities: t("activities"),
+    analyzedAt: t("analyzedAt"),
+    appName: t("appName"),
+    compileSdk: t("compileSdk"),
+    components: t("components"),
+    duration: t("duration"),
+    fileName: t("fileName"),
+    fileSize: t("fileSize"),
+    metaData: t("metaData"),
+    minSdk: t("minSdk"),
+    nativeLibraries: t("nativeLibraries"),
+    packageName: t("packageName"),
+    permissions: t("permissions"),
+    providers: t("providers"),
+    receivers: t("receivers"),
+    services: t("services"),
+    signatures: t("signatures"),
+    source: t("source"),
+    signatureAlgorithmName: t("signatureAlgorithmName"),
+    signatureAlgorithmOid: t("signatureAlgorithmOid"),
+    signatureCertificate: t("signatureCertificate", { index: "{index}" }),
+    signatureCharString: t("signatureCharString"),
+    signatureDerLength: t("signatureDerLength"),
+    signatureIssuer: t("signatureIssuer"),
+    signatureMd5: t("signatureMd5"),
+    signaturePublicKeyAlgorithm: t("signaturePublicKeyAlgorithm"),
+    signaturePublicKeyExponent: t("signaturePublicKeyExponent"),
+    signaturePublicKeyFormat: t("signaturePublicKeyFormat"),
+    signaturePublicKeyModulus: t("signaturePublicKeyModulus"),
+    signaturePublicKeyModulusSize: t("signaturePublicKeyModulusSize"),
+    signaturePublicKeyType: t("signaturePublicKeyType"),
+    signaturePublicKeyY: t("signaturePublicKeyY"),
+    signatureSchemes: t("signatureSchemes"),
+    signatureSerialNumber: t("signatureSerialNumber"),
+    signatureSha1: t("signatureSha1"),
+    signatureSha256: t("signatureSha256"),
+    signatureSourceEntry: t("signatureSourceEntry"),
+    signatureSubject: t("signatureSubject"),
+    signatureValidFrom: t("signatureValidFrom"),
+    signatureValidTo: t("signatureValidTo"),
+    signatureVersion: t("signatureVersion"),
+    targetSdk: t("targetSdk"),
+    terminalSystem: t("terminalSystem"),
+    unknown: t("unknown"),
+    versionCode: t("versionCode"),
+    versionName: t("versionName"),
+  };
+}
+
+function getFeatureLabels() {
+  return {
+    agp: "AGP",
+    appMetadataVersion: "App Metadata",
+    compose: "Compose",
+    detected: t("unknown"),
+    gradle: "Gradle",
+    kotlin: "Kotlin",
+  };
 }

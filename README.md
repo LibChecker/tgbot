@@ -67,11 +67,16 @@ npm run pages:dev
 Configure Worker secrets:
 
 ```bash
-npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml
+npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml --env production
+npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml --env preview
 npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml
 npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml
 ```
+
+Use a dedicated test bot token for the preview environment. In GitHub Actions,
+set `TEST_BOT_TOKEN`; the workflow syncs it into the preview Worker as
+`BOT_TOKEN` so production `BOT_TOKEN` stays isolated.
 
 `TELEGRAM_WEBHOOK_SECRET` and `TELEGRAPH_ACCESS_TOKEN` are optional, but recommended for production.
 
@@ -97,7 +102,7 @@ npm run deploy:setup
 
 The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.toml`:
 
-- `preview`: deploys `tgbot-preview` on `workers.dev`, uses `Libchecker_TG_Bot_Preview`, and does not register a Telegram webhook.
+- `preview`: deploys `tgbot-preview` on `workers.dev`, uses `Libchecker_TG_Bot_Preview`, and uses `TEST_BOT_TOKEN` for preview bot testing. Set repository variable `PREVIEW_WORKER_URL` to automatically register that test bot webhook.
 - `production`: deploys `tgbot` to `lcbot.absinthe.life`, uses `Libchecker_TG_Bot`, and sets `PUBLIC_WEBHOOK_URL=https://lcbot.absinthe.life`.
 
 ## Web UI Deployment
@@ -194,13 +199,19 @@ Required repository secrets:
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
-- `BOT_TOKEN`
+- `BOT_TOKEN` for production
+- `TEST_BOT_TOKEN` for preview bot testing
 - `ADMIN_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
 - `TELEGRAPH_ACCESS_TOKEN`
 
+Optional repository secret:
+
+- `TEST_TELEGRAM_WEBHOOK_SECRET`
+
 Optional repository variable:
 
+- `PREVIEW_WORKER_URL`
 - `WORKER_URL`
 
 ## Project Layout

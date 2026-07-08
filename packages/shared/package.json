@@ -8,6 +8,7 @@
     "./apk-signatures.js": "./src/apk-signatures.js",
     "./contracts.js": "./src/contracts.js",
     "./i18n.js": "./src/i18n.js",
+    "./report-model.js": "./src/report-model.js",
     "./sdk-markers.js": "./src/sdk-markers.js",
     "./terminal-system.js": "./src/terminal-system.js",
     "./generated/*": "./src/generated/*"

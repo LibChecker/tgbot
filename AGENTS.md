@@ -64,6 +64,7 @@
 - Root deploy commands are preferred over package deploy commands because they run checks, Web UI build, performance budgets, and Worker dry-run size budgets.
 - Cloudflare Pages deploys must run from `packages/apk-webui/` with its relative `dist` so `functions/` are discovered. If production `/url-report` returns `405`, suspect Pages Functions were not deployed and verify the deploy cwd before changing route logic.
 - Do not deploy or change Cloudflare/Telegram webhook state unless the user explicitly asks.
+- Preview bot deployments must use `TEST_BOT_TOKEN` for `tgbot-preview`; do not point the production `BOT_TOKEN` webhook at preview.
 - In this sandbox, `git add` and `git commit` may need escalation because writing `.git/index.lock` is blocked. Confirm staged diff boundaries before escalating.
 - Preflight success requires every check table row, especially `npm run perf:check` size budgets, to be `OK`. Treat any `FAIL` budget row as a real preflight failure even if later logs include Wrangler dry-run output.
 - Wrangler can emit non-fatal `EPERM` log-write warnings under sandboxed macOS paths. Treat these as noise only when command exit status is 0, the preflight reports passed, and all budget/check rows are `OK`.
@@ -104,6 +105,7 @@
 - For slow Web UI link analysis, inspect runtime log split timings (`client_duration_ms`, `server_duration_ms`, `fetch_headers_ms`, `response_text_ms`, `json_parse_ms`, `render_ms`) before blaming rendering, history writes, or remote parsing. Large reports can justify moving noncritical work off the visible-result path, but they are not evidence of multi-second stalls by themselves.
 - Static Web UI text should stay non-selectable for drag/long-press copy. Only application/report data values should opt into selection, using the existing `app-data-text` whitelist class or an equivalent narrowly scoped report-data selector.
 - Cloudflare Analytics Engine exposes only `blob1`-`blob20` and `double1`-`double20`. Keep Web UI `functions/analytics.js` blob/double key arrays at 20 entries or fewer, and let `npm run pages:check` catch budget overflows before deploy.
+- Keep shared report view-model code lazy-loaded through `report-renderer.js`. Do not re-export it from the first-screen `app/report-model.js`, or the Web UI entry JS can pull report rendering into the initial bundle and fail perf budgets.
 
 ## Worker Notes
 
