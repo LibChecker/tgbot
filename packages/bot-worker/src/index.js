@@ -1891,21 +1891,12 @@ function buildReportReplyMarkup(chat, reportUrl, buttonText) {
 }
 
 function buildLinkReplyMarkup(chat, url, buttonText) {
-  const button = isPrivateChat(chat)
-    ? {
-        text: buttonText,
-        web_app: {
-          url,
-        },
-      }
-    : {
-        text: buttonText,
-        url,
-      };
-
   return {
     inline_keyboard: [
-      [button],
+      [{
+        text: buttonText,
+        url,
+      }],
     ],
   };
 }
@@ -2387,6 +2378,7 @@ function getErrorStack(error) {
 }
 
 export const __botWorkerTestInternals = {
+  buildLinkReplyMarkup,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,

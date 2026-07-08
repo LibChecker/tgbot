@@ -3,7 +3,12 @@ import test from "node:test";
 
 import { __botWorkerTestInternals } from "../src/index.js";
 
-const { buildMessageTelemetryFields, selectTargetDocument, selectTargetUrl } = __botWorkerTestInternals;
+const {
+  buildLinkReplyMarkup,
+  buildMessageTelemetryFields,
+  selectTargetDocument,
+  selectTargetUrl,
+} = __botWorkerTestInternals;
 
 const apkDocument = {
   file_id: "apk-file",
@@ -49,6 +54,18 @@ test("private chats still auto-analyze direct APK links", () => {
   };
 
   assert.equal(selectTargetUrl(message, null, false, false), "https://example.com/sample.apk");
+});
+
+test("private chat report buttons use regular URLs", () => {
+  const markup = buildLinkReplyMarkup(
+    { id: 1, type: "private" },
+    "https://example.com/report?path=sample",
+    "Open report",
+  );
+  const button = markup.inline_keyboard[0][0];
+
+  assert.equal(button.url, "https://example.com/report?path=sample");
+  assert.equal(button.web_app, undefined);
 });
 
 test("ignored group messages do not expose group identity in analytics telemetry", () => {
