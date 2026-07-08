@@ -26,6 +26,9 @@ const TELEGRAM_RETRY_BUFFER_SECONDS = 1;
 const [, , ...argv] = process.argv;
 const options = parseArgs(argv);
 const stickerFormat = normalizeStickerFormat(options["sticker-format"] || process.env.TELEGRAM_SDK_EMOJI_FORMAT);
+if (stickerFormat !== "animated" && !getBooleanOption("allow-static")) {
+  fail("Static SDK emoji sync is disabled by default. Pass --allow-static only when raster PNG/WebP emoji are intentional.");
+}
 
 if (options["self-test"]) {
   runSelfTest();
@@ -305,6 +308,7 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
       }
     }
 
+    assertStickerFormat(sticker, action.icon.name);
     updated.icons[action.icon.name] = {
       setName: action.setName,
       stickerFileId: sticker.file_id,
@@ -339,6 +343,19 @@ function buildInputSticker(iconName, attachName) {
     emoji_list: [DEFAULT_EMOJI],
     keywords: buildKeywords(iconName),
   };
+}
+
+function assertStickerFormat(sticker, iconName) {
+  if (stickerFormat === "animated") {
+    if (!sticker?.is_animated || sticker?.is_video) {
+      fail(`Telegram returned a non-animated sticker for ${iconName}; refusing to write a raster custom emoji id.`);
+    }
+    return;
+  }
+
+  if (sticker?.is_animated || sticker?.is_video) {
+    fail(`Telegram returned a non-static sticker for ${iconName}; refusing to write a mismatched custom emoji id.`);
+  }
 }
 
 function buildKeywords(iconName) {
@@ -1195,7 +1212,7 @@ function printPlan(plan, { dryRun, kvKey }) {
     return counts;
   }, {});
   process.stdout.write(`${dryRun ? "dry-run " : ""}telegram sdk emoji sync\n`);
-  process.stdout.write(`${JSON.stringify({ ...summary, sets: plan.sets.length, kvKey }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ format: stickerFormat, setBase, ...summary, sets: plan.sets.length, kvKey }, null, 2)}\n`);
 }
 
 async function runRenderCheck() {
