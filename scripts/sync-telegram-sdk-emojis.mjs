@@ -46,10 +46,23 @@ if (!username) {
 
 const sourceIcons = getSourceIcons(LIBCHECKER_SDK_ICON_SVGS);
 const manifest = normalizeManifest(SDK_ICON_CUSTOM_EMOJI_MANIFEST);
-const remoteCounts = dryRun ? getManifestSetCounts(manifest) : await getRemoteSetCounts(botToken, manifest.sets);
+const remoteState = dryRun
+  ? {
+    sets: manifest.sets,
+    counts: getManifestSetCounts(manifest),
+    stickersBySet: new Map(),
+  }
+  : await getRemoteSetState(botToken, manifest.sets, {
+    botUsername: username,
+    setBase,
+    setTitle,
+  });
+const remoteCounts = remoteState.counts;
 const plan = buildSyncPlan({
   sourceIcons,
   manifest,
+  remoteSetInfos: remoteState.sets,
+  remoteSetStickers: remoteState.stickersBySet,
   botUsername: username,
   setBase,
   setTitle,
@@ -64,10 +77,20 @@ if (!dryRun) {
   process.stdout.write(`wrote ${outputPath}\n`);
 }
 
-function buildSyncPlan({ sourceIcons, manifest, botUsername, setBase, setTitle, remoteCounts }) {
-  const sets = new Map((manifest.sets || []).map((set) => [set.name, { ...set }]));
+function buildSyncPlan({
+  sourceIcons,
+  manifest,
+  remoteSetInfos,
+  remoteSetStickers,
+  botUsername,
+  setBase,
+  setTitle,
+  remoteCounts,
+}) {
+  const sets = new Map((remoteSetInfos || manifest.sets || []).map((set) => [set.name, { ...set }]));
   const counts = new Map(remoteCounts);
   const actions = [];
+  const replaceCursors = new Map();
 
   for (const icon of sourceIcons) {
     const current = manifest.icons[icon.name];
@@ -82,8 +105,28 @@ function buildSyncPlan({ sourceIcons, manifest, botUsername, setBase, setTitle, 
     }
 
     const set = selectWritableSet({ sets, counts, botUsername, setBase, setTitle });
+    const remoteStickers = remoteSetStickers?.get(set.name) || [];
+    const hasRemoteSet = remoteSetStickers?.has(set.name);
+    const replaceCursor = replaceCursors.get(set.name) || 0;
+    if (replaceCursor < remoteStickers.length) {
+      const sticker = remoteStickers[replaceCursor];
+      actions.push({
+        type: "replace",
+        icon,
+        setName: set.name,
+        setTitle: set.title,
+        current: {
+          setName: set.name,
+          stickerFileId: sticker.file_id,
+          customEmojiId: sticker.custom_emoji_id || "",
+        },
+      });
+      replaceCursors.set(set.name, replaceCursor + 1);
+      continue;
+    }
+
     actions.push({
-      type: counts.get(set.name) > 0 ? "add" : "create",
+      type: counts.get(set.name) > 0 || hasRemoteSet ? "add" : "create",
       icon,
       setName: set.name,
       setTitle: set.title,
@@ -223,11 +266,67 @@ function getManifestSetCounts(manifest) {
   return counts;
 }
 
+async function getRemoteSetState(botToken, sets, { botUsername, setBase, setTitle }) {
+  const remoteSetInfos = (sets || []).map((set) => ({ ...set }));
+  const stickersBySet = new Map();
+  const counts = new Map();
+  for (const set of remoteSetInfos) {
+    const remoteSet = await tryGetRemoteSet(botToken, set.name);
+    if (!remoteSet) {
+      counts.set(set.name, 0);
+      continue;
+    }
+    counts.set(set.name, remoteSet.stickers?.length || 0);
+    stickersBySet.set(set.name, remoteSet.stickers || []);
+  }
+
+  if ((sets || []).length > 0) {
+    return {
+      sets: remoteSetInfos,
+      counts,
+      stickersBySet,
+    };
+  }
+
+  for (let index = 1; index <= 9999; index += 1) {
+    const setName = buildSetName(setBase, botUsername, index);
+    const remoteSet = await tryGetRemoteSet(botToken, setName);
+    if (!remoteSet) {
+      break;
+    }
+    remoteSetInfos.push({
+      name: setName,
+      title: index === 1 ? setTitle : `${setTitle} ${index}`,
+      count: remoteSet.stickers?.length || 0,
+    });
+    counts.set(setName, remoteSet.stickers?.length || 0);
+    stickersBySet.set(setName, remoteSet.stickers || []);
+  }
+
+  return {
+    sets: remoteSetInfos,
+    counts,
+    stickersBySet,
+  };
+}
+
+async function tryGetRemoteSet(botToken, setName) {
+  try {
+    return await callTelegramJson(botToken, "getStickerSet", { name: setName });
+  } catch {
+    return null;
+  }
+}
+
 async function getRemoteSetCounts(botToken, sets) {
   const counts = new Map();
   for (const set of sets || []) {
     try {
-      const remoteSet = await callTelegramJson(botToken, "getStickerSet", { name: set.name });
+      const remoteSet = await tryGetRemoteSet(botToken, set.name);
+      if (!remoteSet) {
+        counts.set(set.name, 0);
+        continue;
+      }
       counts.set(set.name, remoteSet.stickers?.length || 0);
     } catch {
       counts.set(set.name, 0);
