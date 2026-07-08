@@ -111,14 +111,14 @@ test("SDK marker summary lists bounded markers with icons and overflow", () => {
     const summary = formatSdkMarkerSummary({
       native: [
         { key: "android", label: "Android", iconName: "ic_lib_android", count: 2 },
-        { key: "react", label: "React Native", iconName: "ic_lib_react", count: 1 },
-        { key: "firebase", label: "Firebase", iconName: "ic_lib_firebase", count: 8 },
-        { key: "adjust", label: "Adjust", iconName: "ic_lib_adjust", count: 7 },
-        { key: "bugly", label: "Bugly", iconName: "ic_lib_bugly", count: 6 },
-        { key: "facebook", label: "Facebook", iconName: "ic_lib_facebook", count: 5 },
-        { key: "flurry", label: "Flurry", iconName: "ic_lib_flurry", count: 4 },
-        { key: "unity", label: "Unity", iconName: "ic_lib_unity", count: 3 },
-        { key: "x5", label: "X5", iconName: "ic_lib_x5", count: 2 },
+        { key: "react", label: "React Native", iconName: "ic_test_react", count: 1 },
+        { key: "firebase", label: "Firebase", iconName: "ic_test_firebase", count: 8 },
+        { key: "adjust", label: "Adjust", iconName: "ic_test_adjust", count: 7 },
+        { key: "bugly", label: "Bugly", iconName: "ic_test_bugly", count: 6 },
+        { key: "facebook", label: "Facebook", iconName: "ic_test_facebook", count: 5 },
+        { key: "flurry", label: "Flurry", iconName: "ic_test_flurry", count: 4 },
+        { key: "unity", label: "Unity", iconName: "ic_test_unity", count: 3 },
+        { key: "x5", label: "X5", iconName: "ic_test_x5", count: 2 },
       ],
       components: [
         { key: "android", label: "Android", iconName: "ic_lib_android", count: 3 },
