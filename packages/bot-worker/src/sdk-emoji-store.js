@@ -1,25 +1,12 @@
 export const SDK_EMOJI_KV_KEY = "telegram-sdk-emojis:manifest:v1";
 
-const SDK_EMOJI_CACHE_TTL_MS = 5 * 60 * 1000;
-
-let cachedSdkEmojiIds = null;
-
-export async function loadSdkCustomEmojiIds(env, now = Date.now()) {
-  if (cachedSdkEmojiIds && cachedSdkEmojiIds.expiresAt > now) {
-    return cachedSdkEmojiIds.promise;
-  }
-
+export async function loadSdkCustomEmojiIds(env) {
   const namespace = env?.SDK_EMOJI_KV;
   if (!namespace || typeof namespace.get !== "function") {
     return {};
   }
 
-  const promise = readSdkCustomEmojiIds(namespace);
-  cachedSdkEmojiIds = {
-    expiresAt: now + SDK_EMOJI_CACHE_TTL_MS,
-    promise,
-  };
-  return promise;
+  return readSdkCustomEmojiIds(namespace);
 }
 
 export function extractSdkCustomEmojiIds(value) {

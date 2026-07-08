@@ -249,6 +249,21 @@ function buildSyncPlan({
   return { actions, sets: [...sets.values()], resetSetNames: [...resetSetNames] };
 }
 
+function clearResetSetEntries(manifest, resetSetNames) {
+  const reset = new Set(resetSetNames || []);
+  const cleared = normalizeManifest(manifest);
+  if (reset.size === 0) {
+    return cleared;
+  }
+  for (const [iconName, entry] of Object.entries(cleared.icons)) {
+    if (reset.has(entry?.setName)) {
+      delete cleared.icons[iconName];
+    }
+  }
+  cleared.sets = summarizeSets(cleared);
+  return cleared;
+}
+
 function selectWritableSet({ sets, counts, botUsername, setBase, setTitle, isWritableSet = () => true }) {
   for (const set of sets.values()) {
     if (!isWritableSet(set.name)) {
@@ -269,15 +284,17 @@ function selectWritableSet({ sets, counts, botUsername, setBase, setTitle, isWri
 }
 
 async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {}) {
-  const updated = normalizeManifest(manifest);
+  let updated = normalizeManifest(manifest);
   updated.sets = plan.sets;
 
   for (const setName of plan.resetSetNames || []) {
     await callTelegramJson(botToken, "deleteStickerSet", { name: setName });
-    for (const [iconName, entry] of Object.entries(updated.icons)) {
-      if (entry?.setName === setName) {
-        delete updated.icons[iconName];
-      }
+  }
+  if (plan.resetSetNames?.length) {
+    updated = clearResetSetEntries(updated, plan.resetSetNames);
+    updated.sets = plan.sets;
+    if (onUpdate) {
+      await onUpdate(updated);
     }
   }
 
@@ -1384,6 +1401,14 @@ function runSelfTest() {
   assert(filteredManifest.icons.ic_lib_test_000?.customEmojiId === "legacy_custom", "stable sticker set mappings are kept");
 
   const oldSetName = "libchecker_sdk_by_examplebot";
+  const clearedResetManifest = clearResetSetEntries(normalizeManifest({
+    icons: {
+      ic_lib_test_000: { setName: oldSetName, customEmojiId: "old_custom" },
+      ic_lib_test_001: { setName: buildSetName(currentSetBase, "examplebot", 2), customEmojiId: "current_custom" },
+    },
+  }), [oldSetName]);
+  assert(!clearedResetManifest.icons.ic_lib_test_000, "reset sets are removed from the manifest before resync");
+  assert(clearedResetManifest.icons.ic_lib_test_001?.customEmojiId === "current_custom", "non-reset sets remain in the manifest");
   const incompatibleSticker = stickerFormat === "animated"
     ? { file_id: "old_file", is_animated: false, is_video: false }
     : { file_id: "old_file", is_animated: true, is_video: false };
