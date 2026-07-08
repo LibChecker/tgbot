@@ -1,18 +1,25 @@
-# Agent Instructions
+# tgbot Agent Guide
+
+Root instructions for coding agents in this repository. Keep this file
+operational: durable project decisions, validation commands, module boundaries,
+and recurring pitfalls only.
 
 ## First Read
 
-- This is a private npm workspace for a Cloudflare Telegram APK bot plus a separate Cloudflare Pages APK Web UI.
-- Read this file first, then use `README.md` for the human-facing product/deploy overview.
-- The repository root is the npm workspace root. Run commands from the root unless a package-specific command is clearly needed.
-- Be careful in dirty worktrees. Do not revert unrelated user changes.
+- This is a private npm workspace for a Cloudflare Telegram APK bot and a
+  separate Cloudflare Pages APK Web UI.
+- Read this file first, then use `README.md` for human-facing product and deploy
+  overview.
+- Run commands from the repository root unless a package-specific command is
+  clearly needed.
+- Be careful in dirty worktrees. Never revert unrelated user changes.
 
 ## Project Map
 
 | Area | Path | Runtime | What it owns |
 | --- | --- | --- | --- |
-| Telegram bot / Worker | `packages/bot-worker/` | Cloudflare Workers | Telegram webhook, APK URL preview, upload page, report pages, admin APIs, observability. |
-| Browser Web UI | `packages/apk-webui/` | Cloudflare Pages + Vite | Browser-first APK analyzer UI, local Web Worker analysis, history/compare/report rendering, Pages Functions. |
+| Telegram bot / Worker | `packages/bot-worker/` | Cloudflare Workers + Hono | Telegram webhook, APK URL preview, upload page, report data, admin APIs, observability. |
+| Browser Web UI | `packages/apk-webui/` | Cloudflare Pages + Vite | Browser-first APK analyzer UI, local Web Worker analysis, history, compare, report rendering, Pages Functions. |
 | Shared analyzer | `packages/shared/` | Worker + browser | APK parsing, signatures, SDK marker matching, shared contracts, i18n runtime, generated rule/icon/catalog bundles. |
 | Translations | `locales/` | Shared | Source-of-truth locale JSON for both bot and Web UI. |
 | Deploy orchestration | `scripts/` | Node | Root Cloudflare preflight/deploy and size budget checks. |
@@ -21,22 +28,22 @@
 
 - Worker entry and Telegram flow: `packages/bot-worker/src/index.js`
 - APK link preview/range parsing: `packages/bot-worker/src/apk-url-preview.js`
-- Worker-hosted upload page: `packages/bot-worker/src/upload-view.js`
-- Worker-hosted report page: `packages/bot-worker/src/report-viewer.js`
+- Worker upload page: `packages/bot-worker/src/upload-view.js`
+- Worker legacy report page: `packages/bot-worker/src/report-viewer.js`
+- Worker Telegraph report storage: `packages/bot-worker/src/telegraph.js`
 - Web UI shell: `packages/apk-webui/src/index.html`
-- Web UI main controller: `packages/apk-webui/src/app.js`
-- Web UI build script: `packages/apk-webui/scripts/build.mjs`
-- Web UI package check script: `packages/apk-webui/scripts/check.mjs`
-- Web UI element collection/view helpers: `packages/apk-webui/src/app/view.js`
-- Web UI runtime i18n/non-translatable constants: `packages/apk-webui/src/app/i18n.js`
-- Web UI persisted history: `packages/apk-webui/src/app/history.js`
-- Web UI compare mode: `packages/apk-webui/src/app/compare-controller.js`
+- Web UI controller: `packages/apk-webui/src/app.js`
+- Web UI view helpers: `packages/apk-webui/src/app/view.js`
 - Web UI report rendering: `packages/apk-webui/src/app/report-renderer.js`
-- Web UI optional effects gates: `packages/apk-webui/src/app/liquid-glass-support.js`, `packages/apk-webui/src/app/file-picker-support.js`
+- Web UI history: `packages/apk-webui/src/app/history.js`
+- Web UI compare mode: `packages/apk-webui/src/app/compare-controller.js`
 - Web UI analyzer worker: `packages/apk-webui/src/analyzer-worker.js`
+- Web UI build/check scripts: `packages/apk-webui/scripts/build.mjs`,
+  `packages/apk-webui/scripts/check.mjs`
 - Shared APK parser: `packages/shared/src/apk.js`
 - Shared signing parser: `packages/shared/src/apk-signatures.js`
 - Shared SDK markers: `packages/shared/src/sdk-markers.js`
+- Shared report model: `packages/shared/src/report-model.js`
 - Shared i18n runtime: `packages/shared/src/i18n.js`
 
 ## Common Commands
@@ -47,110 +54,189 @@
 | Full repo check | `npm run check` |
 | Worker dev server | `npm run dev` |
 | Web UI dev server | `npm run pages:dev` |
-| Web UI check only | `npm run pages:check` |
+| Web UI check | `npm run pages:check` |
 | Web UI build | `npm run pages:build` |
+| Performance budgets | `npm run perf:check` |
 | Generate ignored shared bundles | `npm run generated:generate` |
-| Refresh LibChecker generated bundles | `npm run generated:refresh` |
+| Refresh LibChecker bundles | `npm run generated:refresh` |
 | Check translations | `npm run i18n:check` |
-| Generate translation catalogs | `npm run i18n:generate` |
-| Deploy preflight, preview | `npm run deploy:preflight -- --target=preview` |
-| Deploy preflight, production | `npm run deploy:preflight -- --target=production` |
+| Preview deploy preflight | `npm run deploy:preflight -- --target=preview` |
+| Production deploy preflight | `npm run deploy:preflight -- --target=production` |
 
-## Commit And Deploy Rules
+## Core Product Decisions
 
-- Before creating any code commit, check whether `AGENTS.md` can be improved with reusable project knowledge, workflow constraints, or newly discovered pitfalls from the work. Update it when the added guidance would help future sessions; avoid churn for one-off details.
-- Before creating any git commit, run `npm run deploy:preflight -- --target=preview` from the repository root and make sure it passes.
-- If the commit changes production deploy behavior or production-only configuration, also run `npm run deploy:preflight -- --target=production` before committing.
-- Root deploy commands are preferred over package deploy commands because they run checks, Web UI build, performance budgets, and Worker dry-run size budgets.
-- Cloudflare Pages deploys must run from `packages/apk-webui/` with its relative `dist` so `functions/` are discovered. If production `/url-report` returns `405`, suspect Pages Functions were not deployed and verify the deploy cwd before changing route logic.
-- Do not deploy or change Cloudflare/Telegram webhook state unless the user explicitly asks.
-- Preview bot deployments must use `TEST_BOT_TOKEN` for `tgbot-preview`; do not point the production `BOT_TOKEN` webhook at preview.
-- Preview custom domains must come from `PREVIEW_WORKER_URL`; do not hard-code private preview hostnames in repo config or workflows.
-- Production custom domains must come from `WORKER_URL`; do not hard-code private production hostnames in repo config or workflows.
-- Web UI origins must come from `PREVIEW_WEBUI_SITE_URL` or `WEBUI_SITE_URL`; do not hard-code private Web UI hostnames in `site-config.mjs`, bot links, repo config, or workflows.
-- In this sandbox, `git add` and `git commit` may need escalation because writing `.git/index.lock` is blocked. Confirm staged diff boundaries before escalating.
-- Preflight success requires every check table row, especially `npm run perf:check` size budgets, to be `OK`. Treat any `FAIL` budget row as a real preflight failure even if later logs include Wrangler dry-run output.
-- Wrangler can emit non-fatal `EPERM` log-write warnings under sandboxed macOS paths. Treat these as noise only when command exit status is 0, the preflight reports passed, and all budget/check rows are `OK`.
-- Windows Node deploy scripts must spawn command shims explicitly, such as `npm.cmd` and `node_modules/.bin/wrangler.cmd`; plain `spawn("npm")` or extensionless `.bin/wrangler` can fail before preflight starts.
+- Browser file analysis runs locally in the Web UI worker.
+- Server-side URL analysis belongs at the Worker/Pages Function boundary.
+- Bot report buttons should open the Web UI. The Worker `/report` page remains
+  for legacy links.
+- Remote APK URL preview is not a full local package analysis. APKS/APKM/XAPK
+  containers may need inner APK extraction; for deflated inner APKs, return a
+  clear unsupported/limited diagnostic instead of a misleading missing-manifest
+  report.
+- APKS/APKM/XAPK are ZIP containers. Local analysis should pick `base.apk` or
+  the best main APK candidate; do not claim split manifests/resources are fully
+  merged unless that is implemented.
 
-## Generated Files And Localization
-
-- Edit `locales/en.json` and `locales/zh-Hans.json` for user-facing copy. Keep key trees and placeholders aligned.
-- The runtime fallback locale is English. `zh-Hans` is the Simplified Chinese locale id; keep `zh-CN` only as a compatibility input that normalizes to `zh-Hans`.
-- Keep static HTML fallback text in English because the Web UI applies runtime i18n after load. Chinese copy belongs in `locales/zh-Hans.json`.
-- Keep Chinese Simplified strings concise and do not add Chinese sentence-ending `。` unless the existing UI context explicitly needs one.
-- Runtime generated files live under `packages/shared/src/generated/` and are ignored by git. Do not hand-edit them.
-- Scripts usually run `generated:generate` before checks/builds. If locale or generated-source behavior changes, run `npm run i18n:check` or `npm run check`.
-- LibChecker rules/icons are large generated assets. Use `npm run generated:refresh` or `npm run rules:update` only when intentionally refreshing those bundles.
-- Keep LibChecker rules/icon generation archive-based, not one raw.githubusercontent.com request per file; GitHub Actions can hit HTTP 429 during fresh builds.
-- LibChecker upstream rule metadata can change shape. Keep `generate_libchecker_bundle.py` compatible with current `IconResMap.kt` formats and fail fast on suspiciously low icon counts instead of letting Web UI perf budgets catch empty generated chunks.
-- Do not add custom metadata fields to Crowdin JSON locale files; the generator expects string trees. For brand names, file extensions, protocol names, JSON field names, SDK/ABI/signing terms, and other non-translatable Web UI constants, use runtime constants such as `NON_TRANSLATABLE_MESSAGES` in `packages/apk-webui/src/app/i18n.js`.
-- If using the Crowdin Translator MCP, it is configured as a remote MCP with `CROWDIN_API_TOKEN`; running Codex sessions may need a restart before a newly added MCP appears.
-
-## Web UI Notes
+## Web UI Rules
 
 - The UI is vanilla ESM, Vite, HTML, and CSS; there is no React framework.
-- `app.js` owns most page state and event wiring. `app/state.js` defines initial state factories and shared constants.
-- `app/view.js` centralizes DOM element lookup. Add new persistent DOM controls there before wiring them in `app.js`.
-- Keep Web UI styles in `packages/apk-webui/src/app.css`; keep feature-specific lazy styles in their existing CSS files when already split.
-- History, compare mode, report rendering, SDK icons, and LCAPPS flows have dedicated modules. Prefer extending those modules over adding more unrelated logic to `app.js`.
-- Browser APK analysis should stay local to the Web UI worker. Server-side URL analysis belongs to the Worker/Pages Function boundary.
-- Web UI Telegram/social preview metadata lives in `packages/apk-webui/src/index.html`; keep the stable preview image source at `packages/apk-webui/src/assets/social-preview.png` and copy it through `packages/apk-webui/scripts/build.mjs`.
-- When adding a new Web UI `src/app/*.js` module, make sure the build path copies or bundles it into `dist`. A past refactor passed syntax checks but served a 404 module until `scripts/build.mjs` was updated.
-- The Web UI check script auto-scans Web UI `src/` and `scripts/`. Keep it as the single package-level entrypoint instead of lengthening `package.json` with per-file `node --check` lists.
-- Segmented controls should share the established title-bar pill geometry: real capsule ends (`border-radius: 999px` and `corner-shape: round` where used), inset-shadow borders instead of layout-affecting borders, consistent inner inset, and draggable thumb support when the paired control supports it. Keep click and drag paths separate so click transitions can animate and drag can follow the pointer.
-- For touch UI, do not rely on mobile Safari clearing `:hover`. Gate hover-only highlights behind `(hover: hover) and (pointer: fine)`, and clear touch active classes on `pointerup`, `pointercancel`, and blur.
-- For touch/mobile topbar stability, keep the fixed header path free of expensive compositor triggers such as `contain: paint`, forced transforms, `will-change`, and backdrop blur; iOS Safari can hide or jitter fixed headers during address-bar scroll when those are stacked together.
-- iOS/iPadOS file pickers can gray out `.apk/.apks/.apkm/.xapk` when `accept` is set. Use the existing `file-picker-support.js` path to relax picker filtering on Apple mobile WebKit while preserving in-app file validation.
-- Liquid/glass-like effects must be capability- and power-mode gated, not OS-name gated. `CSS.supports()` can be a false positive for SVG-backed backdrop filters on Android/iOS browser shells; keep explicit fallback reasons in `liquid-glass-support.js` and prefer old stable backgrounds when rendering is suspect.
-- WebUI CSS gzip budget is intentionally tight. Before raising the budget, prefer lazy CSS for non-first-screen UI (`runtime-log.css`, `lcapps-bubble.css`), removing duplicated control rules, or consolidating existing tokens. A modest budget raise is acceptable only when the transferred gzip size and first-screen impact are understood.
-- Runtime log UI is page-session frontend diagnostics only: live while the page is open, capped, not Cloudflare logs, and not persisted across refresh. Keep runtime log event names/fields in English; localize only visible labels.
-- Keep runtime log export/share/download code lazy-loaded; it is not first-screen behavior and can tip the tight initial JS gzip budget.
-- For slow Web UI link analysis, inspect runtime log split timings (`client_duration_ms`, `server_duration_ms`, `fetch_headers_ms`, `response_text_ms`, `json_parse_ms`, `render_ms`) before blaming rendering, history writes, or remote parsing. Large reports can justify moving noncritical work off the visible-result path, but they are not evidence of multi-second stalls by themselves.
-- Static Web UI text should stay non-selectable for drag/long-press copy. Only application/report data values should opt into selection, using the existing `app-data-text` whitelist class or an equivalent narrowly scoped report-data selector.
-- Cloudflare Analytics Engine exposes only `blob1`-`blob20` and `double1`-`double20`. Keep Web UI `functions/analytics.js` blob/double key arrays at 20 entries or fewer, and let `npm run pages:check` catch budget overflows before deploy.
-- Keep shared report view-model code lazy-loaded through `report-renderer.js`. Do not re-export it from the first-screen `app/report-model.js`, or the Web UI entry JS can pull report rendering into the initial bundle and fail perf budgets.
+- `app.js` owns most page state and event wiring. Extract only when it removes
+  real complexity or protects first-screen bundle size.
+- Keep persistent DOM lookups in `packages/apk-webui/src/app/view.js`.
+- Keep styles in `packages/apk-webui/src/app.css`; keep feature-specific lazy
+  styles in their existing CSS files.
+- Report rendering, history, compare mode, SDK icons, runtime logs, and LCAPPS
+  flows have dedicated modules. Prefer extending those over adding unrelated
+  code to `app.js`.
+- Keep shared report view-model code lazy-loaded through `report-renderer.js`.
+  Do not re-export it from first-screen `app/report-model.js`, or entry JS can
+  fail perf budgets.
+- New `src/app/*.js` modules must be copied or bundled into `dist`; rely on the
+  package check script, which scans Web UI `src/` and `scripts/`.
+- Static Web UI text should stay non-selectable. Only report/data values should
+  opt into selection through `app-data-text` or an equivalent narrow selector.
+- Runtime log UI is page-session frontend diagnostics only: live, capped, not
+  Cloudflare logs, and not persisted across refresh. Keep export/share/download
+  lazy-loaded.
+- `site-config.mjs` reads public Web UI origins from environment variables. Do
+  not hard-code private preview or production hostnames.
 
-## Worker Notes
+## Web UI Interaction Rules
 
-- `packages/bot-worker/src/index.js` is intentionally broad: webhook routing, Telegram response flow, admin routes, uploads, and report redirects.
-- Worker HTTP routing is Hono-based. Keep route declarations near the top of `index.js`, use `context.env` and `context.executionCtx`, and leave heavy business logic in existing handler modules/functions.
+- Segmented controls use the established title-bar pill geometry: real capsule
+  ends, inset-shadow borders, stable inner inset, and separate click/drag paths.
+- Gate hover-only highlights behind `(hover: hover) and (pointer: fine)`.
+  Clear touch active classes on `pointerup`, `pointercancel`, and blur.
+- Keep fixed mobile topbar paths free of expensive compositor triggers such as
+  `contain: paint`, forced transforms, `will-change`, and backdrop blur.
+- iOS/iPadOS file pickers can gray out `.apk/.apks/.apkm/.xapk` when `accept`
+  is set. Use `file-picker-support.js` to relax picker filtering on Apple
+  mobile WebKit while keeping in-app validation.
+- Liquid/glass effects must be capability- and power-mode gated, not OS-name
+  gated. Keep fallback reasons in `liquid-glass-support.js`.
+- Web UI CSS/JS budgets are intentionally tight. Before raising a budget, prefer
+  lazy loading, deleting duplicate rules, or consolidating existing tokens.
+
+## Worker Rules
+
+- Worker HTTP routing is Hono-based. Keep route declarations near the top of
+  `packages/bot-worker/src/index.js`, use `context.env` and
+  `context.executionCtx`, and leave heavy logic in existing modules/functions.
 - Keep remote APK URL/range preview logic in `apk-url-preview.js`.
-- Remote URL preview is not the same as full local package analysis. APKS/APKM/XAPK containers may need inner APK extraction; range parsing works best for direct APKs or stored inner APK entries. For deflated inner APKs, return a clear unsupported/limited diagnostic rather than a misleading "missing AndroidManifest.xml" report.
-- Keep Worker HTML page rendering in `upload-view.js` and `report-viewer.js`.
-- Use `observability.js` helpers for structured logs and Analytics Engine fields; keep event field names within the allowed sets.
-- Keep logs and troubleshooting diagnostics in English. User-facing errors should be localized through error codes/messages; analytics fields should stay low-sensitive and whitelist-shaped.
+- Keep Worker HTML rendering in `upload-view.js` and `report-viewer.js`.
+- Store bot report data through `telegraph.js`; keep the Web UI-facing data
+  shape validated with shared contracts.
+- Use `observability.js` helpers for structured logs and Analytics Engine
+  fields. Event field names stay English, low-sensitive, and whitelist-shaped.
+- Cloudflare Analytics Engine exposes only `blob1`-`blob20` and
+  `double1`-`double20`. Keep blob/double key arrays at 20 entries or fewer and
+  let checks catch overflow.
 - Admin endpoints require `ADMIN_TOKEN`; do not weaken auth behavior.
 
-## Shared Analyzer Notes
+## Shared Analyzer Rules
 
-- Shared modules must stay runtime-compatible with both Cloudflare Workers and browser workers.
-- Avoid Node-only APIs in `packages/shared/src/` unless guarded and already established.
-- Parser contract changes should be reflected in `packages/shared/src/contracts.js` and both Worker/Web UI consumers.
-- Add focused tests under `packages/shared/test/` when changing parser behavior or shared algorithms.
-- APKS/APKM/XAPK are ZIP containers. Local analysis should pick `base.apk` or the best main APK candidate; do not pretend split manifests/resources are fully merged unless that is actually implemented.
-- Adaptive icon rendering must handle bitmap/vector/color plus shape drawables, including `solid` and `gradient` backgrounds. White foreground-only icons often mean the adaptive background layer was skipped.
-- Vector drawables with stroke-only paths must not silently default missing `fillColor` to black. Preserve `fill="none"` for pure stroked paths and add parser tests for icon regressions.
-- Vector drawable paths with `fillType="evenOdd"` must preserve SVG `fill-rule="evenodd"`/`clip-rule="evenodd"` or hollow rings can render as solid fills.
+- Shared modules must stay compatible with both Cloudflare Workers and browser
+  workers.
+- Avoid Node-only APIs in `packages/shared/src/` unless guarded and already
+  established.
+- Parser contract changes should update `packages/shared/src/contracts.js` and
+  both Worker/Web UI consumers.
+- Add focused tests under `packages/shared/test/` for parser behavior or shared
+  algorithms.
+- Adaptive icon rendering must handle bitmap, vector, color, and shape
+  drawables, including `solid` and `gradient` backgrounds.
+- Vector drawables with stroke-only paths must preserve `fill="none"` instead
+  of defaulting missing `fillColor` to black.
+- Vector drawables with `fillType="evenOdd"` must preserve SVG
+  `fill-rule="evenodd"` and `clip-rule="evenodd"`.
+
+## Localization And Generated Files
+
+- Edit `locales/en.json` and `locales/zh-Hans.json` for user-facing copy. Keep
+  key trees and placeholders aligned.
+- Runtime fallback locale is English. `zh-Hans` is Simplified Chinese; keep
+  `zh-CN` only as a compatibility input that normalizes to `zh-Hans`.
+- Static HTML fallback text stays English because Web UI runtime i18n applies
+  after load.
+- Keep Simplified Chinese strings concise and avoid Chinese sentence-ending `。`
+  unless the existing context needs it.
+- `packages/shared/src/generated/` is ignored generated output. Do not hand-edit
+  it.
+- Scripts usually run `generated:generate` before checks/builds.
+- Keep LibChecker rules/icon generation archive-based, not one
+  raw.githubusercontent.com request per file; GitHub Actions can hit HTTP 429.
+- Keep `generate_libchecker_bundle.py` compatible with current upstream
+  `IconResMap.kt` formats and fail fast on suspiciously low icon counts.
+- Do not add custom metadata fields to Crowdin JSON locale files.
+
+## Deploy Rules
+
+- Root deploy commands are preferred because they run checks, Web UI build,
+  performance budgets, and Worker dry-run size budgets.
+- Cloudflare Pages deploys must run from `packages/apk-webui/` with relative
+  `dist`, or `functions/` may not deploy. If production `/url-report` returns
+  `405`, verify deploy cwd first.
+- Do not deploy or change Cloudflare/Telegram webhook state unless explicitly
+  asked.
+- Preview bot deployments use `TEST_BOT_TOKEN` for `tgbot-preview`; never point
+  production `BOT_TOKEN` webhook at preview.
+- Worker custom domains come from `PREVIEW_WORKER_URL` and `WORKER_URL`.
+- Web UI origins come from `PREVIEW_WEBUI_SITE_URL` or `WEBUI_SITE_URL`.
+- Do not hard-code private preview or production hostnames in repo config,
+  workflows, bot links, or `site-config.mjs`.
+- Windows Node deploy scripts must spawn command shims explicitly, such as
+  `npm.cmd` and `node_modules/.bin/wrangler.cmd`.
 
 ## Validation Guidance
 
-- For narrow Web UI UI-only changes: run `npm run pages:check`; prefer `npm run pages:build` when HTML/CSS/assets or bundle behavior changes.
-- For Web UI visual or bundle-size work, also run `npm run perf:check` when CSS/JS size, lazy CSS, first-screen assets, or animated effects changed.
-- When reading `npm run perf:check` or deploy preflight output, scan the full performance budget table and verify all rows are `OK`; do not rely only on the final Worker dry-run or upload-size lines.
-- For rendered Web UI validation, start or inspect `npm run pages:dev` and use the exact Vite `Local:` URL. Do not assume port `5173`; first confirm the chosen URL returns `200 OK` with `curl -I`.
-- If a long-lived dev server appears stale, restart it or use a cache-busting URL/new port before drawing conclusions. Vite/HMR and browser caches have previously served old `app.js`/`app.css`.
-- Use the Codex Browser plugin first for local Web UI checks. If it reports `ERR_BLOCKED_BY_CLIENT`, `Browser Use URL policy`, a crashed tab, or repeated localhost navigation timeouts, record that blocker and ask the user before falling back to ordinary Playwright or another browser surface. Do not keep retrying blocked localhost URLs in a loop.
-- The Codex Browser runtime often supports `load`/`domcontentloaded`, but not always `networkidle`; prefer the supported states. Screenshots can time out even when DOM/CSS checks work.
-- When Browser cannot render the local app, still run code-level validation (`npm run pages:check`, `npm run pages:build`, and targeted CSSOM/DOM checks when possible) and clearly state what was not visually verified.
-- For shared parser, i18n, contract, or cross-package changes: run `npm run check`.
-- For Worker-only syntax/routing changes: run `npm run check --workspace @tgbot/bot-worker`, then broaden to `npm run check` if shared behavior or deploy behavior is touched.
-- For deployment script, wrangler config, size-budget, or production/preview behavior changes: run the relevant deploy preflight command before committing.
+- Web UI UI-only changes: run `npm run pages:check`; prefer
+  `npm run pages:build` when HTML/CSS/assets or bundle behavior changes.
+- Web UI bundle-size or first-screen changes: also run `npm run perf:check`.
+- Worker-only routing/syntax changes: run
+  `npm run check --workspace @tgbot/bot-worker`.
+- Shared parser/i18n/contract/cross-package changes: run `npm run check`.
+- Deployment script, Wrangler config, size-budget, or production/preview
+  behavior changes: run the relevant deploy preflight command.
+- Before trusting `npm run perf:check` or preflight output, scan the full budget
+  table and verify every row is `OK`.
+- Wrangler may emit non-fatal `EPERM` log-write warnings under sandboxed macOS
+  paths. Treat them as noise only when exit status is 0, preflight reports
+  passed, and all budget/check rows are `OK`.
+- For rendered Web UI validation, use the exact Vite `Local:` URL and confirm it
+  returns `200 OK` before browser checks. Restart stale Vite servers or use a new
+  port before drawing conclusions.
+- Use the Codex Browser plugin first for local Web UI checks. If it is blocked
+  or crashes, record that blocker and use code-level validation.
 
-## Conventions
+## Commit Rules
 
-- Keep code ESM and plain JavaScript.
-- Prefer existing helper modules and local patterns over new dependencies.
-- Avoid editing generated bundles, build output, or Cloudflare state unintentionally.
-- Keep user-visible copy localized through `locales/*.json`.
-- Keep CSS responsive and check narrow viewport behavior for Web UI layout changes.
+- Before committing, run `npm run deploy:preflight -- --target=preview`.
+- If the change affects production deploy behavior or production-only config,
+  also run `npm run deploy:preflight -- --target=production`.
+- Inspect `git diff --cached --stat` before committing.
+- Consider whether this file needs durable updates, but avoid one-off notes.
+- Do not commit generated bundles, build output, caches, `.DS_Store`, or local
+  temporary files.
+- In this sandbox, `git add` and `git commit` may need escalation because
+  writing `.git/index.lock` can be blocked.
+
+## Agent Workflow
+
+1. Start with `git status --short`.
+2. Inspect the smallest relevant area with `rg` or `rg --files`.
+3. Read existing local patterns before editing.
+4. Keep edits focused and avoid unrelated refactors or generated-output churn.
+5. Run the narrowest relevant validation command, then report exactly what
+   passed, failed, or was skipped.
+
+## Compact Instructions
+
+If context is compacted, preserve these facts:
+
+- Current user request and exact screenshots, paths, URLs, issue links, or
+  commits.
+- Files read and files changed.
+- Commands run and pass/fail/blocker results.
+- Current dev server URL and whether it may be stale.
+- Current git status and whether changes are user-owned or agent-owned.
+- Any Cloudflare, Telegram webhook, or deployment state that must not be guessed.
