@@ -181,6 +181,8 @@ and recurring pitfalls only.
   production `BOT_TOKEN` webhook at preview.
 - Worker custom domains come from `PREVIEW_WORKER_URL` and `WORKER_URL`.
 - Web UI origins come from `PREVIEW_WEBUI_SITE_URL` or `WEBUI_SITE_URL`.
+- Preview bot report links must use `PREVIEW_WEBUI_SITE_URL` or the Pages
+  branch preview alias; do not fall back to the production Web UI origin.
 - Do not hard-code private preview or production hostnames in repo config,
   workflows, bot links, or `site-config.mjs`.
 - Windows Node deploy scripts must spawn command shims explicitly, such as

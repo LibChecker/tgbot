@@ -7,6 +7,7 @@ const repoDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workerConfigPath = resolve(repoDir, "packages/bot-worker/wrangler.toml");
 const webuiDir = resolve(repoDir, "packages/apk-webui");
 const webuiDistDir = resolve(webuiDir, "dist");
+const pagesProjectName = "tgbot-apk-webui";
 const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 const wranglerBin = resolve(repoDir, "node_modules/.bin", process.platform === "win32" ? "wrangler.cmd" : "wrangler");
 
@@ -17,15 +18,14 @@ process.on("unhandledRejection", (error) => {
   fail(error instanceof Error ? error.message : String(error));
 });
 
+const previewPagesBranch = resolvePreviewBranch();
+
 const TARGETS = {
   preview: {
     workerEnv: "preview",
-    pagesBranch: resolvePreviewBranch(),
+    pagesBranch: previewPagesBranch,
     workerUrl: normalizeOptionalUrl(process.env.PREVIEW_WORKER_URL, "PREVIEW_WORKER_URL"),
-    webuiUrl: normalizeOptionalUrl(
-      process.env.PREVIEW_WEBUI_SITE_URL || process.env.WEBUI_SITE_URL,
-      "PREVIEW_WEBUI_SITE_URL or WEBUI_SITE_URL",
-    ),
+    webuiUrl: resolvePreviewWebUiUrl(previewPagesBranch),
   },
   production: {
     workerEnv: "production",
@@ -49,7 +49,7 @@ if (!existsSync(wranglerBin)) {
 
 if (!options["skip-preflight"]) {
   await run(npmBin, ["run", "check"]);
-  await run(npmBin, ["run", "pages:build"]);
+  await run(npmBin, ["run", "pages:build"], { env: buildWebUiBuildEnv(target) });
   await run(npmBin, ["run", "perf:check"]);
   await runWorkerDryRun(target);
 }
@@ -59,7 +59,7 @@ if (options["preflight-only"]) {
   process.exit(0);
 }
 
-requireDeployEnvironment(targetName);
+requireDeployEnvironment(targetName, target);
 
 if (!options["pages-only"]) {
   await run(wranglerBin, [
@@ -73,6 +73,9 @@ if (!options["pages-only"]) {
 }
 
 if (!options["worker-only"]) {
+  if (options["skip-preflight"]) {
+    await run(npmBin, ["run", "pages:build"], { env: buildWebUiBuildEnv(target) });
+  }
   if (!existsSync(webuiDistDir)) {
     fail("Missing WebUI dist directory. Run `npm run pages:build` before deploy.");
   }
@@ -80,7 +83,7 @@ if (!options["worker-only"]) {
     "pages",
     "deploy",
     "dist",
-    "--project-name=tgbot-apk-webui",
+    `--project-name=${pagesProjectName}`,
     `--branch=${target.pagesBranch}`,
   ], { cwd: webuiDir });
 }
@@ -142,6 +145,34 @@ function buildWorkerDeployArgs(targetValue) {
   return args;
 }
 
+function buildWebUiBuildEnv(targetValue) {
+  if (!targetValue.webuiUrl) {
+    return {};
+  }
+
+  return {
+    WEBUI_SITE_ORIGIN: targetValue.webuiUrl.origin,
+    WEBUI_SITE_URL: targetValue.webuiUrl.origin,
+  };
+}
+
+function resolvePreviewWebUiUrl(pagesBranch) {
+  const configured = normalizeOptionalUrl(process.env.PREVIEW_WEBUI_SITE_URL, "PREVIEW_WEBUI_SITE_URL");
+  if (configured) {
+    return configured;
+  }
+
+  return new URL(`https://${toPagesPreviewAlias(pagesBranch)}.${pagesProjectName}.pages.dev`);
+}
+
+function toPagesPreviewAlias(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "") || "preview";
+}
+
 function normalizeOptionalUrl(value, envName) {
   if (!value) {
     return undefined;
@@ -159,8 +190,14 @@ function normalizeOptionalUrl(value, envName) {
   return url;
 }
 
-function requireDeployEnvironment(targetNameValue) {
+function requireDeployEnvironment(targetNameValue, targetValue) {
   const required = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"];
+  if (!targetValue.workerUrl) {
+    required.push(targetNameValue === "preview" ? "PREVIEW_WORKER_URL" : "WORKER_URL");
+  }
+  if (!targetValue.webuiUrl) {
+    required.push(targetNameValue === "preview" ? "PREVIEW_WEBUI_SITE_URL" : "WEBUI_SITE_URL");
+  }
   const missing = required.filter((name) => !process.env[name]);
   if (missing.length) {
     fail(`Missing Cloudflare deploy environment for ${targetNameValue}: ${missing.join(", ")}`);
@@ -200,7 +237,7 @@ function run(command, args, options = {}) {
     const spawnSpec = resolveSpawnSpec(command, args);
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: options.cwd || repoDir,
-      env: process.env,
+      env: { ...process.env, ...(options.env || {}) },
       stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit",
     });
     let output = "";
