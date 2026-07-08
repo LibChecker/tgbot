@@ -61,9 +61,14 @@ test("APK report view model keeps shared report sections aligned", () => {
   assert.equal(model.summary.stats.signatures, 1);
   assert.deepEqual(model.permissions.items, ["a.permission", "z.permission"]);
   assert.deepEqual(model.summary.features.map((item) => item.text), ["Kotlin 2.0", "AGP 8.7"]);
+  assert.equal(model.summary.rows.find((row) => row.key === "versionName")?.label, "Version Name");
+  assert.equal(model.summary.rows.find((row) => row.key === "versionCode")?.label, "Version Code");
   assert.equal(model.summary.sdkPreview[0].label, "SDK A");
   assert.equal(model.native.groups[0].abi, "arm64-v8a");
-  assert.equal(model.signatures.certificates[0].rows.some((row) => row.key === "sha256"), true);
+  const signatureRows = model.signatures.certificates[0].rows;
+  assert.equal(signatureRows.find((row) => row.key === "serialNumber")?.value, "Unknown");
+  assert.equal(signatureRows.some((row) => row.key === "publicKeyExponent"), false);
+  assert.equal(signatureRows.some((row) => row.key === "sha256"), true);
 });
 
 test("native library labels are shared by WebUI report renderers", () => {

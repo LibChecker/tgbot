@@ -66,8 +66,8 @@ export function buildApkReportViewModel(report, options = {}) {
       rows: compactRows([
         row("appName", labels.appName || "App Name", info.appName),
         row("packageName", labels.packageName || "Package Name", info.packageName),
-        row("versionName", labels.versionName || "versionName", info.versionName),
-        row("versionCode", labels.versionCode || "versionCode", info.versionCode),
+        row("versionName", labels.versionName || "Version Name", info.versionName),
+        row("versionCode", labels.versionCode || "Version Code", info.versionCode),
         row("targetSdk", labels.targetSdk || "Target SDK", info.targetSdk),
         row("minSdk", labels.minSdk || "Min SDK", info.minSdk),
         row("compileSdk", labels.compileSdk || "Compile SDK", info.compileSdk),
@@ -248,7 +248,7 @@ export function getSignatureCertificateRows(certificate = {}, labels = {}, optio
   return compactRows([
     field("schemes", labels.signatureSchemes || "Signing Schemes", certificate.schemes || [], "list"),
     field("version", labels.signatureVersion || "Version", certificate.version || unknown),
-    field("serialNumber", labels.signatureSerialNumber || "Serial Number", formatSignatureNumber(certificate.serialNumber, unknown), "code"),
+    field("serialNumber", labels.signatureSerialNumber || "Serial Number", formatSignatureNumber(certificate.serialNumber, unknown) || unknown, "code"),
     field("issuer", labels.signatureIssuer || "Issuer", certificate.issuer, "code"),
     field("subject", labels.signatureSubject || "Subject", certificate.subject, "code"),
     field("validFrom", labels.signatureValidFrom || "Valid From", formatDate(validity.notBefore)),

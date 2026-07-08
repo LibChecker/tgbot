@@ -187,6 +187,9 @@ and recurring pitfalls only.
 - Web UI origins come from `PREVIEW_WEBUI_SITE_URL` or `WEBUI_SITE_URL`.
 - Web UI bot report data origins are injected from `PREVIEW_WORKER_URL` or
   `WORKER_URL` at build time.
+- Root deploy registers configured Web UI custom domains through the
+  Cloudflare Pages Domains API. For preview custom domains, keep DNS proxied and
+  pointed at the Pages branch alias.
 - Preview bot report links must use `PREVIEW_WEBUI_SITE_URL` or the Pages
   branch preview alias; do not fall back to the production Web UI origin.
 - Do not hard-code private preview or production hostnames in repo config,

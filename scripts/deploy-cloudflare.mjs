@@ -91,6 +91,7 @@ if (!options["worker-only"]) {
     `--project-name=${pagesProjectName}`,
     `--branch=${target.pagesBranch}`,
   ], { cwd: webuiDir });
+  await ensurePagesCustomDomain(target);
 }
 
 process.stdout.write(`Cloudflare ${targetName} deploy finished.\n`);
@@ -163,6 +164,65 @@ function buildWebUiBuildEnv(targetValue) {
   }
 
   return env;
+}
+
+async function ensurePagesCustomDomain(targetValue) {
+  if (!targetValue.webuiUrl || targetValue.webuiUrl.hostname.endsWith(".pages.dev")) {
+    return;
+  }
+
+  const hostname = targetValue.webuiUrl.hostname;
+  const domains = await cloudflareApi(
+    `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(pagesProjectName)}/domains`,
+  );
+
+  if ((domains || []).some((domain) => domain?.name === hostname)) {
+    process.stdout.write(`Pages custom domain already registered: ${hostname}\n`);
+    return;
+  }
+
+  const domain = await cloudflareApi(
+    `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(pagesProjectName)}/domains`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name: hostname }),
+    },
+  );
+  process.stdout.write(`Registered Pages custom domain: ${domain?.name || hostname}\n`);
+  logPagesCustomDomainDnsHint(targetValue, hostname);
+}
+
+function logPagesCustomDomainDnsHint(targetValue, hostname) {
+  if (targetValue.workerEnv !== "preview") {
+    return;
+  }
+
+  const targetHostname = `${toPagesPreviewAlias(targetValue.pagesBranch)}.${pagesProjectName}.pages.dev`;
+  if (hostname === targetHostname) {
+    return;
+  }
+
+  process.stdout.write(
+    `Preview branch DNS target: ${hostname} CNAME ${targetHostname} (proxied)\n`,
+  );
+}
+
+async function cloudflareApi(pathname, options = {}) {
+  const response = await fetch(`https://api.cloudflare.com/client/v4${pathname}`, {
+    method: options.method || "GET",
+    headers: {
+      authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+      ...(options.body ? { "content-type": "application/json" } : {}),
+    },
+    body: options.body,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.success) {
+    const message = data?.errors?.map((error) => error.message).filter(Boolean).join("; ")
+      || `HTTP ${response.status}`;
+    fail(`Cloudflare API request failed: ${message}`);
+  }
+  return data.result;
 }
 
 function resolvePreviewWebUiUrl(pagesBranch) {
