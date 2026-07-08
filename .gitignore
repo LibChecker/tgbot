@@ -16,6 +16,7 @@ __pycache__/
 .env
 .env.*
 .cloudflare-secrets.json
+packages/bot-worker/wrangler.generated.*.toml
 
 # Generated runtime bundles.
 /packages/shared/src/generated/

@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +11,9 @@ const webuiDistDir = resolve(webuiDir, "dist");
 const pagesProjectName = "tgbot-apk-webui";
 const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 const wranglerBin = resolve(repoDir, "node_modules/.bin", process.platform === "win32" ? "wrangler.cmd" : "wrangler");
+const DEFAULT_SDK_EMOJI_KV_NAMESPACE_TITLE = "tgbot-sdk-emojis";
+let activeWorkerConfigPath = workerConfigPath;
+let temporaryWorkerConfigPath = null;
 
 const WORKER_UPLOAD_BUDGET_KIB = 5_500;
 const WORKER_UPLOAD_GZIP_BUDGET_KIB = 900;
@@ -17,6 +21,7 @@ const WORKER_UPLOAD_GZIP_BUDGET_KIB = 900;
 process.on("unhandledRejection", (error) => {
   fail(error instanceof Error ? error.message : String(error));
 });
+process.on("exit", cleanupTemporaryWorkerConfig);
 
 const previewPagesBranch = resolvePreviewBranch();
 
@@ -47,6 +52,8 @@ if (!existsSync(wranglerBin)) {
   fail("Missing local Wrangler binary. Run `npm install` first.");
 }
 
+activeWorkerConfigPath = await prepareWorkerConfig(target);
+
 if (!options["skip-preflight"]) {
   await run(npmBin, ["run", "check"]);
   await run(npmBin, ["run", "pages:build"], { env: buildWebUiBuildEnv(target) });
@@ -73,7 +80,7 @@ if (!options["pages-only"]) {
   await run(wranglerBin, [
     "deploy",
     "--config",
-    workerConfigPath,
+    activeWorkerConfigPath,
     "--env",
     target.workerEnv,
     ...buildWorkerDeployArgs(target),
@@ -96,11 +103,81 @@ if (!options["worker-only"]) {
 
 process.stdout.write(`Cloudflare ${targetName} deploy finished.\n`);
 
+async function prepareWorkerConfig(targetValue) {
+  const namespaceId = await resolveSdkEmojiKvNamespaceId({ create: !options["preflight-only"] });
+  if (!namespaceId) {
+    return workerConfigPath;
+  }
+
+  const configText = await readFile(workerConfigPath, "utf8");
+  temporaryWorkerConfigPath = resolve(repoDir, "packages/bot-worker", `wrangler.generated.${process.pid}.toml`);
+  await writeFile(
+    temporaryWorkerConfigPath,
+    `${configText.trimEnd()}\n\n[[env.${targetValue.workerEnv}.kv_namespaces]]\nbinding = "SDK_EMOJI_KV"\nid = "${escapeTomlString(namespaceId)}"\n`,
+    "utf8",
+  );
+  process.stdout.write(`Using SDK emoji KV namespace for ${targetValue.workerEnv}: ${namespaceId}\n`);
+  return temporaryWorkerConfigPath;
+}
+
+async function resolveSdkEmojiKvNamespaceId({ create }) {
+  const explicitNamespaceId = normalizeText(process.env.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID);
+  if (explicitNamespaceId) {
+    return explicitNamespaceId;
+  }
+
+  if (!process.env.CLOUDFLARE_ACCOUNT_ID || !process.env.CLOUDFLARE_API_TOKEN) {
+    return "";
+  }
+
+  const title = normalizeText(
+    process.env.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_TITLE
+      || process.env.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME,
+  ) || DEFAULT_SDK_EMOJI_KV_NAMESPACE_TITLE;
+  const existingNamespaceId = await findKvNamespaceId(title);
+  if (existingNamespaceId) {
+    return existingNamespaceId;
+  }
+  if (!create) {
+    return "";
+  }
+
+  const namespace = await cloudflareApi(
+    `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/storage/kv/namespaces`,
+    {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    },
+  );
+  const namespaceId = normalizeText(namespace?.id);
+  if (!namespaceId) {
+    fail(`Cloudflare KV namespace ${title} was created without an id in the API response.`);
+  }
+  process.stdout.write(`Created SDK emoji KV namespace: ${title} (${namespaceId})\n`);
+  return namespaceId;
+}
+
+async function findKvNamespaceId(title) {
+  for (let page = 1; page <= 100; page += 1) {
+    const namespaces = await cloudflareApi(
+      `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/storage/kv/namespaces?per_page=100&page=${page}`,
+    );
+    const match = (namespaces || []).find((namespace) => namespace?.title === title);
+    if (match?.id) {
+      return match.id;
+    }
+    if (!Array.isArray(namespaces) || namespaces.length < 100) {
+      break;
+    }
+  }
+  return "";
+}
+
 async function runWorkerDryRun(targetValue) {
   const output = await run(wranglerBin, [
     "deploy",
     "--config",
-    workerConfigPath,
+    activeWorkerConfigPath,
     "--env",
     targetValue.workerEnv,
     "--dry-run",
@@ -257,6 +334,21 @@ function normalizeOptionalUrl(value, envName) {
     fail(`${envName} must be an HTTPS origin URL, for example https://example.com`);
   }
   return url;
+}
+
+function normalizeText(value) {
+  const text = value == null ? "" : String(value).trim();
+  return text || "";
+}
+
+function escapeTomlString(value) {
+  return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function cleanupTemporaryWorkerConfig() {
+  if (temporaryWorkerConfigPath) {
+    rmSync(temporaryWorkerConfigPath, { force: true });
+  }
 }
 
 function requireDeployEnvironment(targetNameValue, targetValue) {

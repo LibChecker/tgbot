@@ -4,6 +4,7 @@ import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
+import { loadSdkCustomEmojiIds } from "./sdk-emoji-store.js";
 import {
   createRequestTelemetryContext,
   extendTelemetryContext,
@@ -1228,10 +1229,11 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       ...getArchiveTelemetryFields(report.apkInfo),
     });
 
+    const sdkCustomEmojiIds = await loadSdkCustomEmojiIds(env);
     await sendText(
       env,
       message.chat.id,
-      formatApkSummary(report),
+      formatApkSummary(report, sdkCustomEmojiIds),
       message.message_id,
       buildReportReplyMarkup(message.chat, reportUrl, t("bot.open_full_report")),
     );
@@ -1375,10 +1377,11 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       ...getArchiveTelemetryFields(report.apkInfo),
     });
 
+    const sdkCustomEmojiIds = await loadSdkCustomEmojiIds(env);
     await sendText(
       env,
       message.chat.id,
-      formatApkSummary(report),
+      formatApkSummary(report, sdkCustomEmojiIds),
       message.message_id,
       buildReportReplyMarkup(message.chat, reportUrl, t("bot.open_full_report")),
     );
@@ -2086,7 +2089,7 @@ async function getBotIdentity(env) {
   return cachedBotIdentity;
 }
 
-function formatApkSummary(report) {
+function formatApkSummary(report, sdkCustomEmojiIds = {}) {
   const { t } = createI18n(report.locale);
   const lines = [
     t("summary.completed"),
@@ -2121,7 +2124,7 @@ function formatApkSummary(report) {
     }),
   ];
 
-  const sdkMarkerSummary = formatSdkMarkerSummary(report.apkInfo.sdkSummary, t);
+  const sdkMarkerSummary = formatSdkMarkerSummary(report.apkInfo.sdkSummary, t, sdkCustomEmojiIds);
   if (sdkMarkerSummary) {
     lines.push(t("summary.sdk_markers", { value: sdkMarkerSummary }));
   }
@@ -2135,20 +2138,60 @@ function formatApkSummary(report) {
   return lines.join("\n");
 }
 
-function formatSdkMarkerSummary(sdkSummary, t) {
+const SDK_MARKER_REPLY_LIMIT = 8;
+
+function formatSdkMarkerSummary(sdkSummary, t, sdkCustomEmojiIds = {}) {
   if (!sdkSummary) {
     return "";
   }
 
-  const parts = [];
+  const headerParts = [];
   if (sdkSummary.native.length > 0) {
-    parts.push(t("summary.sdk_summary_native", { count: sdkSummary.native.length }));
+    headerParts.push(t("summary.sdk_summary_native", { count: sdkSummary.native.length }));
   }
   if (sdkSummary.components.length > 0) {
-    parts.push(t("summary.sdk_summary_components", { count: sdkSummary.components.length }));
+    headerParts.push(t("summary.sdk_summary_components", { count: sdkSummary.components.length }));
   }
 
-  return parts.join(" · ");
+  const topSdkMarkers = formatTopSdkMarkers(sdkSummary, t, sdkCustomEmojiIds);
+  return [headerParts.join(" · "), topSdkMarkers].filter(Boolean).join("\n");
+}
+
+function formatTopSdkMarkers(sdkSummary, t, sdkCustomEmojiIds = {}, limit = SDK_MARKER_REPLY_LIMIT) {
+  const entries = getTopSdkSummaryEntries(sdkSummary);
+  const visibleEntries = entries.slice(0, limit);
+  const lines = visibleEntries.map((entry) => formatSdkMarkerListItem(entry, sdkCustomEmojiIds));
+  const remaining = entries.length - visibleEntries.length;
+
+  if (remaining > 0) {
+    lines.push(t("summary.sdk_summary_more", { count: remaining }));
+  }
+
+  return lines.join("\n");
+}
+
+function getTopSdkSummaryEntries(sdkSummary) {
+  const merged = new Map();
+  for (const entry of [...(sdkSummary.native || []), ...(sdkSummary.components || [])]) {
+    const key = entry.key || `${entry.iconName}:${entry.label}`;
+    const count = entry.count || 0;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...entry, count });
+      continue;
+    }
+    existing.count += count;
+  }
+
+  return [...merged.values()]
+    .sort((left, right) => (right.count || 0) - (left.count || 0) || left.label.localeCompare(right.label));
+}
+
+function formatSdkMarkerListItem(entry, sdkCustomEmojiIds = {}) {
+  const emojiId = sdkCustomEmojiIds[entry.iconName];
+  const icon = emojiId ? `<tg-emoji emoji-id="${escapeHtml(emojiId)}">🔹</tg-emoji> ` : "";
+  const count = entry.count > 1 ? ` <b>x${escapeHtml(entry.count)}</b>` : "";
+  return `${icon}<code>${escapeHtml(entry.label)}</code>${count}`;
 }
 
 function formatFeatureChipsHtml(buildFeatures) {
@@ -2405,6 +2448,8 @@ function getErrorStack(error) {
 export const __botWorkerTestInternals = {
   buildLinkReplyMarkup,
   buildWebUiReportUrl,
+  formatApkSummary,
+  formatSdkMarkerSummary,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,

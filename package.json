@@ -26,6 +26,8 @@
     "generated:generate": "npm run generated:generate --workspace @tgbot/shared",
     "generated:refresh": "npm run generated:refresh --workspace @tgbot/shared",
     "rules:update": "npm run rules:update --workspace @tgbot/shared",
+    "telegram:emoji:sync": "npm run generated:generate --workspace @tgbot/shared && node scripts/sync-telegram-sdk-emojis.mjs",
+    "telegram:emoji:check": "npm run generated:generate --workspace @tgbot/shared && node scripts/sync-telegram-sdk-emojis.mjs --dry-run",
     "pages:build": "npm run build --workspace @tgbot/apk-webui",
     "pages:check": "npm run check --workspace @tgbot/apk-webui",
     "pages:dev": "npm run dev --workspace @tgbot/apk-webui",
@@ -35,7 +37,13 @@
     "perf:check": "node scripts/check-size-budgets.mjs",
     "size:check": "npm run perf:check",
     "check:workflows": "node --check scripts/check-desktop-nightly-workflow.mjs && node scripts/check-desktop-nightly-workflow.mjs",
-    "check:deploy": "node --check scripts/check-size-budgets.mjs && node --check scripts/deploy-cloudflare.mjs && npm run check:workflows",
+    "check:deploy": "npm run generated:generate --workspace @tgbot/shared && node --check scripts/check-size-budgets.mjs && node --check scripts/deploy-cloudflare.mjs && node --check scripts/sync-telegram-sdk-emojis.mjs && node scripts/sync-telegram-sdk-emojis.mjs --self-test && npm run check:workflows",
     "check": "npm run check --workspace @tgbot/shared && npm run check --workspace @tgbot/bot-worker && npm run check --workspace @tgbot/apk-webui && npm run check:deploy"
+  },
+  "devDependencies": {
+    "sharp": "^0.34.5"
+  },
+  "dependencies": {
+    "svgpath": "^2.6.0"
   }
 }

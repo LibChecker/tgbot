@@ -1,0 +1,47 @@
+name: Sync Telegram SDK Emojis
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 1 * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tgbot-telegram-sdk-emojis-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync production Telegram SDK emojis
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      TELEGRAM_STICKER_OWNER_ID: ${{ secrets.TELEGRAM_STICKER_OWNER_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID: ${{ vars.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID || secrets.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID }}
+      TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME: ${{ vars.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME || secrets.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Telegram emoji sync secrets
+        run: |
+          node -e "const missing=['BOT_TOKEN','TELEGRAM_STICKER_OWNER_ID','CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID'].filter((name)=>!process.env[name]); if (missing.length) { console.error('Missing GitHub secrets or variables: ' + missing.join(', ')); process.exit(1); }"
+
+      - name: Sync Telegram SDK emojis and KV map
+        run: npm run telegram:emoji:sync
