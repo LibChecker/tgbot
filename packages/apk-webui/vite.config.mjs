@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, minify } from "vite";
 import {
+  BOT_REPORT_DATA_ORIGIN,
   WEBUI_SITE_URL,
   WEBUI_SOCIAL_PREVIEW_URL,
   WEBUI_SOURCE_REPOSITORY_URL,
@@ -73,6 +74,7 @@ export default defineConfig({
   },
   define: {
     __APK_WEBUI_VERSION__: JSON.stringify(webuiVersion),
+    __BOT_REPORT_DATA_ORIGIN__: JSON.stringify(BOT_REPORT_DATA_ORIGIN),
   },
   server: {
     host: "127.0.0.1",

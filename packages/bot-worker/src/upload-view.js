@@ -403,7 +403,7 @@ export function renderUploadPage({
       function isReportUrl(value) {
         try {
           const url = new URL(value, window.location.href);
-          return url.pathname === "/report-data" || url.searchParams.has("botReportUrl");
+          return url.pathname === "/report-data" || url.searchParams.has("r");
         } catch {
           return false;
         }

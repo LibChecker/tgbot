@@ -1905,7 +1905,7 @@ function buildWebUiReportUrl(env, publicBaseUrl, path, locale) {
   }
 
   const searchParams = new URLSearchParams({
-    botReportUrl: buildReportDataUrl(publicBaseUrl, path, locale),
+    r: path || "",
     lang: locale,
   });
   return `${webUiBaseUrl}/?${searchParams.toString()}`;

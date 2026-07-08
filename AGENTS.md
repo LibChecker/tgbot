@@ -68,6 +68,10 @@ and recurring pitfalls only.
 - Server-side URL analysis belongs at the Worker/Pages Function boundary.
 - Bot report buttons should open the Web UI. The Worker exposes report payloads
   through `/report-data` only.
+- Bot report links use the short Web UI query parameter `r` for the Telegraph
+  report path. The Web UI resolves it through the build-time
+  `BOT_REPORT_DATA_ORIGIN`; do not reintroduce nested report-data URLs in query
+  params.
 - Remote APK URL preview is not a full local package analysis. APKS/APKM/XAPK
   containers may need inner APK extraction; for deflated inner APKs, return a
   clear unsupported/limited diagnostic instead of a misleading missing-manifest
@@ -181,6 +185,8 @@ and recurring pitfalls only.
   production `BOT_TOKEN` webhook at preview.
 - Worker custom domains come from `PREVIEW_WORKER_URL` and `WORKER_URL`.
 - Web UI origins come from `PREVIEW_WEBUI_SITE_URL` or `WEBUI_SITE_URL`.
+- Web UI bot report data origins are injected from `PREVIEW_WORKER_URL` or
+  `WORKER_URL` at build time.
 - Preview bot report links must use `PREVIEW_WEBUI_SITE_URL` or the Pages
   branch preview alias; do not fall back to the production Web UI origin.
 - Do not hard-code private preview or production hostnames in repo config,

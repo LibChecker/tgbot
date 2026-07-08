@@ -13,6 +13,9 @@ export const WEBUI_SOCIAL_PREVIEW_URL = normalizeAbsoluteUrl(
 export const WEBUI_SOURCE_REPOSITORY_URL = normalizeAbsoluteUrl(
   nodeEnv.WEBUI_SOURCE_REPOSITORY_URL,
 ) || DEFAULT_WEBUI_SOURCE_REPOSITORY_URL;
+export const BOT_REPORT_DATA_ORIGIN = normalizeOrigin(
+  nodeEnv.BOT_REPORT_DATA_ORIGIN || nodeEnv.PUBLIC_WEBHOOK_URL || nodeEnv.WORKER_URL,
+);
 
 export function resolveWebUiSiteConfig(env = {}) {
   const siteOrigin = normalizeOrigin(env.WEBUI_SITE_ORIGIN || env.WEBUI_SITE_URL) || WEBUI_SITE_ORIGIN;

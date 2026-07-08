@@ -102,8 +102,8 @@ npm run deploy:setup
 
 The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.toml`:
 
-- `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, uses `TEST_BOT_TOKEN` for preview bot testing, and points report buttons at `PREVIEW_WEBUI_SITE_URL` or the Cloudflare Pages branch preview alias.
-- `production`: deploys `tgbot`, binds the custom domain from repository variable `WORKER_URL`, uses `Libchecker_TG_Bot`, injects that URL as `PUBLIC_WEBHOOK_URL`, and points report buttons at `WEBUI_SITE_URL`.
+- `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, uses `TEST_BOT_TOKEN` for preview bot testing, points report buttons at `PREVIEW_WEBUI_SITE_URL` or the Cloudflare Pages branch preview alias, and injects the preview Worker origin so Web UI report links can resolve `?r=...`.
+- `production`: deploys `tgbot`, binds the custom domain from repository variable `WORKER_URL`, uses `Libchecker_TG_Bot`, injects that URL as `PUBLIC_WEBHOOK_URL`, points report buttons at `WEBUI_SITE_URL`, and injects the production Worker origin so Web UI report links can resolve `?r=...`.
 
 ## Web UI Deployment
 
@@ -211,8 +211,8 @@ Optional repository secret:
 
 Optional repository variable:
 
-- `PREVIEW_WORKER_URL`, the full preview Worker URL used for the preview custom domain and test bot webhook.
-- `WORKER_URL`, the full production Worker URL used for the production custom domain and bot webhook.
+- `PREVIEW_WORKER_URL`, the full preview Worker URL used for the preview custom domain, test bot webhook, and Web UI report-data origin.
+- `WORKER_URL`, the full production Worker URL used for the production custom domain, bot webhook, and Web UI report-data origin.
 - `PREVIEW_WEBUI_SITE_URL`, the optional full preview Web UI URL used by preview bot report buttons and preview metadata. When omitted, preview deploys use the Pages branch preview alias.
 - `WEBUI_SITE_URL`, the full production Web UI URL used by production bot report buttons and Web UI metadata.
 

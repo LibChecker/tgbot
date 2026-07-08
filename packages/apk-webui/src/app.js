@@ -3,6 +3,7 @@ import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate
 import { clamp } from "./app/math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./app/format.js";
 import { getStats } from "./app/report-model.js";
+import { resolveBotReportUrlFromLocation } from "./app/bot-report-url.js";
 import {
   buildHistorySummary,
   createHistoryEntry,
@@ -55,7 +56,6 @@ const ANALYTICS_IDLE_LOAD_DELAY_MS = 4000;
 const ANALYTICS_IDLE_LOAD_TIMEOUT_MS = 6000;
 const HISTORY_SAVE_IDLE_TIMEOUT_MS = 1600;
 const URL_REPORT_ENDPOINT = "/url-report";
-const BOT_REPORT_URL_PARAM = "botReportUrl";
 const URL_REPORT_PROGRESS_KEYS = Object.freeze({
   accepted: "progressPreparingLink",
   url_preview: "progressPreparingLink",
@@ -70,6 +70,7 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
 const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
 const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
+const BOT_REPORT_DATA_ORIGIN = typeof __BOT_REPORT_DATA_ORIGIN__ === "string" ? __BOT_REPORT_DATA_ORIGIN__ : "";
 const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const RUNTIME_LOG_DETAIL_KEYS = new Set([
@@ -3665,19 +3666,11 @@ function loadBotReportFromUrlIfPresent() {
 }
 
 function getBotReportUrlFromLocation() {
-  const value = new URLSearchParams(window.location.search).get(BOT_REPORT_URL_PARAM);
-  if (!value) {
-    return "";
-  }
-
-  let url;
-  try {
-    url = new URL(value, window.location.href);
-  } catch {
-    return "";
-  }
-
-  return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+  return resolveBotReportUrlFromLocation(
+    window.location.search,
+    BOT_REPORT_DATA_ORIGIN,
+    state.locale,
+  );
 }
 
 function ensureWorker() {

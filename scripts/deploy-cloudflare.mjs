@@ -151,14 +151,18 @@ function buildWorkerDeployArgs(targetValue) {
 }
 
 function buildWebUiBuildEnv(targetValue) {
-  if (!targetValue.webuiUrl) {
-    return {};
+  const env = {};
+
+  if (targetValue.webuiUrl) {
+    env.WEBUI_SITE_ORIGIN = targetValue.webuiUrl.origin;
+    env.WEBUI_SITE_URL = targetValue.webuiUrl.origin;
   }
 
-  return {
-    WEBUI_SITE_ORIGIN: targetValue.webuiUrl.origin,
-    WEBUI_SITE_URL: targetValue.webuiUrl.origin,
-  };
+  if (targetValue.workerUrl) {
+    env.BOT_REPORT_DATA_ORIGIN = targetValue.workerUrl.origin;
+  }
+
+  return env;
 }
 
 function resolvePreviewWebUiUrl(pagesBranch) {

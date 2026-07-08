@@ -60,19 +60,19 @@ test("private chats still auto-analyze direct APK links", () => {
 test("private chat report buttons use regular URLs", () => {
   const markup = buildLinkReplyMarkup(
     { id: 1, type: "private" },
-    "https://example.com/?botReportUrl=https%3A%2F%2Fworker.example.com%2Freport-data%3Fpath%3Dsample",
+    "https://example.com/?r=sample&lang=en",
     "Open report",
   );
   const button = markup.inline_keyboard[0][0];
 
   assert.equal(
     button.url,
-    "https://example.com/?botReportUrl=https%3A%2F%2Fworker.example.com%2Freport-data%3Fpath%3Dsample",
+    "https://example.com/?r=sample&lang=en",
   );
   assert.equal(button.web_app, undefined);
 });
 
-test("report URLs target the configured WebUI and pass the Worker report data endpoint", () => {
+test("report URLs target the configured WebUI with a short report path", () => {
   const reportUrl = buildWebUiReportUrl(
     { WEBUI_SITE_URL: "https://webui.example.com/" },
     "https://worker.example.com",
@@ -80,15 +80,27 @@ test("report URLs target the configured WebUI and pass the Worker report data en
     "zh-Hans",
   );
   const url = new URL(reportUrl);
-  const reportDataUrl = new URL(url.searchParams.get("botReportUrl"));
 
   assert.equal(url.origin, "https://webui.example.com");
   assert.equal(url.pathname, "/");
+  assert.equal(url.searchParams.get("r"), "Sample-07-08");
   assert.equal(url.searchParams.get("lang"), "zh-Hans");
-  assert.equal(reportDataUrl.origin, "https://worker.example.com");
-  assert.equal(reportDataUrl.pathname, "/report-data");
-  assert.equal(reportDataUrl.searchParams.get("path"), "Sample-07-08");
-  assert.equal(reportDataUrl.searchParams.get("lang"), "zh-Hans");
+  assert.deepEqual(Array.from(url.searchParams.keys()), ["r", "lang"]);
+});
+
+test("report URLs fall back to Worker report data when WebUI is not configured", () => {
+  const reportUrl = buildWebUiReportUrl(
+    {},
+    "https://worker.example.com",
+    "Sample-07-08",
+    "zh-Hans",
+  );
+  const url = new URL(reportUrl);
+
+  assert.equal(url.origin, "https://worker.example.com");
+  assert.equal(url.pathname, "/report-data");
+  assert.equal(url.searchParams.get("path"), "Sample-07-08");
+  assert.equal(url.searchParams.get("lang"), "zh-Hans");
 });
 
 test("report data route handles CORS preflight through Hono middleware", async () => {
