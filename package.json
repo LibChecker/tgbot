@@ -41,7 +41,7 @@
     "check": "npm run check --workspace @tgbot/shared && npm run check --workspace @tgbot/bot-worker && npm run check --workspace @tgbot/apk-webui && npm run check:deploy"
   },
   "devDependencies": {
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.0"
   },
   "dependencies": {
     "svgpath": "^2.6.0"
