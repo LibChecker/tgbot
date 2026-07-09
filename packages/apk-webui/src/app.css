@@ -4475,6 +4475,10 @@ svg {
       "panel";
   }
 
+  .tabs {
+    width: 100%;
+  }
+
   .report-hero {
     align-items: start;
     gap: 12px;
