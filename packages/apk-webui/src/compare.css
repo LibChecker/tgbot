@@ -33,11 +33,11 @@
   gap: 14px;
   min-width: 0;
   min-height: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
   border-radius: var(--radius);
   background: var(--card-bg);
   padding: clamp(14px, 2.4vw, 18px);
-  box-shadow: 0 1px 0 color-mix(in srgb, #ffffff 22%, transparent) inset;
+  box-shadow: none;
 }
 
 .compare-slot-header {
@@ -223,9 +223,10 @@
   gap: 14px;
   min-width: 0;
   padding: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface-soft) 82%, transparent);
+  box-shadow: none;
 }
 
 .compare-app-card .app-icon-frame,
@@ -297,10 +298,10 @@
   display: grid;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
   border-radius: var(--radius);
   background: var(--card-bg);
-  box-shadow: 0 1px 0 color-mix(in srgb, #ffffff 18%, transparent) inset;
+  box-shadow: none;
 }
 
 .compare-table-row {
