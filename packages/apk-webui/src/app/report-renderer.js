@@ -20,6 +20,7 @@ const ARCHIVE_CHART_COLORS = [
   "#d946ef",
   "#84cc16",
 ];
+export const REPORT_LIST_RENDER_LIMIT = 120;
 let runtime = null;
 let state = null;
 let t = () => "";
@@ -338,22 +339,24 @@ function renderNativeTab(report) {
     `</button>`,
   ].join("")).join("");
   const activeLibraries = entries.find((entry) => entry.abi === state.activeNativeAbi)?.items || [];
-  const rows = activeLibraries.map((library) => {
-    const sdk = library.sdk ? renderSdkChip(library.sdk) : "";
-    return [
-      `<article class="list-row native-library-row">`,
-      `<div class="row-title"><span class="app-data-text">${escapeHtml(library.name || t("unknown"))}</span></div>`,
-      `<div class="row-meta native-library-meta app-data-text"><span>${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</span>${renderNativeLibraryLabels(library)}</div>`,
-      sdk ? `<div class="row-meta native-library-sdk app-data-text">${sdk}</div>` : "",
-      `</article>`,
-    ].join("");
-  }).join("");
+  const { rows, overflow } = renderLimitedRows(activeLibraries, renderNativeLibraryRow);
 
   return [
     `<div class="native-abi-tabs" role="tablist" aria-label="${escapeAttr(t("abi"))}">`,
     abiTabs,
     `</div>`,
-    `<div class="list-stack native-library-list">${rows}</div>`,
+    `<div class="list-stack native-library-list">${rows}${overflow}</div>`,
+  ].join("");
+}
+
+function renderNativeLibraryRow(library) {
+  const sdk = library.sdk ? renderSdkChip(library.sdk) : "";
+  return [
+    `<article class="list-row native-library-row">`,
+    `<div class="row-title"><span class="app-data-text">${escapeHtml(library.name || t("unknown"))}</span></div>`,
+    `<div class="row-meta native-library-meta app-data-text"><span>${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</span>${renderNativeLibraryLabels(library)}</div>`,
+    sdk ? `<div class="row-meta native-library-sdk app-data-text">${sdk}</div>` : "",
+    `</article>`,
   ].join("");
 }
 
@@ -392,14 +395,14 @@ function renderComponentsTab(report) {
   }
 
   const blocks = model.components.groups.map(({ label, items }) => {
-    const rows = items.map(renderComponentRow).join("");
+    const { rows, overflow } = renderLimitedRows(items, renderComponentRow);
     return [
       `<details class="group-block component-group-block" open>`,
       `<summary class="component-group-summary">`,
       `<span class="component-group-title">${escapeHtml(label)}</span>`,
       `<span class="component-group-count">${escapeHtml(String(items.length))}</span>`,
       `</summary>`,
-      rows ? `<div class="list-stack component-list-stack">${rows}</div>` : emptyList(t("noComponents")),
+      rows ? `<div class="list-stack component-list-stack">${rows}${overflow}</div>` : emptyList(t("noComponents")),
       `</details>`,
     ].join("");
   }).join("");
@@ -462,13 +465,17 @@ function renderPermissionsTab(report) {
     return emptyList(t("noPermissions"));
   }
 
-  const rows = permissions.map((permission) => [
+  const { rows, overflow } = renderLimitedRows(permissions, renderPermissionRow);
+
+  return `<div class="kv-table permission-table">${rows}</div>${overflow}`;
+}
+
+function renderPermissionRow(permission) {
+  return [
     `<div class="kv-row permission-table-row">`,
     `<div class="kv-value permission-table-value">${inlineCodeValue(permission)}</div>`,
     `</div>`,
-  ].join("")).join("");
-
-  return `<div class="kv-table permission-table">${rows}</div>`;
+  ].join("");
 }
 
 function renderSignaturesTab(report) {
@@ -545,15 +552,19 @@ function renderMetaDataTab(report) {
     return emptyList(t("noMetaData"));
   }
 
-  const rows = metaData.map((item) => [
+  const { rows, overflow } = renderLimitedRows(metaData, renderMetaDataRow);
+
+  return `<div class="list-stack">${rows}${overflow}</div>`;
+}
+
+function renderMetaDataRow(item) {
+  return [
     `<article class="list-row">`,
     `<div class="row-title"><span class="app-data-text">${escapeHtml(item.name || t("unknown"))}</span></div>`,
     `<div class="row-meta app-data-text">${renderMetaDataValue(item)}</div>`,
     item.resourceId != null ? `<div class="row-meta app-data-text">${escapeHtml(t("resource"))}: ${codeChip(formatResourceId(item.resourceId))}</div>` : "",
     `</article>`,
-  ].join("")).join("");
-
-  return `<div class="list-stack">${rows}</div>`;
+  ].join("");
 }
 
 function renderMetaDataValue(item) {
@@ -590,7 +601,8 @@ function renderSdkRows(entries) {
     max = Math.max(max, entry.count || 0);
   }
 
-  const rows = entries.map((entry) => {
+  const { visibleItems, hiddenCount } = getVisibleItems(entries);
+  const rows = visibleItems.map((entry) => {
     const width = Math.max(4, Math.round(((entry.count || 0) / max) * 100));
     const preview = renderCodeChipList(entry.previewItems || []);
     const detail = joinTextParts([entry.source, entry.detail]);
@@ -607,7 +619,7 @@ function renderSdkRows(entries) {
     ].join("");
   }).join("");
 
-  return `<div class="sdk-stack">${rows}</div>`;
+  return `<div class="sdk-stack">${rows}${renderOverflowNote(hiddenCount)}</div>`;
 }
 
 function renderCodeChipList(items) {
@@ -758,6 +770,29 @@ function formatSignatureDate(value) {
 
 function emptyList(message) {
   return `<p class="empty-list">${escapeHtml(message)}</p>`;
+}
+
+function renderLimitedRows(items, renderItem, limit = REPORT_LIST_RENDER_LIMIT) {
+  const { visibleItems, hiddenCount } = getVisibleItems(items, limit);
+  return {
+    rows: visibleItems.map(renderItem).join(""),
+    overflow: renderOverflowNote(hiddenCount),
+  };
+}
+
+function getVisibleItems(items, limit = REPORT_LIST_RENDER_LIMIT) {
+  const values = Array.isArray(items) ? items : [];
+  const visibleItems = values.length > limit ? values.slice(0, limit) : values;
+  return {
+    visibleItems,
+    hiddenCount: values.length - visibleItems.length,
+  };
+}
+
+function renderOverflowNote(hiddenCount) {
+  return hiddenCount > 0
+    ? `<p class="compare-overflow-note">${escapeHtml(t("compareMoreItems", { count: hiddenCount }))}</p>`
+    : "";
 }
 
 function buildWebReportViewModel(report) {

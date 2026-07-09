@@ -13,7 +13,9 @@ const ELF_CLASS_32 = 1;
 const ELF_CLASS_64 = 2;
 const ELF_DATA_BIG_ENDIAN = 2;
 const ELF_PROGRAM_HEADER_LOAD = 1;
+const ELF_MAX_HEADER_SIZE = 0x40;
 const NATIVE_PAGE_SIZE_16_KB = 0x4000;
+const ZIP_INFLATE_CHUNK_BYTES = 64 * 1024;
 
 const RES_STRING_POOL_TYPE = 0x0001;
 const RES_TABLE_TYPE = 0x0002;
@@ -102,31 +104,41 @@ const ADAPTIVE_ICON_EDGE_FEATHER = 1;
 
 /**
  * @param {ArrayBuffer | Uint8Array} packageBuffer
+ * @param {{ parserProfile?: object, scanDex?: boolean }} [options]
  * @returns {Promise<ApkInfo>}
  */
-export async function readAndroidPackageInfo(packageBuffer) {
+export async function readAndroidPackageInfo(packageBuffer, options = {}) {
   const packageBytes = toUint8Array(packageBuffer);
-  const zipEntries = parseZipEntries(packageBytes);
+  return withParserProfileStage(options.parserProfile, "read-android-package-info", {
+    bytes: packageBytes.byteLength,
+  }, async () => {
+    const zipEntries = parseZipEntries(packageBytes, options.parserProfile, {
+      source: "package",
+    });
 
-  if (isDirectApkZip(zipEntries)) {
-    return readApkInfoFromParsedZip(packageBytes, zipEntries);
-  }
+    if (isDirectApkZip(zipEntries)) {
+      return readApkInfoFromParsedZip(packageBytes, zipEntries, options);
+    }
 
-  const apkEntries = collectContainedApkEntries(zipEntries);
-  return readPackageContainerInfo(packageBytes, apkEntries);
+    const apkEntries = collectContainedApkEntries(zipEntries);
+    return readPackageContainerInfo(packageBytes, apkEntries, options);
+  });
 }
 
 /**
  * @param {ArrayBuffer | Uint8Array} apkBuffer
+ * @param {{ parserProfile?: object, scanDex?: boolean }} [options]
  * @returns {Promise<ApkInfo>}
  */
-export async function readApkInfo(apkBuffer) {
+export async function readApkInfo(apkBuffer, options = {}) {
   const apkBytes = toUint8Array(apkBuffer);
-  const zipEntries = parseZipEntries(apkBytes);
-  return readApkInfoFromParsedZip(apkBytes, zipEntries);
+  const zipEntries = parseZipEntries(apkBytes, options.parserProfile, {
+    source: "apk",
+  });
+  return readApkInfoFromParsedZip(apkBytes, zipEntries, options);
 }
 
-function readApkInfoFromParsedZip(apkBytes, zipEntries) {
+function readApkInfoFromParsedZip(apkBytes, zipEntries, options = {}) {
   return readApkInfoFromZipSource(
     {
       zipEntries,
@@ -134,24 +146,35 @@ function readApkInfoFromParsedZip(apkBytes, zipEntries) {
       apkBytes,
     },
     {
-      scanDex: true,
+      ...options,
+      scanDex: options.scanDex ?? true,
     },
   );
 }
 
-async function readPackageContainerInfo(packageBytes, apkEntries) {
-  const apkSources = await extractContainedApkSources(packageBytes, apkEntries);
-  const selectedSource = selectContainedApkSource(apkSources);
+async function readPackageContainerInfo(packageBytes, apkEntries, options = {}) {
+  const apkSources = await withParserProfileStage(options.parserProfile, "extract-contained-apks", {
+    apkEntries: apkEntries.length,
+  }, () => extractContainedApkSources(packageBytes, apkEntries, options.parserProfile));
+  const selectedSource = withParserProfileStageSync(options.parserProfile, "select-contained-apk", {
+    apkSources: apkSources.length,
+  }, () => selectContainedApkSource(apkSources));
   if (!selectedSource) {
     throw new Error("Android 包中未找到可解析的 APK 文件");
   }
 
-  const nativeLibraries = await collectContainedNativeLibraries(apkSources);
+  const nativeLibraries = await withParserProfileStage(options.parserProfile, "collect-contained-native-libraries", {
+    apkSources: apkSources.length,
+  }, () => collectContainedNativeLibraries(apkSources, options.parserProfile));
+  const iconResources = await withParserProfileStage(options.parserProfile, "read-contained-icon-resources", {
+    apkSources: apkSources.length,
+  }, () => readContainedIconResources(apkSources, selectedSource, options.parserProfile));
   const apkInfo = await readApkInfoFromZipSource(selectedSource, {
-    scanDex: true,
+    ...options,
+    scanDex: options.scanDex ?? true,
     nativeLibraries,
     iconSource: buildContainedIconSource(apkSources, selectedSource),
-    iconResources: await readContainedIconResources(apkSources, selectedSource),
+    iconResources,
   });
   const archiveApkEntries = [];
   const archiveApkEntryDetails = [];
@@ -185,7 +208,7 @@ function buildArchiveApkEntryDetail(apkEntry, analyzedPath) {
   };
 }
 
-async function extractContainedApkSources(packageBytes, apkEntries) {
+async function extractContainedApkSources(packageBytes, apkEntries, parserProfile) {
   const sources = new Array(apkEntries.length);
   let nextIndex = 0;
 
@@ -196,7 +219,7 @@ async function extractContainedApkSources(packageBytes, apkEntries) {
       const apkEntry = apkEntries[index];
 
       try {
-        sources[index] = await extractContainedApkSource(packageBytes, apkEntry);
+        sources[index] = await extractContainedApkSource(packageBytes, apkEntry, parserProfile);
       } catch {
         // Keep parsing other entries in APKS/APKM/XAPK containers when one split is unusable.
       }
@@ -219,9 +242,16 @@ async function extractContainedApkSources(packageBytes, apkEntries) {
   return extractedSources;
 }
 
-async function extractContainedApkSource(packageBytes, apkEntry) {
-  const apkBytes = await extractZipEntry(packageBytes, apkEntry.entry);
-  const zipEntries = parseZipEntries(apkBytes);
+async function extractContainedApkSource(packageBytes, apkEntry, parserProfile) {
+  const apkBytes = await withParserProfileStage(parserProfile, "extract-contained-apk-entry", {
+    path: apkEntry.path,
+    compressedSize: apkEntry.entry.compressedSize || 0,
+    uncompressedSize: apkEntry.entry.uncompressedSize || 0,
+  }, () => extractZipEntry(packageBytes, apkEntry.entry));
+  const zipEntries = parseZipEntries(apkBytes, parserProfile, {
+    source: "contained-apk",
+    path: apkEntry.path,
+  });
   return {
     path: apkEntry.path,
     apkBytes,
@@ -230,11 +260,11 @@ async function extractContainedApkSource(packageBytes, apkEntry) {
   };
 }
 
-async function readContainedIconResources(apkSources, selectedSource) {
+async function readContainedIconResources(apkSources, selectedSource, parserProfile) {
   const resources = [];
 
   for (const source of orderedApkSources(apkSources, selectedSource)) {
-    const parsed = await readApkResources(source);
+    const parsed = await readApkResources(source, { parserProfile });
     if (parsed) {
       resources.push(parsed);
     }
@@ -374,11 +404,11 @@ function hasRootDexEntries(zipEntries) {
   return false;
 }
 
-async function collectContainedNativeLibraries(apkSources) {
+async function collectContainedNativeLibraries(apkSources, parserProfile = null) {
   const librariesByKey = new Map();
 
   for (const source of apkSources) {
-    for (const library of await collectNativeLibraries(source)) {
+    for (const library of await collectNativeLibraries(source, { parserProfile })) {
       const item = {
         ...library,
         sourceEntry: source.path,
@@ -478,32 +508,49 @@ function isLikelySplitApkFileName(fileName) {
 
 /**
  * @param {{ zipEntries: Map<string, object>, extractEntry: (entry: object) => Promise<Uint8Array>, apkBytes?: Uint8Array, path?: string }} source
- * @param {{ scanDex?: boolean, nativeLibraries?: import("./contracts.js").ApkNativeLibrary[], iconSource?: object, iconResources?: object, maxSignatureEntryBytes?: number, maxResourceBytes?: number }} [options]
+ * @param {{ scanDex?: boolean, nativeLibraries?: import("./contracts.js").ApkNativeLibrary[], iconSource?: object, iconResources?: object, maxSignatureEntryBytes?: number, maxResourceBytes?: number, parserProfile?: object }} [options]
  * @returns {Promise<ApkInfo>}
  */
 export async function readApkInfoFromZipSource(source, options = {}) {
   const zipEntries = source.zipEntries;
-  const nativeLibraries = await collectNativeLibraries(source, {
+  const nativeLibraries = await withParserProfileStage(options.parserProfile, "collect-native-libraries", {
+    source: source.path || "apk",
+    zipEntries: zipEntries.size,
+  }, () => collectNativeLibraries(source, {
     parseElf: options.parseNativeElf ?? Boolean(source.apkBytes),
-  });
+    parserProfile: options.parserProfile,
+  }));
   const nativeLibrariesForValidation = options.nativeLibraries || nativeLibraries;
-  const buildFeaturesPromise = detectBuildFeatures(source, {
+  const buildFeaturesPromise = withParserProfileStage(options.parserProfile, "detect-build-features", {
+    source: source.path || "apk",
+  }, () => detectBuildFeatures(source, {
     ...options,
     nativeLibraries: nativeLibrariesForValidation,
-  });
-  const signaturesPromise = readApkSignatures(source, {
+  }));
+  const signaturesPromise = withParserProfileStage(options.parserProfile, "read-apk-signatures", {
+    source: source.path || "apk",
+  }, () => readApkSignatures(source, {
     maxSignatureEntryBytes: options.maxSignatureEntryBytes,
-  });
-  const resourcesPromise = readApkResources(source, {
+    parserProfile: options.parserProfile,
+  }));
+  const resourcesPromise = withParserProfileStage(options.parserProfile, "read-apk-resources", {
+    source: source.path || "apk",
+  }, () => readApkResources(source, {
     maxEntryBytes: options.maxResourceBytes,
-  });
+    parserProfile: options.parserProfile,
+  }));
 
   const manifestEntry = zipEntries.get("AndroidManifest.xml");
   if (!manifestEntry) {
     throw new Error("APK 中缺少 AndroidManifest.xml");
   }
 
-  const manifestPromise = extractSourceEntry(source, manifestEntry).then(parseAndroidManifest);
+  const manifestPromise = withParserProfileStage(options.parserProfile, "extract-manifest", {
+    source: source.path || "apk",
+    bytes: manifestEntry.uncompressedSize || manifestEntry.compressedSize || 0,
+  }, () => extractSourceEntry(source, manifestEntry)).then((bytes) =>
+    parseAndroidManifestWithProfile(bytes, options.parserProfile),
+  );
   const [buildFeatures, signatures, resources, manifest] = await Promise.all([
     buildFeaturesPromise,
     signaturesPromise,
@@ -520,11 +567,13 @@ export async function readApkInfoFromZipSource(source, options = {}) {
     appName = formatResourceReference(manifest.applicationLabelRef);
   }
 
-  const icon = await resolveApplicationIcon(
+  const icon = await withParserProfileStage(options.parserProfile, "resolve-application-icon", {
+    source: source.path || "apk",
+  }, () => resolveApplicationIcon(
     options.iconSource || source,
     manifest,
     options.iconResources || resources,
-  );
+  ));
 
   const metaData = {
     application: resolveApplicationMetaData(manifest.metaData.application, resources),
@@ -551,16 +600,25 @@ export async function readApkInfoFromZipSource(source, options = {}) {
 
 async function detectBuildFeatures(source, options = {}) {
   const zipEntries = source.zipEntries;
-  const appMetadata = await readAppMetadata(source);
-  const composeMetadata = await readComposeMetadata(source);
+  const appMetadata = await withParserProfileStage(options.parserProfile, "read-app-metadata", {
+    source: source.path || "apk",
+  }, () => readAppMetadata(source));
+  const composeMetadata = await withParserProfileStage(options.parserProfile, "read-compose-metadata", {
+    source: source.path || "apk",
+  }, () => readComposeMetadata(source));
   const shouldScanDex = options.scanDex !== false;
   const featureMarkers = shouldScanDex
-    ? await scanDexFeatureMarkers(source, {
+    ? await withParserProfileStage(options.parserProfile, "scan-dex-feature-markers", {
+        source: source.path || "apk",
+      }, () => scanDexFeatureMarkers(source, {
+        parserProfile: options.parserProfile,
         skipComposeDexScan: composeMetadata.detected,
         nativeValidationTargets: buildNativeValidationTargets(options.nativeLibraries),
-      })
+      }))
     : buildZipOnlyFeatureMarkers(zipEntries, composeMetadata.detected);
-  const kotlinTooling = await readKotlinToolingMetadata(source);
+  const kotlinTooling = await withParserProfileStage(options.parserProfile, "read-kotlin-tooling-metadata", {
+    source: source.path || "apk",
+  }, () => readKotlinToolingMetadata(source));
 
   return {
     kotlinDetected: featureMarkers.kotlinDetected || kotlinTooling.detected,
@@ -598,6 +656,15 @@ async function readAppMetadata(source) {
 }
 
 async function scanDexFeatureMarkers(source, options = {}) {
+  const profileMarkers = await callAsyncParserProfileHook(
+    options.parserProfile,
+    "scanDexFeatureMarkers",
+    [source, options],
+  );
+  if (profileMarkers) {
+    return profileMarkers;
+  }
+
   const zipEntries = source.zipEntries;
   const nativeValidationTargets = options.nativeValidationTargets || {};
   let kotlinDetected = hasKotlinModule(zipEntries);
@@ -821,11 +888,32 @@ async function readApkResources(source, options = {}) {
   }
 
   try {
-    const resourcesBytes = await extractSourceEntry(source, resourcesEntry);
-    return parseResourcesTable(resourcesBytes);
+    const resourcesBytes = await withParserProfileStage(options.parserProfile, "extract-resources-arsc", {
+      source: source.path || "apk",
+      bytes: resourcesEntry.uncompressedSize || resourcesEntry.compressedSize || 0,
+    }, () => extractSourceEntry(source, resourcesEntry));
+    return await parseResourcesTableWithProfile(resourcesBytes, options.parserProfile);
   } catch {
     return null;
   }
+}
+
+async function parseAndroidManifestWithProfile(manifestBuffer, parserProfile) {
+  return withParserProfileStage(parserProfile, "parse-android-manifest", {
+    bytes: toUint8Array(manifestBuffer).byteLength,
+  }, async () => (
+    await callAsyncParserProfileHook(parserProfile, "parseAndroidManifest", [toUint8Array(manifestBuffer)]) ||
+    parseAndroidManifest(manifestBuffer)
+  ));
+}
+
+async function parseResourcesTableWithProfile(resourcesBuffer, parserProfile) {
+  return withParserProfileStage(parserProfile, "parse-resources-arsc", {
+    bytes: toUint8Array(resourcesBuffer).byteLength,
+  }, async () => (
+    await callAsyncParserProfileHook(parserProfile, "parseResourcesTable", [toUint8Array(resourcesBuffer)]) ||
+    parseResourcesTable(resourcesBuffer)
+  ));
 }
 
 async function extractSourceEntry(source, entry) {
@@ -1434,6 +1522,7 @@ export const __apkTestInternals = {
   parseElfInfo,
   parseZipEntries,
   readBestIconCandidate,
+  scanDexFeatureMarkers,
   renderVectorDrawableIcon,
 };
 
@@ -2448,32 +2537,38 @@ async function collectNativeLibraries(source, options = {}) {
   const parseElf = options.parseElf ?? Boolean(source.apkBytes);
   const libraries = [];
 
-  for (const [path, entry] of zipEntries.entries()) {
-    if (!path.startsWith("lib/") || !path.endsWith(".so")) {
-      continue;
+  return withParserProfileStage(options.parserProfile, "collect-native-library-entries", {
+    source: source.path || "apk",
+    zipEntries: zipEntries.size,
+    parseElf,
+  }, async () => {
+    for (const [path, entry] of zipEntries.entries()) {
+      if (!path.startsWith("lib/") || !path.endsWith(".so")) {
+        continue;
+      }
+
+      const segments = path.split("/");
+      if (segments.length < 3) {
+        continue;
+      }
+
+      const nativeInfo = await readNativeLibraryBinaryInfo(source, entry, parseElf, options.parserProfile);
+      libraries.push({
+        abi: segments[1],
+        name: segments[segments.length - 1],
+        path,
+        size: entry.uncompressedSize || entry.compressedSize || 0,
+        ...nativeInfo,
+      });
     }
 
-    const segments = path.split("/");
-    if (segments.length < 3) {
-      continue;
-    }
+    libraries.sort(compareNativeLibraries);
 
-    const nativeInfo = await readNativeLibraryBinaryInfo(source, entry, parseElf);
-    libraries.push({
-      abi: segments[1],
-      name: segments[segments.length - 1],
-      path,
-      size: entry.uncompressedSize || entry.compressedSize || 0,
-      ...nativeInfo,
-    });
-  }
-
-  libraries.sort(compareNativeLibraries);
-
-  return libraries;
+    return libraries;
+  });
 }
 
-async function readNativeLibraryBinaryInfo(source, entry, parseElf) {
+async function readNativeLibraryBinaryInfo(source, entry, parseElf, parserProfile = null) {
   const info = {};
   const zipAlignment = getNativeLibraryZipAlignment(entry);
   if (zipAlignment > 0) {
@@ -2485,8 +2580,14 @@ async function readNativeLibraryBinaryInfo(source, entry, parseElf) {
     return info;
   }
 
-  const bytes = await getNativeLibraryBytesForElf(source, entry);
-  const elfInfo = parseElfInfo(bytes);
+  const bytes = await withParserProfileStage(parserProfile, "extract-native-library-elf", {
+    source: source.path || "apk",
+    bytes: entry.uncompressedSize || entry.compressedSize || 0,
+  }, () => getNativeLibraryBytesForElf(source, entry));
+  const elfInfo = withParserProfileStageSync(parserProfile, "parse-native-elf", {
+    source: source.path || "apk",
+    bytes: bytes.byteLength,
+  }, () => parseElfInfo(bytes));
   if (elfInfo.pageSize > 0) {
     info.elfPageSize = elfInfo.pageSize;
     info.elf16kbAligned = elfInfo.pageSize % NATIVE_PAGE_SIZE_16_KB === 0;
@@ -2502,10 +2603,11 @@ function getNativeLibraryZipAlignment(entry) {
 }
 
 async function getNativeLibraryBytesForElf(source, entry) {
-  if (source.apkBytes && entry.compressionMethod === ZIP_COMPRESSION_STORE && entry.dataOffset) {
-    const end = entry.dataOffset + entry.uncompressedSize;
-    if (end <= source.apkBytes.byteLength) {
-      return source.apkBytes.subarray(entry.dataOffset, end);
+  if (source.apkBytes) {
+    try {
+      return await extractZipEntryElfPrefix(source.apkBytes, entry);
+    } catch {
+      return new Uint8Array();
     }
   }
 
@@ -2517,6 +2619,53 @@ async function getNativeLibraryBytesForElf(source, entry) {
     return await source.extractEntry(entry);
   } catch {
     return new Uint8Array();
+  }
+}
+
+async function extractZipEntryElfPrefix(zipBytes, entry) {
+  const headerBytes = await extractZipEntryPrefix(zipBytes, entry, ELF_MAX_HEADER_SIZE);
+  const byteLength = getElfProgramHeaderEndOffset(headerBytes, entry.uncompressedSize || headerBytes.byteLength);
+  if (byteLength <= headerBytes.byteLength) {
+    return headerBytes;
+  }
+  return extractZipEntryPrefix(zipBytes, entry, byteLength);
+}
+
+function getElfProgramHeaderEndOffset(bytes, maxByteLength) {
+  try {
+    ensureReadable(bytes, 0, 0x10);
+    if (readUint32(bytes, 0) !== ELF_MAGIC) {
+      return bytes.byteLength;
+    }
+
+    const elfClass = bytes[4];
+    const bigEndian = bytes[5] === ELF_DATA_BIG_ENDIAN;
+    let programHeaderOffset;
+    let programHeaderEntrySize;
+    let programHeaderCount;
+
+    if (elfClass === ELF_CLASS_32) {
+      ensureReadable(bytes, 0, 0x34);
+      programHeaderOffset = readElfUint32(bytes, 0x1c, bigEndian);
+      programHeaderEntrySize = readElfUint16(bytes, 0x2a, bigEndian);
+      programHeaderCount = readElfUint16(bytes, 0x2c, bigEndian);
+    } else if (elfClass === ELF_CLASS_64) {
+      ensureReadable(bytes, 0, 0x40);
+      programHeaderOffset = readElfUint64(bytes, 0x20, bigEndian);
+      programHeaderEntrySize = readElfUint16(bytes, 0x36, bigEndian);
+      programHeaderCount = readElfUint16(bytes, 0x38, bigEndian);
+    } else {
+      return bytes.byteLength;
+    }
+
+    if (!programHeaderOffset || !programHeaderEntrySize || !programHeaderCount) {
+      return bytes.byteLength;
+    }
+
+    const endOffset = programHeaderOffset + programHeaderEntrySize * programHeaderCount;
+    return Math.min(endOffset, maxByteLength);
+  } catch {
+    return bytes.byteLength;
   }
 }
 
@@ -2606,49 +2755,59 @@ function compareNativeLibraries(left, right) {
   return left.path.localeCompare(right.path);
 }
 
-function parseZipEntries(bytes) {
-  const entries = new Map();
-  const eocdOffset = findEndOfCentralDirectory(bytes);
-  const totalEntries = readUint16(bytes, eocdOffset + 10);
-  const centralDirectoryOffset = readUint32(bytes, eocdOffset + 16);
-
-  let offset = centralDirectoryOffset;
-  for (let index = 0; index < totalEntries; index += 1) {
-    if (readUint32(bytes, offset) !== CENTRAL_DIRECTORY_SIGNATURE) {
-      throw new Error("APK ZIP 中央目录损坏");
+function parseZipEntries(bytes, parserProfile = null, details = {}) {
+  return withParserProfileStageSync(parserProfile, "parse-zip-entries", {
+    zipBytes: bytes.byteLength,
+    ...details,
+  }, () => {
+    const profileEntries = callParserProfileHook(parserProfile, "parseZipEntries", [bytes]);
+    if (profileEntries) {
+      return profileEntries;
     }
 
-    const flags = readUint16(bytes, offset + 8);
-    const compressionMethod = readUint16(bytes, offset + 10);
-    const compressedSize = readUint32(bytes, offset + 20);
-    const uncompressedSize = readUint32(bytes, offset + 24);
-    const fileNameLength = readUint16(bytes, offset + 28);
-    const extraLength = readUint16(bytes, offset + 30);
-    const commentLength = readUint16(bytes, offset + 32);
-    const localHeaderOffset = readUint32(bytes, offset + 42);
+    const entries = new Map();
+    const eocdOffset = findEndOfCentralDirectory(bytes);
+    const totalEntries = readUint16(bytes, eocdOffset + 10);
+    const centralDirectoryOffset = readUint32(bytes, eocdOffset + 16);
 
-    const nameStart = offset + 46;
-    if (!shouldDecodeZipEntryName(bytes, nameStart, fileNameLength)) {
+    let offset = centralDirectoryOffset;
+    for (let index = 0; index < totalEntries; index += 1) {
+      if (readUint32(bytes, offset) !== CENTRAL_DIRECTORY_SIGNATURE) {
+        throw new Error("APK ZIP 中央目录损坏");
+      }
+
+      const flags = readUint16(bytes, offset + 8);
+      const compressionMethod = readUint16(bytes, offset + 10);
+      const compressedSize = readUint32(bytes, offset + 20);
+      const uncompressedSize = readUint32(bytes, offset + 24);
+      const fileNameLength = readUint16(bytes, offset + 28);
+      const extraLength = readUint16(bytes, offset + 30);
+      const commentLength = readUint16(bytes, offset + 32);
+      const localHeaderOffset = readUint32(bytes, offset + 42);
+
+      const nameStart = offset + 46;
+      if (!shouldDecodeZipEntryName(bytes, nameStart, fileNameLength)) {
+        offset += 46 + fileNameLength + extraLength + commentLength;
+        continue;
+      }
+
+      const fileName = decodeUtf8(bytes.subarray(nameStart, nameStart + fileNameLength));
+      if (shouldKeepZipEntry(fileName)) {
+        entries.set(fileName, {
+          flags,
+          compressionMethod,
+          compressedSize,
+          uncompressedSize,
+          localHeaderOffset,
+          dataOffset: getZipEntryDataOffset(bytes, localHeaderOffset),
+        });
+      }
+
       offset += 46 + fileNameLength + extraLength + commentLength;
-      continue;
     }
 
-    const fileName = decodeUtf8(bytes.subarray(nameStart, nameStart + fileNameLength));
-    if (shouldKeepZipEntry(fileName)) {
-      entries.set(fileName, {
-        flags,
-        compressionMethod,
-        compressedSize,
-        uncompressedSize,
-        localHeaderOffset,
-        dataOffset: getZipEntryDataOffset(bytes, localHeaderOffset),
-      });
-    }
-
-    offset += 46 + fileNameLength + extraLength + commentLength;
-  }
-
-  return entries;
+    return entries;
+  });
 }
 
 function getZipEntryDataOffset(bytes, headerOffset) {
@@ -2700,6 +2859,99 @@ function shouldKeepZipEntry(path) {
     path === "kotlin-tooling-metadata.json" ||
     isContainedApkPath(path)
   );
+}
+
+function callParserProfileHook(parserProfile, hookName, args) {
+  const hook = parserProfile?.[hookName];
+  if (typeof hook !== "function") {
+    return null;
+  }
+
+  try {
+    return hook(...args) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function callAsyncParserProfileHook(parserProfile, hookName, args) {
+  const hook = parserProfile?.[hookName];
+  if (typeof hook !== "function") {
+    return null;
+  }
+
+  try {
+    return (await hook(...args)) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function withParserProfileStage(parserProfile, stage, details, action) {
+  if (!shouldRecordParserProfileStages(parserProfile)) {
+    return action();
+  }
+
+  const startedAt = getNowMs();
+  try {
+    const value = await action();
+    recordParserProfileStage(parserProfile, stage, getNowMs() - startedAt, details);
+    return value;
+  } catch (error) {
+    recordParserProfileStage(parserProfile, stage, getNowMs() - startedAt, {
+      ...details,
+      error: getErrorText(error),
+    });
+    throw error;
+  }
+}
+
+function withParserProfileStageSync(parserProfile, stage, details, action) {
+  if (!shouldRecordParserProfileStages(parserProfile)) {
+    return action();
+  }
+
+  const startedAt = getNowMs();
+  try {
+    const value = action();
+    recordParserProfileStage(parserProfile, stage, getNowMs() - startedAt, details);
+    return value;
+  } catch (error) {
+    recordParserProfileStage(parserProfile, stage, getNowMs() - startedAt, {
+      ...details,
+      error: getErrorText(error),
+    });
+    throw error;
+  }
+}
+
+function shouldRecordParserProfileStages(parserProfile) {
+  return Boolean(parserProfile && Array.isArray(parserProfile.stages));
+}
+
+function recordParserProfileStage(parserProfile, stage, durationMs, details = {}) {
+  parserProfile.stages.push({
+    stage,
+    durationMs: Number(Math.max(0, durationMs).toFixed(4)),
+    ...normalizeParserProfileDetails(details),
+  });
+}
+
+function normalizeParserProfileDetails(details) {
+  const normalized = {};
+  for (const [key, value] of Object.entries(details || {})) {
+    if (value == null) {
+      continue;
+    }
+    if (Number.isFinite(value) || typeof value === "string" || typeof value === "boolean") {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+}
+
+function getNowMs() {
+  return typeof globalThis.performance?.now === "function" ? globalThis.performance.now() : Date.now();
 }
 
 function isPotentialResourceEntryName(bytes, start, length) {
@@ -2799,7 +3051,7 @@ function findEndOfCentralDirectory(bytes) {
   throw new Error("APK ZIP 结束记录不存在");
 }
 
-async function extractZipEntry(zipBytes, entry) {
+function getZipEntryCompressedData(zipBytes, entry) {
   if ((entry.flags & 0x0001) !== 0) {
     throw new Error("暂不支持解析已加密的 ZIP 条目");
   }
@@ -2812,7 +3064,11 @@ async function extractZipEntry(zipBytes, entry) {
   const fileNameLength = readUint16(zipBytes, headerOffset + 26);
   const extraLength = readUint16(zipBytes, headerOffset + 28);
   const dataOffset = headerOffset + 30 + fileNameLength + extraLength;
-  const compressedData = zipBytes.subarray(dataOffset, dataOffset + entry.compressedSize);
+  return zipBytes.subarray(dataOffset, dataOffset + entry.compressedSize);
+}
+
+async function extractZipEntry(zipBytes, entry) {
+  const compressedData = getZipEntryCompressedData(zipBytes, entry);
 
   if (entry.compressionMethod === ZIP_COMPRESSION_STORE) {
     return compressedData;
@@ -2820,6 +3076,25 @@ async function extractZipEntry(zipBytes, entry) {
 
   if (entry.compressionMethod === ZIP_COMPRESSION_DEFLATE) {
     return inflateRaw(compressedData, entry.uncompressedSize);
+  }
+
+  throw new Error(`不支持的 ZIP 压缩方式: ${entry.compressionMethod}`);
+}
+
+async function extractZipEntryPrefix(zipBytes, entry, maxOutputBytes) {
+  if (!Number.isFinite(maxOutputBytes) || maxOutputBytes <= 0) {
+    return new Uint8Array();
+  }
+
+  const compressedData = getZipEntryCompressedData(zipBytes, entry);
+  const byteLimit = Math.min(Math.trunc(maxOutputBytes), entry.uncompressedSize || maxOutputBytes);
+
+  if (entry.compressionMethod === ZIP_COMPRESSION_STORE) {
+    return compressedData.subarray(0, byteLimit);
+  }
+
+  if (entry.compressionMethod === ZIP_COMPRESSION_DEFLATE) {
+    return inflateRawPrefix(compressedData, byteLimit);
   }
 
   throw new Error(`不支持的 ZIP 压缩方式: ${entry.compressionMethod}`);
@@ -2840,6 +3115,57 @@ async function inflateRaw(bytes, expectedSize = 0) {
     stream.pipeThrough(new DecompressionStream("deflate-raw")),
     expectedSize,
   );
+}
+
+async function inflateRawPrefix(bytes, maxOutputBytes) {
+  if (bytes.byteLength === 0 || maxOutputBytes <= 0) {
+    return new Uint8Array();
+  }
+
+  let offset = 0;
+  const stream = new ReadableStream({
+    pull(controller) {
+      if (offset >= bytes.byteLength) {
+        controller.close();
+        return;
+      }
+
+      const nextOffset = Math.min(offset + ZIP_INFLATE_CHUNK_BYTES, bytes.byteLength);
+      controller.enqueue(bytes.subarray(offset, nextOffset));
+      offset = nextOffset;
+    },
+  });
+  return collectReadableBytesPrefix(
+    stream.pipeThrough(new DecompressionStream("deflate-raw")),
+    maxOutputBytes,
+  );
+}
+
+async function collectReadableBytesPrefix(stream, maxBytes) {
+  const output = new Uint8Array(maxBytes);
+  const reader = stream.getReader();
+  let written = 0;
+
+  while (written < output.byteLength) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    if (!value?.byteLength) {
+      continue;
+    }
+
+    const byteLength = Math.min(value.byteLength, output.byteLength - written);
+    output.set(value.subarray(0, byteLength), written);
+    written += byteLength;
+    if (written >= output.byteLength) {
+      await reader.cancel();
+      break;
+    }
+  }
+
+  return written === output.byteLength ? output : output.slice(0, written);
 }
 
 async function collectReadableBytes(stream, expectedSize = 0) {

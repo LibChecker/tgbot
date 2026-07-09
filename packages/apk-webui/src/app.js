@@ -226,20 +226,23 @@ function trackWebEvent(event, fields = {}) {
 function appendRuntimeLog(level, message, details = {}) {
   const normalizedLevel = RUNTIME_LOG_LEVELS.has(level) ? level : "info";
   runtime.runtimeLogId += 1;
-  state.runtimeLogs.push({
+  const entry = {
     id: runtime.runtimeLogId,
     level: normalizedLevel,
     message: String(message || ""),
     details: formatRuntimeLogDetails(details),
     time: Date.now(),
-  });
+  };
+  state.runtimeLogs.push(entry);
 
+  let removedCount = 0;
   if (state.runtimeLogs.length > MAX_RUNTIME_LOGS) {
-    state.runtimeLogs.splice(0, state.runtimeLogs.length - MAX_RUNTIME_LOGS);
+    removedCount = state.runtimeLogs.length - MAX_RUNTIME_LOGS;
+    state.runtimeLogs.splice(0, removedCount);
   }
 
   if (state.runtimeLogOpen) {
-    renderRuntimeLogs();
+    appendRuntimeLogLine(entry, removedCount);
   }
 }
 
@@ -375,6 +378,8 @@ function createCompareController(CompareController) {
     updateClearButton,
     trackEvent: trackWebEvent,
     getFileAnalyticsFields,
+    getClientErrorTelemetryFields,
+    getErrorMessage,
     getReportAnalyticsFields,
   });
 }
@@ -4129,6 +4134,19 @@ function renderRuntimeLogs() {
   }
 
   elements.runtimeLogList.innerHTML = state.runtimeLogs.map(renderRuntimeLogLine).join("");
+  elements.runtimeLogList.scrollTop = elements.runtimeLogList.scrollHeight;
+}
+
+function appendRuntimeLogLine(entry, removedCount = 0) {
+  if (!elements.runtimeLogList) {
+    return;
+  }
+
+  elements.runtimeLogList.querySelector(".runtime-log-empty")?.remove();
+  for (let index = 0; index < removedCount; index += 1) {
+    elements.runtimeLogList.firstElementChild?.remove();
+  }
+  elements.runtimeLogList.insertAdjacentHTML("beforeend", renderRuntimeLogLine(entry));
   elements.runtimeLogList.scrollTop = elements.runtimeLogList.scrollHeight;
 }
 
