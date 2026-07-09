@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { gzipSync } from "node:zlib";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import svgpath from "svgpath";
 
+import { BUILD_FEATURE_ICON_NAMES, BUILD_FEATURE_ICON_SVGS } from "../packages/shared/src/build-feature-icons.js";
 import { LIBCHECKER_SDK_ICON_SVGS } from "../packages/shared/src/generated/libchecker-sdk-icons.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -15,8 +19,8 @@ const DEFAULT_KV_KEY = "telegram-sdk-emojis:manifest:v1";
 const DEFAULT_EMOJI = "🔹";
 const STICKER_EMOJI_SIZE = 100;
 const STICKER_SVG_DENSITY = 384;
-const TGS_CANVAS_SIZE = 512;
-const STICKER_RENDER_VERSION = 6;
+const TGS_MAX_BYTES = 64 * 1024;
+const STICKER_RENDER_VERSION = 7;
 const MONOCHROME_ICON_COLOR = "#74777F";
 const DEFAULT_STICKER_FORMAT = "animated";
 const STICKER_FORMATS = new Set(["animated", "static"]);
@@ -24,6 +28,8 @@ const TELEGRAM_MAX_RETRIES = 8;
 const TELEGRAM_RETRY_BUFFER_SECONDS = 1;
 const CUSTOM_EMOJI_READY_RETRIES = 8;
 const CUSTOM_EMOJI_READY_DELAY_MS = 1500;
+const SVG_TO_TGS_SCRIPT = fileURLToPath(new URL("./svg-to-tgs.py", import.meta.url));
+const SVG_TO_TGS_PYTHON = process.env.TELEGRAM_SDK_EMOJI_PYTHON || process.env.PYTHON || "python";
 
 const [, , ...argv] = process.argv;
 const options = parseArgs(argv);
@@ -71,7 +77,7 @@ if (!username) {
   fail("Telegram bot username is required. Pass --bot-username=<username> for dry-run.");
 }
 
-const sourceIcons = getSourceIcons(LIBCHECKER_SDK_ICON_SVGS);
+const sourceIcons = getSourceIcons(buildStickerIconSvgMap(LIBCHECKER_SDK_ICON_SVGS));
 const storedManifest = kvConfig ? await readKvManifest(kvConfig) : null;
 const manifest = filterManifestForSetBase(normalizeManifest(storedManifest), username, setBase);
 const shouldReadRemoteState = Boolean(botToken);
@@ -340,19 +346,15 @@ async function executePlan(botToken, ownerId, manifest, plan, { onUpdate } = {})
         sticker = await addSticker();
       } else {
         try {
-          await callTelegramMultipart(botToken, "replaceStickerInSet", {
-            user_id: ownerId,
-            name: action.setName,
-            old_sticker: action.current.stickerFileId,
-            sticker: inputSticker,
-          }, [stickerFile]);
-          sticker = await getStickerAt(botToken, action.setName, index, action.icon.name);
+          await callTelegramJson(botToken, "deleteStickerFromSet", { sticker: action.current.stickerFileId });
         } catch (error) {
           if (!isTelegramStickerAlreadyDeletedError(error)) {
             throw error;
           }
-          sticker = await addSticker();
         }
+        sticker = await addSticker();
+        await callTelegramJson(botToken, "setStickerPositionInSet", { sticker: sticker.file_id, position: index });
+        sticker = await getStickerAt(botToken, action.setName, index, action.icon.name);
       }
     }
 
@@ -429,7 +431,7 @@ async function renderStickerFile(icon) {
   if (stickerFormat === "static") {
     return {
       name: "sdk_icon",
-      filename: `${icon.name}.png`,
+      filename: buildStickerFilename(icon.name, "png"),
       type: "image/png",
       data: await renderIconPng(icon.svg),
     };
@@ -437,10 +439,14 @@ async function renderStickerFile(icon) {
 
   return {
     name: "sdk_icon",
-    filename: `${icon.name}.tgs`,
+    filename: buildStickerFilename(icon.name, "tgs"),
     type: "application/x-tgsticker",
     data: renderIconTgs(icon.svg, icon.name),
   };
+}
+
+function buildStickerFilename(iconName, extension) {
+  return `${iconName}_${stickerFormat}_v${STICKER_RENDER_VERSION}.${extension}`;
 }
 
 async function renderIconPng(svg) {
@@ -455,206 +461,56 @@ async function renderIconPng(svg) {
 }
 
 function renderIconTgs(svg, name) {
-  const lottie = buildLottieFromSvg(svg, name);
-  const data = gzipSync(Buffer.from(JSON.stringify(lottie)), { level: 9 });
-  if (data.length > 64 * 1024) {
-    fail(`Unable to convert ${name} to TGS: ${data.length} bytes exceeds Telegram's 64 KB animated sticker limit.`);
+  const tempDir = mkdtempSync(join(tmpdir(), "tgbot-sdk-icon-"));
+  const inputPath = join(tempDir, "icon.svg");
+  const outputPath = join(tempDir, "icon.tgs");
+  let data = null;
+  let errorMessage = "";
+
+  try {
+    writeFileSync(inputPath, svg);
+    const result = spawnSync(SVG_TO_TGS_PYTHON, [SVG_TO_TGS_SCRIPT, inputPath, outputPath], {
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    });
+    if (result.error) {
+      errorMessage = `Unable to convert ${name} to TGS: ${formatSpawnError(result.error)}`;
+    } else if (result.status !== 0) {
+      const detail = [result.stderr, result.stdout].map((item) => item?.trim()).filter(Boolean).join("\n");
+      errorMessage = `Unable to convert ${name} to TGS with python-lottie${detail ? `:\n${detail}` : "."}`;
+    } else {
+      data = readFileSync(outputPath);
+      if (data.length > TGS_MAX_BYTES) {
+        errorMessage = `Unable to convert ${name} to TGS: ${data.length} bytes exceeds Telegram's 64 KB animated sticker limit.`;
+      }
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  if (errorMessage) {
+    fail(errorMessage);
   }
   return data;
 }
 
-function buildLottieFromSvg(svg, name) {
-  const viewBox = parseViewBox(svg);
-  const scale = Math.min(TGS_CANVAS_SIZE / viewBox.width, TGS_CANVAS_SIZE / viewBox.height);
-  const translateX = (TGS_CANVAS_SIZE - viewBox.width * scale) / 2 - viewBox.x * scale;
-  const translateY = (TGS_CANVAS_SIZE - viewBox.height * scale) / 2 - viewBox.y * scale;
-  const gradients = parseSvgGradients(svg);
-  const visibleSvg = stripSvgDefinitions(svg);
-  const shapes = [];
-
-  for (const match of visibleSvg.matchAll(/<path\b([^>]*)\/?>/gu)) {
-    const attrs = parseSvgAttributes(match[1]);
-    const pathData = attrs.d;
-    if (!pathData) {
-      continue;
-    }
-    const paths = pathDataToLottieShapes(pathData, { scale, translateX, translateY });
-    if (paths.length === 0) {
-      continue;
-    }
-    const fill = resolveSvgPaint(attrs.fill, gradients);
-    const stroke = resolveSvgPaint(attrs.stroke, gradients);
-    const items = paths.map((path) => ({ ty: "sh", ks: { a: 0, k: path }, nm: "Path", hd: false }));
-    if (fill) {
-      items.push(buildLottieFill(fill, attrs));
-    }
-    if (stroke) {
-      items.push(buildLottieStroke(stroke, attrs, scale));
-    }
-    items.push({
-      ty: "tr",
-      p: { a: 0, k: [0, 0] },
-      a: { a: 0, k: [0, 0] },
-      s: { a: 0, k: [100, 100] },
-      r: { a: 0, k: 0 },
-      o: { a: 0, k: 100 },
-      sk: { a: 0, k: 0 },
-      sa: { a: 0, k: 0 },
-      nm: "Transform",
-    });
-    shapes.push({ ty: "gr", it: items, nm: "Path Group", hd: false });
+function formatSpawnError(error) {
+  if (error?.code === "ENOENT") {
+    return `${SVG_TO_TGS_PYTHON} was not found. Install Python with lottie==0.7.2, or set TELEGRAM_SDK_EMOJI_PYTHON.`;
   }
+  return error?.message || String(error);
+}
 
-  if (shapes.length === 0) {
-    fail(`Unable to convert ${name} to TGS: no supported vector paths.`);
+function buildStickerIconSvgMap(sdkIconSvgs) {
+  const icons = { ...sdkIconSvgs };
+  for (const [key, iconName] of Object.entries(BUILD_FEATURE_ICON_NAMES)) {
+    icons[`ic_feature_${key}`] = sdkIconSvgs[iconName];
   }
-
-  return {
-    v: "5.7.4",
-    fr: 60,
-    ip: 0,
-    op: 60,
-    w: TGS_CANVAS_SIZE,
-    h: TGS_CANVAS_SIZE,
-    nm: name,
-    ddd: 0,
-    assets: [],
-    layers: [{
-      ddd: 0,
-      ind: 1,
-      ty: 4,
-      nm: name,
-      sr: 1,
-      ks: {
-        o: { a: 0, k: 100 },
-        r: { a: 0, k: 0 },
-        p: { a: 0, k: [0, 0, 0] },
-        a: { a: 0, k: [0, 0, 0] },
-        s: { a: 0, k: [100, 100, 100] },
-      },
-      ao: 0,
-      shapes,
-      ip: 0,
-      op: 60,
-      st: 0,
-      bm: 0,
-    }],
-  };
-}
-
-function pathDataToLottieShapes(pathData, transform) {
-  const paths = [];
-  let path = null;
-  let current = [0, 0];
-  let start = [0, 0];
-
-  const closePath = () => {
-    if (path?.v.length > 1) {
-      paths.push(path);
-    }
-    path = null;
-  };
-
-  const startPath = (x, y) => {
-    closePath();
-    const point = transformPoint(x, y, transform);
-    path = { i: [[0, 0]], o: [[0, 0]], v: [point], c: false };
-    current = [x, y];
-    start = [x, y];
-  };
-
-  const addLine = (x, y) => {
-    if (!path) {
-      startPath(x, y);
-      return;
-    }
-    path.v.push(transformPoint(x, y, transform));
-    path.i.push([0, 0]);
-    path.o.push([0, 0]);
-    current = [x, y];
-  };
-
-  const addCubic = (x1, y1, x2, y2, x, y) => {
-    if (!path) {
-      startPath(current[0], current[1]);
-    }
-    const previous = path.v[path.v.length - 1];
-    const control1 = transformPoint(x1, y1, transform);
-    const control2 = transformPoint(x2, y2, transform);
-    const end = transformPoint(x, y, transform);
-    path.o[path.o.length - 1] = [control1[0] - previous[0], control1[1] - previous[1]];
-    path.v.push(end);
-    path.i.push([control2[0] - end[0], control2[1] - end[1]]);
-    path.o.push([0, 0]);
-    current = [x, y];
-  };
-
-  svgpath(pathData).abs().unarc().unshort().iterate((segment) => {
-    const command = segment[0];
-    if (command === "M") {
-      startPath(segment[1], segment[2]);
-    } else if (command === "L") {
-      addLine(segment[1], segment[2]);
-    } else if (command === "H") {
-      addLine(segment[1], current[1]);
-    } else if (command === "V") {
-      addLine(current[0], segment[1]);
-    } else if (command === "C") {
-      addCubic(segment[1], segment[2], segment[3], segment[4], segment[5], segment[6]);
-    } else if (command === "Q") {
-      const [x0, y0] = current;
-      const [, x1, y1, x, y] = segment;
-      addCubic(
-        x0 + (2 / 3) * (x1 - x0),
-        y0 + (2 / 3) * (y1 - y0),
-        x + (2 / 3) * (x1 - x),
-        y + (2 / 3) * (y1 - y),
-        x,
-        y,
-      );
-    } else if (command === "Z") {
-      if (path) {
-        path.c = true;
-        current = start;
-      }
-    }
-  });
-  closePath();
-  return paths;
-}
-
-function transformPoint(x, y, { scale, translateX, translateY }) {
-  return [
-    roundLottieNumber(x * scale + translateX),
-    roundLottieNumber(y * scale + translateY),
-  ];
-}
-
-function buildLottieFill(color, attrs) {
-  return {
-    ty: "fl",
-    c: { a: 0, k: colorToLottie(color) },
-    o: { a: 0, k: opacityToPercent(attrs["fill-opacity"]) },
-    r: attrs["fill-rule"] === "evenodd" ? 2 : 1,
-    bm: 0,
-    nm: "Fill",
-    hd: false,
-  };
-}
-
-function buildLottieStroke(color, attrs, scale) {
-  return {
-    ty: "st",
-    c: { a: 0, k: colorToLottie(color) },
-    o: { a: 0, k: opacityToPercent(attrs["stroke-opacity"]) },
-    w: { a: 0, k: roundLottieNumber(toNumber(attrs["stroke-width"], 1) * scale) },
-    lc: lineCapToLottie(attrs["stroke-linecap"]),
-    lj: lineJoinToLottie(attrs["stroke-linejoin"]),
-    ml: 4,
-    bm: 0,
-    nm: "Stroke",
-    hd: false,
-  };
+  for (const [key, svg] of Object.entries(BUILD_FEATURE_ICON_SVGS)) {
+    icons[`ic_feature_${key}`] = svg;
+  }
+  return Object.fromEntries(Object.entries(icons).filter(([, svg]) => typeof svg === "string" && svg));
 }
 
 function getSourceIcons(svgMap) {
@@ -668,102 +524,6 @@ function getSourceIcons(svgMap) {
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function parseViewBox(svg) {
-  const match = svg.match(/\bviewBox="([^"]+)"/u);
-  const values = match?.[1]?.trim().split(/[\s,]+/u).map(Number) || [];
-  if (values.length !== 4 || values.some((value) => !Number.isFinite(value)) || values[2] <= 0 || values[3] <= 0) {
-    return { x: 0, y: 0, width: STICKER_EMOJI_SIZE, height: STICKER_EMOJI_SIZE };
-  }
-  return {
-    x: values[0],
-    y: values[1],
-    width: values[2],
-    height: values[3],
-  };
-}
-
-function parseSvgAttributes(text) {
-  const attrs = {};
-  for (const match of text.matchAll(/\s([a-zA-Z_:][-:\w.]*)="([^"]*)"/gu)) {
-    attrs[match[1]] = match[2];
-  }
-  return attrs;
-}
-
-function stripSvgDefinitions(svg) {
-  return String(svg || "").replace(/<defs\b[\s\S]*?<\/defs>/gu, "");
-}
-
-function parseSvgGradients(svg) {
-  const gradients = new Map();
-  const pattern = /<(linearGradient|radialGradient)\b([^>]*)>([\s\S]*?)<\/\1>/gu;
-  for (const match of svg.matchAll(pattern)) {
-    const attrs = parseSvgAttributes(match[2]);
-    const stop = match[3].match(/<stop\b([^>]*)\/?>/u);
-    if (!attrs.id || !stop) {
-      continue;
-    }
-    const stopAttrs = parseSvgAttributes(stop[1]);
-    const color = normalizeCssColor(stopAttrs["stop-color"]);
-    if (color) {
-      gradients.set(attrs.id, color);
-    }
-  }
-  return gradients;
-}
-
-function resolveSvgPaint(value, gradients) {
-  const paint = String(value || "").trim();
-  const gradient = paint.match(/^url\(#([^)]+)\)$/u);
-  if (gradient) {
-    return gradients.get(gradient[1]) || "";
-  }
-  return normalizeCssColor(paint);
-}
-
-function colorToLottie(color) {
-  const rgb = parseHexColor(color) || { r: 0, g: 0, b: 0 };
-  return [
-    roundLottieNumber(rgb.r / 255),
-    roundLottieNumber(rgb.g / 255),
-    roundLottieNumber(rgb.b / 255),
-    1,
-  ];
-}
-
-function opacityToPercent(value) {
-  return roundLottieNumber(Math.max(0, Math.min(1, toNumber(value, 1))) * 100);
-}
-
-function lineCapToLottie(value) {
-  if (value === "round") {
-    return 2;
-  }
-  if (value === "square") {
-    return 3;
-  }
-  return 1;
-}
-
-function lineJoinToLottie(value) {
-  if (value === "round") {
-    return 2;
-  }
-  if (value === "bevel") {
-    return 3;
-  }
-  return 1;
-}
-
-function toNumber(value, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function roundLottieNumber(value) {
-  return Math.round(value * 1000) / 1000;
 }
 
 function normalizeStickerSvg(svg) {
@@ -1298,7 +1058,7 @@ function printPlan(plan, { dryRun, kvKey }) {
 }
 
 async function runRenderCheck() {
-  const icons = getSourceIcons(LIBCHECKER_SDK_ICON_SVGS);
+  const icons = getSourceIcons(buildStickerIconSvgMap(LIBCHECKER_SDK_ICON_SVGS));
   const sizes = [];
   for (const icon of icons) {
     const file = await renderStickerFile(icon);
@@ -1389,7 +1149,7 @@ function runSelfTest() {
   assert(plan.actions.filter((action) => action.type === "create").length === 2, "first sticker in each set creates it");
   assert(plan.actions.filter((action) => action.type === "add").length === 199, "remaining stickers are appended");
   const currentSetBase = buildVersionedSetBase("libchecker_sdk");
-  assert(currentSetBase === `libchecker_sdk_${stickerFormat}_v6`, "default sticker set base includes the render version");
+  assert(currentSetBase === `libchecker_sdk_${stickerFormat}_v7`, "default sticker set base includes the render version");
   const currentSetName = buildSetName(currentSetBase, "examplebot", 1);
   assert(
     buildAddEmojiUrl(currentSetName) === `https://t.me/addemoji/${currentSetName}`,
@@ -1399,6 +1159,19 @@ function runSelfTest() {
     buildAddStickerUrl(currentSetName) === `https://t.me/addstickers/${currentSetName}`,
     "sync output includes the official addstickers set link",
   );
+  assert(
+    buildStickerFilename("ic_lib_test_000", "tgs") === `ic_lib_test_000_${stickerFormat}_v7.tgs`,
+    "uploaded sticker filenames include the render version",
+  );
+  const stickerIconMap = buildStickerIconSvgMap({
+    ic_lib_jetbrain_kmp: "<svg id=\"kotlin\" />",
+    ic_lib_jetpack_compose: "<svg id=\"compose\" />",
+    ic_lib_existing: "<svg id=\"existing\" />",
+  });
+  assert(stickerIconMap.ic_feature_kotlin === stickerIconMap.ic_lib_jetbrain_kmp, "Kotlin sticker icon reuses the WebUI SDK icon source");
+  assert(stickerIconMap.ic_feature_compose === stickerIconMap.ic_lib_jetpack_compose, "Compose sticker icon reuses the WebUI SDK icon source");
+  assert(stickerIconMap.ic_feature_agp === BUILD_FEATURE_ICON_SVGS.agp, "AGP sticker icon uses the WebUI feature icon source");
+  assert(stickerIconMap.ic_feature_gradle === BUILD_FEATURE_ICON_SVGS.gradle, "Gradle sticker icon uses the WebUI feature icon source");
   const legacySetName = buildSetName("libchecker_sdk", "examplebot", 1);
   const filteredManifest = filterManifestForSetBase(normalizeManifest({
     sets: [
@@ -1526,7 +1299,7 @@ function runSelfTest() {
   assert(preservedManifest.icons.ic_lib_test_000.stickerFileId === "manifest_file", "remote order refresh does not overwrite existing manifest mappings");
 
   assert(
-    isTelegramStickerAlreadyDeletedError(createTelegramApiError("replaceStickerInSet", "Bad Request: STICKER_ALREADY_DELETED", { status: 400, retryAfter: 0 })),
+    isTelegramStickerAlreadyDeletedError(createTelegramApiError("deleteStickerFromSet", "Bad Request: STICKER_ALREADY_DELETED", { status: 400, retryAfter: 0 })),
     "deleted sticker replace errors are detected",
   );
   assert(
@@ -1548,17 +1321,6 @@ function runSelfTest() {
     normalizeStickerSvg('<svg><path fill="#000000" d="M0,0" /><path fill="#ffffff" d="M1,1" /></svg>').includes('fill="#000000"'),
     "two-tone neutral icons keep their contrast",
   );
-  const vector = renderIconTgs('<svg viewBox="0 0 24 24"><path fill="#000000" d="M4,4L20,4L20,20L4,20Z" /></svg>', "test");
-  assert(vector[0] === 0x1f && vector[1] === 0x8b, "TGS output is gzip-compressed Lottie");
-  assert(vector.length < 64 * 1024, "TGS output stays inside Telegram animated sticker limit");
-
-  const clipped = buildLottieFromSvg('<svg viewBox="0 0 24 24"><defs><clipPath id="c"><path d="M0,0H24V24H0Z" /></clipPath></defs><path fill="#000000" d="M4,4H20V20H4Z" /></svg>', "clip-test");
-  assert(clipped.layers[0].shapes.length === 1, "clipPath definition paths are not rendered as visible sticker paths");
-
-  const compound = buildLottieFromSvg('<svg viewBox="0 0 24 24"><path fill="#000000" fill-rule="evenodd" d="M2,2H22V22H2Z M8,8H16V16H8Z" /></svg>', "compound-test");
-  const items = compound.layers[0].shapes[0].it;
-  assert(items.filter((item) => item.ty === "sh").length === 2, "compound path subpaths stay in one fill group");
-  assert(items.filter((item) => item.ty === "fl").length === 1, "compound path uses one shared fill");
 }
 
 function assert(condition, message) {
