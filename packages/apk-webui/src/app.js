@@ -3445,6 +3445,8 @@ async function prepareCurrentReportShare() {
     updateReportShareControls();
     appendRuntimeLog("warn", "webui.report_share.modal_failed", {
       error_name: getErrorName(error),
+      error_message: getErrorLogMessage(error),
+      error_code: getErrorCode(error),
     });
   }
 }
@@ -3539,15 +3541,43 @@ async function analyzeSelectedFile() {
     return;
   }
 
+  let fileBuffer;
+  try {
+    fileBuffer = await file.arrayBuffer();
+  } catch (error) {
+    if (!state.jobs.has(jobId)) {
+      return;
+    }
+
+    state.jobs.delete(jobId);
+    state.activeAnalyzeJobId = null;
+    finishAnalysis();
+    showProgress("progressFailed");
+    showError(getErrorMessage(error) || t("unknownError"));
+    trackWebEvent("webui.analysis.failed", {
+      result: "error",
+      error_name: "ReadFileFailed",
+      input_source: "upload",
+      ...getFileAnalyticsFields(file),
+      ...getClientErrorTelemetryFields(error),
+    });
+    return;
+  }
+
   /** @type {import("@shared/contracts.js").AnalyzerWorkerRequest} */
   const request = {
     type: "analyze",
     jobId,
     locale: state.locale,
-    file,
+    file: {
+      name: file.name || "local.apk",
+      type: file.type || "",
+      size: Number(file.size) || fileBuffer.byteLength || 0,
+    },
+    fileBuffer,
     terminalSystem,
   };
-  worker.postMessage(request);
+  worker.postMessage(request, [fileBuffer]);
 }
 
 async function analyzeDownloadUrl() {
