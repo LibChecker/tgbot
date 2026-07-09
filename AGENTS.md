@@ -18,7 +18,7 @@ and recurring pitfalls only.
 
 | Area | Path | Runtime | What it owns |
 | --- | --- | --- | --- |
-| Telegram bot / Worker | `packages/bot-worker/` | Cloudflare Workers + Hono | Telegram webhook, APK URL preview, upload page, report data, admin APIs, observability. |
+| Telegram bot / Worker | `packages/bot-worker/` | Cloudflare Workers + Hono | Telegram webhook, APK URL preview, WebUI upload guidance, report data, admin APIs, observability. |
 | Browser Web UI | `packages/apk-webui/` | Cloudflare Pages + Vite | Browser-first APK analyzer UI, local Web Worker analysis, history, compare, report rendering, Pages Functions. |
 | Shared analyzer | `packages/shared/` | Worker + browser | APK parsing, signatures, SDK marker matching, shared contracts, i18n runtime, generated rule/icon/catalog bundles. |
 | Translations | `locales/` | Shared | Source-of-truth locale JSON for both bot and Web UI. |
@@ -28,8 +28,7 @@ and recurring pitfalls only.
 
 - Worker entry and Telegram flow: `packages/bot-worker/src/index.js`
 - APK link preview/range parsing: `packages/bot-worker/src/apk-url-preview.js`
-- Worker upload page: `packages/bot-worker/src/upload-view.js`
-- Worker Telegraph report storage: `packages/bot-worker/src/telegraph.js`
+- Worker R2 report storage: `packages/bot-worker/src/report-store.js`
 - Web UI shell: `packages/apk-webui/src/index.html`
 - Web UI controller: `packages/apk-webui/src/app.js`
 - Web UI view helpers: `packages/apk-webui/src/app/view.js`
@@ -68,8 +67,8 @@ and recurring pitfalls only.
 - Server-side URL analysis belongs at the Worker/Pages Function boundary.
 - Bot report buttons should open the Web UI. The Worker exposes report payloads
   through `/report-data` only.
-- Bot report links use the short Web UI query parameter `r` for the Telegraph
-  report path. The Web UI resolves it through the build-time
+- Bot report links use the short Web UI query parameter `r` for the opaque
+  R2 report ref. The Web UI resolves it through the build-time
   `BOT_REPORT_DATA_ORIGIN`; do not reintroduce nested report-data URLs in query
   params.
 - Remote APK URL preview is not a full local package analysis. APKS/APKM/XAPK
@@ -126,8 +125,9 @@ and recurring pitfalls only.
   `packages/bot-worker/src/index.js`, use `context.env` and
   `context.executionCtx`, and leave heavy logic in existing modules/functions.
 - Keep remote APK URL/range preview logic in `apk-url-preview.js`.
-- Keep Worker HTML rendering in `upload-view.js`.
-- Store bot report data through `telegraph.js`; keep the Web UI-facing data
+- Bot-side APK file uploads should guide users to the Web UI; local file
+  analysis belongs in the browser worker.
+- Store bot report data through `report-store.js`; keep the Web UI-facing data
   shape validated with shared contracts.
 - Use `observability.js` helpers for structured logs and Analytics Engine
   fields. Event field names stay English, low-sensitive, and whitelist-shaped.
@@ -187,6 +187,8 @@ and recurring pitfalls only.
 - Web UI origins come from `PREVIEW_WEBUI_SITE_URL` or `WEBUI_SITE_URL`.
 - Web UI bot report data origins are injected from `PREVIEW_WORKER_URL` or
   `WORKER_URL` at build time.
+- Report sharing depends on the Worker `REPORT_DATA_BUCKET` R2 binding. Keep
+  preview and production report buckets separate.
 - Root deploy registers configured Web UI custom domains through the
   Cloudflare Pages Domains API. For preview custom domains, keep DNS proxied and
   pointed at the Pages branch alias.

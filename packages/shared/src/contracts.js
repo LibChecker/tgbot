@@ -234,7 +234,8 @@
  * @property {"analyze"} type
  * @property {number} jobId
  * @property {string} locale
- * @property {{ name?: string, type?: string, size?: number, arrayBuffer: () => Promise<ArrayBuffer> }} file
+ * @property {{ name?: string, type?: string, size?: number, arrayBuffer?: () => Promise<ArrayBuffer> }} file
+ * @property {ArrayBuffer=} fileBuffer
  * @property {TerminalSystem} terminalSystem
  */
 
@@ -385,13 +386,26 @@ export function assertTelegramApkReport(value) {
   return value;
 }
 
+export function isReportDataReport(value) {
+  return isApkReport(value) || isTelegramApkReport(value);
+}
+
+export function assertReportDataReport(value) {
+  if (!isReportDataReport(value)) {
+    throw new TypeError("Invalid report data contract");
+  }
+  return value;
+}
+
 export function isAnalyzerWorkerRequest(value) {
+  const hasFilePayload = isFileLike(value?.file);
+  const hasBufferPayload = isFileMetadataLike(value?.file) && isArrayBuffer(value?.fileBuffer);
   return (
     isObject(value) &&
     value.type === "analyze" &&
     Number.isFinite(value.jobId) &&
     typeof value.locale === "string" &&
-    isFileLike(value.file) &&
+    (hasFilePayload || hasBufferPayload) &&
     isTerminalSystem(value.terminalSystem)
   );
 }
@@ -430,10 +444,20 @@ export function isAnalyzerWorkerMessage(value) {
 
 function isFileLike(value) {
   return (
+    isFileMetadataLike(value) &&
+    typeof value.arrayBuffer === "function"
+  );
+}
+
+function isFileMetadataLike(value) {
+  return (
     isObject(value) &&
-    typeof value.arrayBuffer === "function" &&
     (value.name == null || typeof value.name === "string") &&
     (value.type == null || typeof value.type === "string") &&
     (value.size == null || Number.isFinite(value.size))
   );
+}
+
+function isArrayBuffer(value) {
+  return value instanceof ArrayBuffer;
 }

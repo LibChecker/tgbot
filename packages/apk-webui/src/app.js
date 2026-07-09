@@ -3,7 +3,6 @@ import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate
 import { clamp } from "./app/math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./app/format.js";
 import { getStats } from "./app/report-model.js";
-import { resolveBotReportUrlFromLocation } from "./app/bot-report-url.js";
 import {
   buildHistorySummary,
   createHistoryEntry,
@@ -70,7 +69,6 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
 const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
 const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
-const BOT_REPORT_DATA_ORIGIN = typeof __BOT_REPORT_DATA_ORIGIN__ === "string" ? __BOT_REPORT_DATA_ORIGIN__ : "";
 const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const RUNTIME_LOG_DETAIL_KEYS = new Set([
@@ -1356,6 +1354,8 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.runtimeLogOpen) {
       closeRuntimeLogModal();
+    } else if (event.key === "Escape" && state.reportShareModalOpen) {
+      closeReportShareModal();
     }
   });
 
@@ -1436,6 +1436,10 @@ function bindEvents() {
     } else {
       resetState();
     }
+  });
+
+  elements.reportShareButton?.addEventListener("click", () => {
+    void prepareCurrentReportShare();
   });
 
   elements.historyToggleButton.addEventListener("click", () => {
@@ -3091,6 +3095,10 @@ function applyLocale() {
     elements.appVersion.setAttribute("aria-label", t("runtimeLogVersionLabel", { version: APP_VERSION }));
   }
   renderLinkStatus();
+  updateReportShareControls();
+  if (state.reportShareModalOpen) {
+    runtime.reportShareModalModule?.renderReportShareModal({ state, elements, t });
+  }
   renderHistoryViewMode();
   renderRuntimeLogs();
   renderLcappsPicker();
@@ -3387,6 +3395,83 @@ function renderLinkStatus() {
   elements.linkStatus.classList.toggle("is-active", key !== "linkIdle");
 }
 
+function clearReportShareState() {
+  state.reportShareUrl = "";
+  state.reportShareStatusKey = "";
+  state.reportShareBusy = false;
+  state.reportShareModalOpen = false;
+  state.reportShareActionBusy = false;
+  closeReportShareModal({ restoreFocus: false });
+  updateReportShareControls();
+}
+
+function updateReportShareControls() {
+  if (!elements.reportShareButton) {
+    return;
+  }
+
+  const canShare = state.appMode === "analyze" && Boolean(state.report) && !state.analyzeBusy;
+  elements.reportShareButton.disabled = !canShare || state.reportShareBusy;
+  elements.reportShareButton.setAttribute("aria-busy", state.reportShareBusy ? "true" : "false");
+  elements.reportShareButton.classList.toggle("is-loading", state.reportShareBusy);
+  const label = t(state.reportShareBusy ? "reportSharePreparing" : "reportShare");
+  elements.reportShareButton.setAttribute("aria-label", label);
+  elements.reportShareButton.title = label;
+}
+
+async function prepareCurrentReportShare() {
+  if (!state.report || state.reportShareBusy) {
+    return;
+  }
+
+  state.reportShareBusy = true;
+  state.reportShareStatusKey = "reportSharePreparing";
+  updateReportShareControls();
+
+  try {
+    const modalModule = await loadReportShareModalModule();
+    await modalModule.prepareAndOpenReportShare({
+      state,
+      elements,
+      t,
+      pageHref: window.location.href,
+      pageSearch: window.location.search,
+      onClose: closeReportShareModal,
+      onControlsChange: updateReportShareControls,
+    });
+  } catch (error) {
+    state.reportShareBusy = false;
+    state.reportShareStatusKey = "reportShareFailed";
+    updateReportShareControls();
+    appendRuntimeLog("warn", "webui.report_share.modal_failed", {
+      error_name: getErrorName(error),
+      error_message: getErrorLogMessage(error),
+      error_code: getErrorCode(error),
+    });
+  }
+}
+
+async function loadReportShareModalModule() {
+  if (!runtime.reportShareModalPromise) {
+    runtime.reportShareModalPromise = import("./app/report-share-modal.js").then((module) => {
+      runtime.reportShareModalModule = module;
+      return module;
+    });
+  }
+
+  return runtime.reportShareModalPromise;
+}
+
+function closeReportShareModal(options = {}) {
+  state.reportShareModalOpen = false;
+  if (elements.reportShareModal) {
+    elements.reportShareModal.hidden = true;
+  }
+  if (options.restoreFocus !== false) {
+    elements.reportShareButton?.focus();
+  }
+}
+
 async function analyzeSelectedFile() {
   const file = state.selectedFile;
   hideError();
@@ -3430,6 +3515,7 @@ async function analyzeSelectedFile() {
   const jobId = state.jobId;
   state.startedAt = performance.now();
   state.report = null;
+  clearReportShareState();
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   state.activeAnalyzeJobId = jobId;
@@ -3455,15 +3541,43 @@ async function analyzeSelectedFile() {
     return;
   }
 
+  let fileBuffer;
+  try {
+    fileBuffer = await file.arrayBuffer();
+  } catch (error) {
+    if (!state.jobs.has(jobId)) {
+      return;
+    }
+
+    state.jobs.delete(jobId);
+    state.activeAnalyzeJobId = null;
+    finishAnalysis();
+    showProgress("progressFailed");
+    showError(getErrorMessage(error) || t("unknownError"));
+    trackWebEvent("webui.analysis.failed", {
+      result: "error",
+      error_name: "ReadFileFailed",
+      input_source: "upload",
+      ...getFileAnalyticsFields(file),
+      ...getClientErrorTelemetryFields(error),
+    });
+    return;
+  }
+
   /** @type {import("@shared/contracts.js").AnalyzerWorkerRequest} */
   const request = {
     type: "analyze",
     jobId,
     locale: state.locale,
-    file,
+    file: {
+      name: file.name || "local.apk",
+      type: file.type || "",
+      size: Number(file.size) || fileBuffer.byteLength || 0,
+    },
+    fileBuffer,
     terminalSystem,
   };
-  worker.postMessage(request);
+  worker.postMessage(request, [fileBuffer]);
 }
 
 async function analyzeDownloadUrl() {
@@ -3494,6 +3608,7 @@ async function analyzeDownloadUrl() {
   const abortController = new AbortController();
   state.startedAt = performance.now();
   state.report = null;
+  clearReportShareState();
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   state.activeAnalyzeJobId = jobId;
@@ -3564,6 +3679,7 @@ async function analyzeDownloadUrl() {
     state.activeAnalyzeJobId = null;
     state.linkAbortController = null;
     state.report = payload.report;
+    clearReportShareState();
     state.activeNativeAbi = "";
     state.linkStatusKey = "linkDone";
     renderLinkStatus();
@@ -3621,40 +3737,45 @@ async function analyzeDownloadUrl() {
 }
 
 function loadBotReportFromUrlIfPresent() {
-  const reportUrl = getBotReportUrlFromLocation();
-  if (!reportUrl) {
+  if (!new URLSearchParams(window.location.search || "").has("r")) {
     return;
   }
 
   void import("./app/bot-report-loader.js")
-    .then(({ loadBotReportFromUrl }) => loadBotReportFromUrl([
-      reportUrl,
-      state,
-      elements,
-      t,
-      cancelLcappsReportActivation,
-      finishAnalysis,
-      getClientErrorTelemetryFields,
-      getElapsedMs,
-      getErrorMessage,
-      getReportAnalyticsFields,
-      hideError,
-      preloadReportRenderer,
-      renderLinkStatus,
-      renderReport,
-      renderSelectedFile,
-      revealReportHeroAfterAnalysis,
-      scheduleHistoryReportSave,
-      scheduleReportSdkRuleDetailHydration,
-      hydrateReportSdkIconImagesForRender,
-      setAppMode,
-      setBusy,
-      showError,
-      showProgress,
-      startTimer,
-      trackWebEvent,
-      updateClearButton,
-    ]))
+    .then(({ loadBotReportFromUrl, resolveCurrentBotReportUrl }) => {
+      const reportUrl = resolveCurrentBotReportUrl(window.location.search, state.locale);
+      if (!reportUrl) {
+        return null;
+      }
+      return loadBotReportFromUrl([
+        reportUrl,
+        state,
+        elements,
+        t,
+        cancelLcappsReportActivation,
+        finishAnalysis,
+        getClientErrorTelemetryFields,
+        getElapsedMs,
+        getErrorMessage,
+        getReportAnalyticsFields,
+        hideError,
+        preloadReportRenderer,
+        renderLinkStatus,
+        renderReport,
+        renderSelectedFile,
+        revealReportHeroAfterAnalysis,
+        scheduleHistoryReportSave,
+        scheduleReportSdkRuleDetailHydration,
+        hydrateReportSdkIconImagesForRender,
+        setAppMode,
+        setBusy,
+        showError,
+        showProgress,
+        startTimer,
+        trackWebEvent,
+        updateClearButton,
+      ]);
+    })
     .catch((error) => {
       showError(getErrorMessage(error) || t("unknownError"));
       trackWebEvent("webui.bot_report.failed", {
@@ -3663,14 +3784,6 @@ function loadBotReportFromUrlIfPresent() {
         ...getClientErrorTelemetryFields(error),
       });
     });
-}
-
-function getBotReportUrlFromLocation() {
-  return resolveBotReportUrlFromLocation(
-    window.location.search,
-    BOT_REPORT_DATA_ORIGIN,
-    state.locale,
-  );
 }
 
 function ensureWorker() {
@@ -3773,6 +3886,7 @@ function handleWorkerMessage(event) {
     finishAnalysis();
     state.activeAnalyzeJobId = null;
     state.report = message.report;
+    clearReportShareState();
     state.activeNativeAbi = "";
     updateClearButton();
     showProgress("progressDone");
@@ -3822,6 +3936,7 @@ function finishAnalysis() {
 function setBusy(isBusy) {
   state.analyzeBusy = Boolean(isBusy);
   updateAnalyzeControls();
+  updateReportShareControls();
   if (elements.analyzeButtonLabel) {
     elements.analyzeButtonLabel.textContent = isBusy ? t("analyzing") : t("analyze");
   }
@@ -4098,6 +4213,7 @@ function resetState() {
   state.downloadUrl = "";
   state.linkStatusKey = "linkIdle";
   state.report = null;
+  clearReportShareState();
   state.lcappsArchive = null;
   state.lcappsPicker.open = false;
   state.lcappsPicker.loading = false;
@@ -4432,6 +4548,7 @@ async function openHistoryItem(id) {
     }
 
     state.report = report;
+    clearReportShareState();
     state.activeTab = "summary";
     state.activeNativeAbi = "";
     resetProgressView();
@@ -4700,12 +4817,14 @@ async function renderReport() {
   if (state.appMode !== "analyze") {
     hideAnalyzeReportViews(elements);
     setTopbarReportIdentity(false, { animate: true });
+    updateReportShareControls();
     return;
   }
 
   if (!state.report) {
     showEmptyReportState(elements);
     setTopbarReportIdentity(false, { animate: true });
+    updateReportShareControls();
     return;
   }
 
@@ -4737,6 +4856,7 @@ async function renderReport() {
   updateTopbarReportIdentity({ animate: true });
   updateTabs();
   renderTabPanel();
+  updateReportShareControls();
 }
 
 function revealReportHeroAfterAnalysis(report) {
@@ -5195,6 +5315,7 @@ function activateLcappsReport(report) {
   finishAnalysis();
   hideError();
   state.report = report;
+  clearReportShareState();
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   resetProgressView();

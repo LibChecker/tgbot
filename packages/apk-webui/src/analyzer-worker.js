@@ -34,7 +34,7 @@ async function analyze(message) {
   const file = message.file;
   const { t } = createWorkerI18n(message.locale);
 
-  if (!file || typeof file.arrayBuffer !== "function") {
+  if (!file || (typeof file.arrayBuffer !== "function" && !isArrayBuffer(message.fileBuffer))) {
     throw new Error(t("noFile"));
   }
 
@@ -54,7 +54,7 @@ async function analyze(message) {
   });
 
   const sdkModulesTask = loadSdkModules();
-  const buffer = await readFileBuffer(file, message.jobId);
+  const buffer = await readFileBuffer(file, message.jobId, message.fileBuffer);
 
   self.postMessage({
     type: "progress",
@@ -111,8 +111,13 @@ async function analyze(message) {
   });
 }
 
-async function readFileBuffer(file, jobId) {
+async function readFileBuffer(file, jobId, fileBuffer) {
   const totalBytes = Number(file.size) || 0;
+  if (isArrayBuffer(fileBuffer)) {
+    postReadProgress(jobId, fileBuffer.byteLength || totalBytes, fileBuffer.byteLength || totalBytes);
+    return fileBuffer;
+  }
+
   if (!totalBytes || typeof file.stream !== "function") {
     const buffer = await file.arrayBuffer();
     postReadProgress(jobId, buffer.byteLength || totalBytes, buffer.byteLength || totalBytes);
@@ -186,6 +191,10 @@ function isLikelyApk(file) {
     type === APK_MIME_TYPE ||
     type.includes("android.package-archive")
   );
+}
+
+function isArrayBuffer(value) {
+  return value instanceof ArrayBuffer;
 }
 
 function loadSdkModules() {

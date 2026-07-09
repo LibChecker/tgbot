@@ -11,6 +11,7 @@ const {
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
+  shouldUseWebUiUploadGuide,
 } = __botWorkerTestInternals;
 
 const apkDocument = {
@@ -19,13 +20,39 @@ const apkDocument = {
   mime_type: "application/vnd.android.package-archive",
 };
 
-test("private chats auto-analyze direct APK documents", () => {
+test("private chats select direct APK documents for handling", () => {
   const message = {
     chat: { id: 1, type: "private" },
     document: apkDocument,
   };
 
   assert.equal(selectTargetDocument(message, null, false, false), apkDocument);
+});
+
+test("Telegram APK documents up to the Bot API limit stay on bot analysis", () => {
+  const telegramBotApiLimitBytes = 20 * 1024 * 1024;
+
+  assert.equal(
+    shouldUseWebUiUploadGuide({ ...apkDocument, file_size: telegramBotApiLimitBytes }),
+    false,
+  );
+  assert.equal(
+    shouldUseWebUiUploadGuide({ ...apkDocument, file_size: 1 }),
+    false,
+  );
+  assert.equal(
+    shouldUseWebUiUploadGuide({ ...apkDocument }),
+    false,
+  );
+});
+
+test("Telegram APK documents over the Bot API limit use WebUI upload guidance", () => {
+  const telegramBotApiLimitBytes = 20 * 1024 * 1024;
+
+  assert.equal(
+    shouldUseWebUiUploadGuide({ ...apkDocument, file_size: telegramBotApiLimitBytes + 1 }),
+    true,
+  );
 });
 
 test("group chats ignore APK documents unless the bot is explicitly targeted", () => {
@@ -74,35 +101,70 @@ test("private chat report buttons use regular URLs", () => {
   assert.equal(button.web_app, undefined);
 });
 
-test("report URLs target the configured WebUI with a short report path", () => {
+const sampleReportRef = "rp_0123456789abcdef0123456789abcdef";
+
+test("report URLs target the configured WebUI with a short report ref", () => {
   const reportUrl = buildWebUiReportUrl(
     { WEBUI_SITE_URL: "https://webui.example.com/" },
     "https://worker.example.com",
-    "Sample-07-08",
+    sampleReportRef,
     "zh-Hans",
   );
   const url = new URL(reportUrl);
 
   assert.equal(url.origin, "https://webui.example.com");
   assert.equal(url.pathname, "/");
-  assert.equal(url.searchParams.get("r"), "Sample-07-08");
+  assert.equal(url.searchParams.get("r"), sampleReportRef);
   assert.equal(url.searchParams.get("lang"), "zh-Hans");
   assert.deepEqual(Array.from(url.searchParams.keys()), ["r", "lang"]);
+});
+
+test("report URLs preserve the configured Pages preview URL", () => {
+  const reportUrl = buildWebUiReportUrl(
+    { WEBUI_SITE_URL: "https://codex-share.tgbot-apk-webui.pages.dev/" },
+    "https://worker.example.com",
+    sampleReportRef,
+    "en",
+  );
+  const url = new URL(reportUrl);
+
+  assert.equal(url.origin, "https://codex-share.tgbot-apk-webui.pages.dev");
+  assert.equal(url.searchParams.get("r"), sampleReportRef);
 });
 
 test("report URLs fall back to Worker report data when WebUI is not configured", () => {
   const reportUrl = buildWebUiReportUrl(
     {},
     "https://worker.example.com",
-    "Sample-07-08",
+    sampleReportRef,
     "zh-Hans",
   );
   const url = new URL(reportUrl);
 
   assert.equal(url.origin, "https://worker.example.com");
   assert.equal(url.pathname, "/report-data");
-  assert.equal(url.searchParams.get("path"), "Sample-07-08");
+  assert.equal(url.searchParams.get("ref"), sampleReportRef);
   assert.equal(url.searchParams.get("lang"), "zh-Hans");
+});
+
+test("upload route redirects to the configured WebUI upload entry", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const response = await app.request("https://worker.example.com/upload?lang=zh-Hans", {
+      method: "POST",
+    }, {
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+    const url = new URL(response.headers.get("location"));
+
+    assert.equal(response.status, 303);
+    assert.equal(url.origin, "https://webui.example.com");
+    assert.equal(url.pathname, "/");
+    assert.equal(url.searchParams.get("lang"), "zh-Hans");
+  } finally {
+    console.log = originalLog;
+  }
 });
 
 test("SDK marker summary lists bounded markers with icons and overflow", () => {
@@ -156,15 +218,175 @@ test("report data route handles CORS preflight through Hono middleware", async (
       method: "OPTIONS",
       headers: {
         origin: "https://webui.example.com",
-        "access-control-request-method": "GET",
+        "access-control-request-method": "POST",
       },
+    }, {
+      WEBUI_SITE_URL: "https://webui.example.com/",
     });
 
     assert.equal(response.status, 204);
-    assert.equal(response.headers.get("access-control-allow-origin"), "*");
-    assert.match(response.headers.get("access-control-allow-methods") || "", /GET/u);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://webui.example.com");
+    assert.match(response.headers.get("access-control-allow-methods") || "", /POST/u);
   } finally {
     console.log = originalLog;
+  }
+});
+
+test("report data route allows CORS preflight from other Pages preview subdomains", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const response = await app.request("https://worker.example.com/report-data", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://feature.tgbot-apk-webui.pages.dev",
+        "access-control-request-method": "POST",
+      },
+    }, {
+      WEBUI_SITE_URL: "https://codex-share.tgbot-apk-webui.pages.dev/",
+    });
+
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://feature.tgbot-apk-webui.pages.dev");
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("report data route publishes reports from the configured WebUI origin", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const bucket = createMemoryBucket();
+    const response = await app.request("https://worker.example.com/report-data?lang=zh-Hans", {
+      method: "POST",
+      headers: {
+        origin: "https://webui.example.com",
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        locale: "zh-Hans",
+        report: createSampleReport(),
+      }),
+    }, {
+      REPORT_DATA_BUCKET: bucket,
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+    const body = await response.json();
+    const url = new URL(body.url);
+
+    assert.equal(response.status, 200);
+    assert.match(body.ref, /^rp_[a-f0-9]{32}$/u);
+    assert.equal(url.origin, "https://webui.example.com");
+    assert.equal(url.searchParams.get("r"), body.ref);
+    assert.equal(url.searchParams.get("lang"), "zh-Hans");
+    assert.equal(bucket.objects.size, 1);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("report data route accepts different Pages preview origins for the same project", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const bucket = createMemoryBucket();
+    const response = await app.request("https://worker.example.com/report-data?lang=en", {
+      method: "POST",
+      headers: {
+        origin: "https://feature.tgbot-apk-webui.pages.dev",
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        locale: "en",
+        report: createSampleReport(),
+      }),
+    }, {
+      REPORT_DATA_BUCKET: bucket,
+      WEBUI_SITE_URL: "https://codex-share.tgbot-apk-webui.pages.dev/",
+    });
+    const body = await response.json();
+    const url = new URL(body.url);
+
+    assert.equal(response.status, 200);
+    assert.equal(url.origin, "https://codex-share.tgbot-apk-webui.pages.dev");
+    assert.equal(url.searchParams.get("r"), body.ref);
+    assert.equal(bucket.objects.size, 1);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("report data route rejects publishes from untrusted origins", async () => {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = () => {};
+  console.warn = () => {};
+  try {
+    const bucket = createMemoryBucket();
+    const response = await app.request("https://worker.example.com/report-data?lang=en", {
+      method: "POST",
+      headers: {
+        origin: "https://attacker.example.com",
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        report: createSampleReport(),
+      }),
+    }, {
+      REPORT_DATA_BUCKET: bucket,
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(bucket.objects.size, 0);
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  }
+});
+
+test("report data route rejects oversized publish bodies", async () => {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = () => {};
+  console.warn = () => {};
+  try {
+    const response = await app.request("https://worker.example.com/report-data?lang=en", {
+      method: "POST",
+      headers: {
+        origin: "https://webui.example.com",
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        report: "x".repeat(4 * 1024 * 1024),
+      }),
+    }, {
+      REPORT_DATA_BUCKET: createMemoryBucket(),
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+
+    assert.equal(response.status, 413);
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  }
+});
+
+test("report data route treats missing R2 binding as server configuration error", async () => {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = () => {};
+  console.warn = () => {};
+  try {
+    const response = await app.request(`https://worker.example.com/report-data?ref=${sampleReportRef}&lang=en`);
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(body.error.message, "Report storage is not configured.");
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
   }
 });
 
@@ -212,3 +434,56 @@ test("custom emoji fallback keeps the readable SDK summary text", () => {
     '🔹 <code>Android</code>',
   );
 });
+
+function createSampleReport() {
+  return {
+    locale: "en",
+    fileName: "sample.apk",
+    fileSizeBytes: 2048,
+    fileSizeText: "2 KB",
+    sourceLabel: "Private Chat Message",
+    analyzedAt: "2026-07-08T00:00:00.000Z",
+    featureIcons: {
+      kotlin: "https://example.com/kotlin.svg",
+      gradle: "https://example.com/gradle.svg",
+      compose: "https://example.com/compose.svg",
+    },
+    apkInfo: {
+      appName: "Sample",
+      packageName: "com.example.sample",
+      versionName: "1.0",
+      versionCode: "1",
+      targetSdk: 35,
+      minSdk: 23,
+      compileSdk: 35,
+      icon: null,
+      buildFeatures: {},
+      permissions: ["android.permission.INTERNET"],
+      nativeLibraries: [],
+      components: {
+        activities: [],
+        services: [],
+        receivers: [],
+        providers: [],
+      },
+    },
+  };
+}
+
+function createMemoryBucket() {
+  const objects = new Map();
+  return {
+    objects,
+    async put(key, value, options) {
+      objects.set(key, { value, options });
+    },
+    async get(key) {
+      const object = objects.get(key);
+      return object
+        ? {
+            text: async () => object.value,
+          }
+        : null;
+    },
+  };
+}

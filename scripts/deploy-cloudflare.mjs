@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -12,6 +12,11 @@ const pagesProjectName = "tgbot-apk-webui";
 const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 const wranglerBin = resolve(repoDir, "node_modules/.bin", process.platform === "win32" ? "wrangler.cmd" : "wrangler");
 const DEFAULT_SDK_EMOJI_KV_NAMESPACE_TITLE = "tgbot-sdk-emojis";
+const DEFAULT_REPORT_DATA_BUCKET_NAMES = {
+  preview: "tgbot-preview-report-data",
+  production: "tgbot-report-data",
+};
+const DEFAULT_PREVIEW_PAGES_BRANCH = "preview";
 let activeWorkerConfigPath = workerConfigPath;
 let temporaryWorkerConfigPath = null;
 
@@ -31,12 +36,14 @@ const TARGETS = {
     pagesBranch: previewPagesBranch,
     workerUrl: normalizeOptionalUrl(process.env.PREVIEW_WORKER_URL, "PREVIEW_WORKER_URL"),
     webuiUrl: resolvePreviewWebUiUrl(previewPagesBranch),
+    reportDataBucketName: DEFAULT_REPORT_DATA_BUCKET_NAMES.preview,
   },
   production: {
     workerEnv: "production",
     pagesBranch: "main",
     workerUrl: normalizeOptionalUrl(process.env.WORKER_URL, "WORKER_URL"),
     webuiUrl: normalizeOptionalUrl(process.env.WEBUI_SITE_URL, "WEBUI_SITE_URL"),
+    reportDataBucketName: DEFAULT_REPORT_DATA_BUCKET_NAMES.production,
   },
 };
 
@@ -77,6 +84,7 @@ if (options["skip-preflight"]) {
 requireDeployEnvironment(targetName, target);
 
 if (!options["pages-only"]) {
+  await ensureReportDataBucket(target);
   await run(wranglerBin, [
     "deploy",
     "--config",
@@ -102,6 +110,52 @@ if (!options["worker-only"]) {
 }
 
 process.stdout.write(`Cloudflare ${targetName} deploy finished.\n`);
+
+async function ensureReportDataBucket(targetValue) {
+  const bucketName = normalizeText(targetValue.reportDataBucketName);
+  if (!bucketName) {
+    return;
+  }
+
+  if (await reportDataBucketExists(bucketName)) {
+    process.stdout.write(`Report data R2 bucket already exists: ${bucketName}\n`);
+    return;
+  }
+
+  const result = await run(wranglerBin, [
+    "r2",
+    "bucket",
+    "create",
+    bucketName,
+  ], { capture: true, allowFailure: true });
+
+  if (result.ok) {
+    process.stdout.write(`Ensured report data R2 bucket: ${bucketName}\n`);
+    return;
+  }
+
+  if (/\[code:\s*10004\]|already (?:exists|own)|bucket.+already/iu.test(result.output)) {
+    process.stdout.write(`Report data R2 bucket already exists: ${bucketName}\n`);
+    return;
+  }
+
+  fail(`Failed to ensure report data R2 bucket ${bucketName}.`);
+}
+
+async function reportDataBucketExists(bucketName) {
+  try {
+    const result = await cloudflareApi(
+      `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/r2/buckets`,
+      { fatal: false },
+    );
+    const buckets = Array.isArray(result?.buckets) ? result.buckets : [];
+    return buckets.some((bucket) => bucket?.name === bucketName);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`Unable to list R2 buckets before create: ${message}\n`);
+    return false;
+  }
+}
 
 async function prepareWorkerConfig(targetValue) {
   const namespaceId = await resolveSdkEmojiKvNamespaceId({ create: !options["preflight-only"] });
@@ -288,13 +342,17 @@ function logPagesCustomDomainDnsHint(targetValue, hostname) {
     return;
   }
 
-  const targetHostname = `${toPagesPreviewAlias(targetValue.pagesBranch)}.${pagesProjectName}.pages.dev`;
-  if (hostname === targetHostname) {
+  const projectHostname = `${pagesProjectName}.pages.dev`;
+  if (hostname === projectHostname) {
     return;
   }
 
+  const previewAlias = `${toPagesPreviewAlias(targetValue.pagesBranch)}.${projectHostname}`;
   process.stdout.write(
-    `Preview branch DNS target: ${hostname} CNAME ${targetHostname} (proxied)\n`,
+    `Preview Pages alias: https://${previewAlias}\n`,
+  );
+  process.stdout.write(
+    `Pages custom domain DNS target: ${hostname} CNAME ${projectHostname} (proxied)\n`,
   );
 }
 
@@ -388,17 +446,7 @@ function resolvePreviewBranch() {
     return sanitizePagesBranch(explicit);
   }
 
-  const githubBranch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME;
-  if (githubBranch) {
-    return sanitizePagesBranch(githubBranch);
-  }
-
-  const currentBranch = runSync("git", ["branch", "--show-current"]).trim();
-  if (currentBranch) {
-    return sanitizePagesBranch(currentBranch);
-  }
-
-  return "preview";
+  return DEFAULT_PREVIEW_PAGES_BRANCH;
 }
 
 function sanitizePagesBranch(value) {
@@ -436,21 +484,16 @@ function run(command, args, options = {}) {
     child.on("error", rejectRun);
     child.on("close", (code, signal) => {
       if (code === 0) {
-        resolveRun(output);
+        resolveRun(options.allowFailure ? { ok: true, output, code, signal } : output);
+        return;
+      }
+      if (options.allowFailure) {
+        resolveRun({ ok: false, output, code, signal });
         return;
       }
       rejectRun(new Error(`${formatCommand(command, args)} failed with ${signal || `exit code ${code}`}`));
     });
   });
-}
-
-function runSync(command, args) {
-  const spawnSpec = resolveSpawnSpec(command, args);
-  const result = spawnSync(spawnSpec.command, spawnSpec.args, {
-    cwd: repoDir,
-    encoding: "utf8",
-  });
-  return result.status === 0 ? result.stdout : "";
 }
 
 function resolveSpawnSpec(command, args) {

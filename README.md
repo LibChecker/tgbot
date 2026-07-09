@@ -4,20 +4,20 @@ This repository contains two deployable parts:
 
 | Part | Path | Platform | Purpose |
 | --- | --- | --- | --- |
-| tgbot | `packages/bot-worker/` | Cloudflare Workers | Telegram bot, APK link preview, upload page, report rendering, webhook/admin APIs. |
+| tgbot | `packages/bot-worker/` | Cloudflare Workers | Telegram bot, APK link preview, WebUI upload guidance, report rendering, webhook/admin APIs. |
 | Web UI | `packages/apk-webui/` | Cloudflare Pages | Standalone browser APK analyzer powered by the same parser and LibChecker rules. |
 | Shared analyzer | `packages/shared/` | Worker and Pages | APK parser, signature parser, SDK marker runtime, and generated local bundles. |
 
 ## tgbot
 
-The Worker bot accepts APK files, APK links, and direct uploads. It returns a short Telegram summary and a full LibChecker-style report page.
+The Worker bot accepts APK links and guides local APK, APKS, APKM, and XAPK uploads to the Web UI. Link previews return a short Telegram summary and a full LibChecker-style report page.
 
 Key capabilities:
 
 - Telegram webhook handling for private chats, groups, and channels.
-- JavaScript APK parsing for manifest, resources, permissions, components, and native libraries.
+- Range-based APK link preview parsing for manifest, resources, permissions, components, and native libraries.
 - LibChecker-Rules-Bundle matching for SDK names, icons, and component markers.
-- `/upload` for APKs that are too large for Telegram Bot API downloads.
+- `/upload` guidance to the browser Web UI for local APK, APKS, APKM, and XAPK files.
 - Protected admin APIs for webhook and command-menu management.
 - Structured Worker logs and Analytics Engine events.
 
@@ -34,10 +34,9 @@ Key capabilities:
 
 ## Usage
 
-- Send or forward an `.apk` file to the Telegram bot.
-- Reply to an APK with `/apkinfo`.
 - Send an APK download link for range-based preview parsing.
-- Use `/upload` for larger files.
+- Reply to an APK link with `/apkinfo`.
+- Use `/upload` for local APK, APKS, APKM, and XAPK files.
 - Open the Web UI when you want browser-only local analysis.
 
 Group behavior depends on Telegram Privacy Mode. For the most reliable group flow, use `/apkinfo@your_bot_name` or disable Privacy Mode in BotFather.
@@ -73,15 +72,19 @@ npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml -
 npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml --env preview
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml --env production
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml --env preview
-npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml --env production
-npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml --env preview
 ```
 
 Use a dedicated test bot token for the preview environment. In GitHub Actions,
 set `TEST_BOT_TOKEN`; the workflow syncs it into the preview Worker as
 `BOT_TOKEN` so production `BOT_TOKEN` stays isolated.
 
-`TELEGRAM_WEBHOOK_SECRET` and `TELEGRAPH_ACCESS_TOKEN` are optional, but recommended for production.
+`TELEGRAM_WEBHOOK_SECRET` is optional, but recommended for production.
+
+Report sharing uses the `REPORT_DATA_BUCKET` R2 binding declared in
+`packages/bot-worker/wrangler.toml`. Deploys use separate preview and
+production buckets, and the deploy script creates the target bucket when it is
+missing during a real deploy. The deploy `CLOUDFLARE_API_TOKEN` must include
+R2 Admin Read & Write permission for bucket creation.
 
 SDK custom emoji ids are runtime data. The sync and deploy scripts resolve a
 Workers KV namespace named `tgbot-sdk-emojis`; real sync/deploy runs create it
@@ -111,7 +114,7 @@ npm run deploy:setup
 
 The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.toml`:
 
-- `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, uses `TEST_BOT_TOKEN` for preview bot testing, points report buttons at `PREVIEW_WEBUI_SITE_URL` or the Cloudflare Pages branch preview alias, registers the preview Web UI Pages custom domain when configured, and injects the preview Worker origin so Web UI report links can resolve `?r=...`.
+- `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, uses `TEST_BOT_TOKEN` for preview bot testing, points report buttons at `PREVIEW_WEBUI_SITE_URL` or the fixed Cloudflare Pages preview alias, registers the preview Web UI Pages custom domain when configured, and injects the preview Worker origin so Web UI report links can resolve `?r=...`.
 - `production`: deploys `tgbot`, binds the custom domain from repository variable `WORKER_URL`, uses `Libchecker_TG_Bot`, injects that URL as `PUBLIC_WEBHOOK_URL`, points report buttons at `WEBUI_SITE_URL`, registers the production Web UI Pages custom domain when configured, and injects the production Worker origin so Web UI report links can resolve `?r=...`.
 
 ## Web UI Deployment
@@ -206,13 +209,12 @@ POST /admin/commands/delete
 
 Required repository secrets:
 
-- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_API_TOKEN`, including R2 Admin Read & Write for report bucket creation
 - `CLOUDFLARE_ACCOUNT_ID`
 - `BOT_TOKEN` for production
 - `TEST_BOT_TOKEN` for preview bot testing
 - `ADMIN_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
-- `TELEGRAPH_ACCESS_TOKEN`
 - `TELEGRAM_STICKER_OWNER_ID` for the SDK custom emoji sync workflow
 
 Optional repository secret:
@@ -225,7 +227,7 @@ Optional repository variable:
 
 - `PREVIEW_WORKER_URL`, the full preview Worker URL used for the preview custom domain, test bot webhook, and Web UI report-data origin.
 - `WORKER_URL`, the full production Worker URL used for the production custom domain, bot webhook, and Web UI report-data origin.
-- `PREVIEW_WEBUI_SITE_URL`, the optional full preview Web UI URL used by preview bot report buttons and preview metadata. When omitted, preview deploys use the Pages branch preview alias. For a custom preview domain, keep the DNS CNAME proxied and pointed at the Pages branch alias, for example `<branch-alias>.tgbot-apk-webui.pages.dev`.
+- `PREVIEW_WEBUI_SITE_URL`, the optional full preview Web UI URL used by preview bot report buttons and preview metadata. When omitted, preview deploys use the fixed Pages preview alias, `preview.tgbot-apk-webui.pages.dev`. For a custom preview domain, set this variable to the custom origin and create the CNAME exactly as Cloudflare Pages shows in the domain setup UI.
 - `WEBUI_SITE_URL`, the full production Web UI URL used by production bot report buttons and Web UI metadata.
 - `TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME`, optional namespace name override for SDK custom emoji ids. Defaults to `tgbot-sdk-emojis`.
 - `PREVIEW_TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME`, optional preview namespace name override.
@@ -238,8 +240,7 @@ packages/
     src/
       index.js       Worker entry, Telegram webhook, admin API
       apk-url-preview.js APK link preview parser
-      telegraph.js   Telegraph report data storage
-      upload-view.js Worker-hosted upload page
+      report-store.js R2 report data storage
       observability.js Logs and Analytics Engine events
     scripts/         Worker admin and webhook helpers
     wrangler.toml    Worker deployment config

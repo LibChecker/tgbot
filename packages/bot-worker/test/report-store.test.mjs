@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { __telegraphTestInternals } from "../src/telegraph.js";
+import {
+  __reportStoreTestInternals,
+  createApkReportDataEntry,
+  fetchReportData,
+  normalizeReportRef,
+} from "../src/report-store.js";
 
-test("Telegraph report data content stores a WebUI-readable Telegram report", () => {
+test("R2 report store writes and reads a WebUI-readable Telegram report", async () => {
   const report = createSampleReport();
   report.apkInfo.sdkSummary.native.push({
     key: "sample",
@@ -28,15 +33,22 @@ test("Telegraph report data content stores a WebUI-readable Telegram report", ()
     previewItems: ["libsample.so"],
   });
 
-  const storedReport = __telegraphTestInternals.prepareReportForWebUiStorage(report);
-  const content = __telegraphTestInternals.buildReportDataContent(JSON.stringify({
-    version: 1,
-    report: storedReport,
-  }));
-  const payload = JSON.parse(__telegraphTestInternals.findReportDataJson(content));
+  const bucket = createMemoryBucket();
+  const entry = await createApkReportDataEntry({ REPORT_DATA_BUCKET: bucket }, report);
+  const storedObject = bucket.objects.get(__reportStoreTestInternals.buildReportDataKey(entry.ref));
+  const fetchedReport = await fetchReportData(entry.ref, { REPORT_DATA_BUCKET: bucket });
 
-  assert.equal(payload.report.apkInfo.packageName, "com.example.sample");
-  assert.equal(payload.report.apkInfo.sdkSummary.native[0].ruleDetail, null);
+  assert.match(entry.ref, /^rp_[a-f0-9]{32}$/u);
+  assert.equal(normalizeReportRef(entry.ref), entry.ref);
+  assert.equal(storedObject.options.httpMetadata.contentType, "application/json; charset=UTF-8");
+  assert.deepEqual(storedObject.options.customMetadata, {
+    schema_version: "1",
+    package_name: "com.example.sample",
+  });
+  assert.equal(fetchedReport.apkInfo.packageName, "com.example.sample");
+  assert.equal(fetchedReport.apkInfo.sdkSummary.native[0].ruleDetail, null);
+  assert.equal(normalizeReportRef("Sample-07-08"), "");
+  assert.equal(normalizeReportRef("启动遮罩进化-Report-Data-07-08"), "");
 });
 
 function createSampleReport() {
@@ -117,6 +129,24 @@ function createSampleReport() {
         native: [],
         components: [],
       },
+    },
+  };
+}
+
+function createMemoryBucket() {
+  const objects = new Map();
+  return {
+    objects,
+    async put(key, value, options) {
+      objects.set(key, { value, options });
+    },
+    async get(key) {
+      const object = objects.get(key);
+      return object
+        ? {
+            text: async () => object.value,
+          }
+        : null;
     },
   };
 }

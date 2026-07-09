@@ -1,4 +1,11 @@
-import { assertTelegramApkReport } from "@shared/contracts.js";
+import { assertReportDataReport } from "@shared/contracts.js";
+import { resolveBotReportUrlFromLocation } from "./bot-report-url.js";
+
+const BOT_REPORT_DATA_ORIGIN = typeof __BOT_REPORT_DATA_ORIGIN__ === "string" ? __BOT_REPORT_DATA_ORIGIN__ : "";
+
+export function resolveCurrentBotReportUrl(search, locale) {
+  return resolveBotReportUrlFromLocation(search, BOT_REPORT_DATA_ORIGIN, locale);
+}
 
 export async function loadBotReportFromUrl([
   reportUrl,
@@ -45,6 +52,9 @@ export async function loadBotReportFromUrl([
   state.activeAnalyzeJobId = jobId;
   state.startedAt = performance.now();
   state.report = null;
+  state.reportShareUrl = "";
+  state.reportShareStatusKey = "";
+  state.reportShareBusy = false;
   state.selectedFile = null;
   state.downloadUrl = "";
   state.activeTab = "summary";
@@ -85,7 +95,7 @@ export async function loadBotReportFromUrl([
       throw new Error(payload?.error?.message || t("unknownError"));
     }
 
-    const report = assertTelegramApkReport(payload?.report);
+    const report = assertReportDataReport(payload?.report);
     if (!state.jobs.has(jobId)) {
       return;
     }
@@ -99,6 +109,9 @@ export async function loadBotReportFromUrl([
     state.activeAnalyzeJobId = null;
     state.linkAbortController = null;
     state.report = report;
+    state.reportShareUrl = "";
+    state.reportShareStatusKey = "";
+    state.reportShareBusy = false;
     state.activeTab = "summary";
     state.activeNativeAbi = "";
     finishAnalysis();

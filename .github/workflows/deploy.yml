@@ -62,7 +62,6 @@ jobs:
       ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
       TEST_TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TEST_TELEGRAM_WEBHOOK_SECRET }}
-      TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
       PREVIEW_WORKER_URL: ${{ vars.PREVIEW_WORKER_URL || secrets.PREVIEW_WORKER_URL }}
       PREVIEW_WEBUI_SITE_URL: ${{ vars.PREVIEW_WEBUI_SITE_URL || secrets.PREVIEW_WEBUI_SITE_URL }}
       WEBUI_SITE_URL: ${{ vars.PREVIEW_WEBUI_SITE_URL || secrets.PREVIEW_WEBUI_SITE_URL }}
@@ -92,7 +91,7 @@ jobs:
 
       - name: Sync preview Worker secrets
         run: |
-          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.TEST_BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TEST_TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET || undefined, TELEGRAPH_ACCESS_TOKEN: process.env.TELEGRAPH_ACCESS_TOKEN || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
+          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.TEST_BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TEST_TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
           npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml --env preview
           rm .cloudflare-secrets.json
 
@@ -118,7 +117,6 @@ jobs:
       BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
       ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
-      TELEGRAPH_ACCESS_TOKEN: ${{ secrets.TELEGRAPH_ACCESS_TOKEN }}
       WORKER_URL: ${{ vars.WORKER_URL || secrets.WORKER_URL }}
       WEBUI_SITE_URL: ${{ vars.WEBUI_SITE_URL || secrets.WEBUI_SITE_URL }}
       TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID: ${{ vars.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID || secrets.TELEGRAM_SDK_EMOJI_KV_NAMESPACE_ID }}
@@ -150,7 +148,7 @@ jobs:
 
       - name: Sync production Worker secrets
         run: |
-          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || undefined, TELEGRAPH_ACCESS_TOKEN: process.env.TELEGRAPH_ACCESS_TOKEN || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
+          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
           npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml --env production
           rm .cloudflare-secrets.json
 

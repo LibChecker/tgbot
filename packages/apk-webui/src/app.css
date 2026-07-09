@@ -2819,6 +2819,7 @@ svg {
   align-items: center;
   gap: 16px;
   min-width: 0;
+  padding-right: 48px;
   scroll-margin-top: calc(var(--topbar-height) + var(--topbar-gap-after) + 10px);
 }
 
@@ -2874,6 +2875,24 @@ svg {
   line-height: 1.18;
   letter-spacing: 0;
   overflow-wrap: anywhere;
+}
+
+.report-share-button {
+  position: absolute;
+  inset: 14px 14px auto auto;
+}
+
+.report-share-button__spinner {
+  opacity: 0;
+}
+
+.report-share-button.is-loading svg {
+  opacity: 0;
+}
+
+.report-share-button.is-loading .report-share-button__spinner {
+  opacity: 1;
+  animation: compare-spin 760ms linear infinite;
 }
 
 .app-title-mask {
