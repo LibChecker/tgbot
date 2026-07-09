@@ -2042,9 +2042,7 @@ function updateTabDrag(event) {
   }
 
   if (!maybeStartSegmentDrag(event, tabDrag, elements.tabs, {
-    allowSegmentScroll: true,
     allowTopbarScroll: false,
-    scrollElement: elements.tabs,
   })) {
     return;
   }
@@ -2057,9 +2055,7 @@ function endTabDrag(event) {
   }
 
   if (maybeStartSegmentDrag(event, tabDrag, elements.tabs, {
-    allowSegmentScroll: true,
     allowTopbarScroll: false,
-    scrollElement: elements.tabs,
   })) {
     previewReportTabFromPointer(event);
     if (tabDrag.pendingTab) {
