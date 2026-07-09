@@ -3,7 +3,7 @@ import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate
 import { clamp } from "./app/math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./app/format.js";
 import { getStats } from "./app/report-model.js";
-import { normalizeBotReportRef, resolveBotReportUrlFromLocation } from "./app/bot-report-url.js";
+import { resolveBotReportUrlFromLocation } from "./app/bot-report-url.js";
 import {
   buildHistorySummary,
   createHistoryEntry,
@@ -100,7 +100,6 @@ const RUNTIME_LOG_DETAIL_KEYS = new Set([
   "range_request_count",
   "range_cache_hit_count",
   "render_ms",
-  "report_ref",
   "response_text_ms",
   "remote_package_type",
   "result",
@@ -3408,10 +3407,7 @@ function updateReportShareControls() {
   const canShare = state.appMode === "analyze" && Boolean(state.report) && !state.analyzeBusy;
   elements.reportShareButton.disabled = !canShare || state.reportShareBusy;
   elements.reportShareButton.setAttribute("aria-busy", state.reportShareBusy ? "true" : "false");
-
-  if (elements.reportShareStatus) {
-    elements.reportShareStatus.textContent = state.reportShareStatusKey ? t(state.reportShareStatusKey) : "";
-  }
+  elements.reportShareButton.textContent = t(state.reportShareStatusKey || "reportShare");
 }
 
 async function shareCurrentReport() {
@@ -3424,77 +3420,34 @@ async function shareCurrentReport() {
   updateReportShareControls();
 
   try {
-    const { publishReport, shareReportUrl } = await import("./app/report-share.js");
-    let shareUrl = state.reportShareUrl || getCurrentReportShareUrl();
-    if (!shareUrl) {
-      const publishResult = await publishReport({
-        endpoint: buildReportPublishEndpoint(),
-        report: state.report,
-        locale: state.locale,
-      });
-      shareUrl = publishResult.url;
-      state.reportShareUrl = shareUrl;
-      trackWebEvent("webui.report.published", {
-        result: "success",
-        input_source: "webui",
-        report_ref: publishResult.ref || "",
-        ...getReportAnalyticsFields(state.report),
-      });
-    }
-
-    const shareResult = await shareReportUrl({
-      url: shareUrl,
+    const { shareCurrentReport: shareReport } = await import("./app/report-share.js");
+    const shareResult = await shareReport({
+      cachedUrl: state.reportShareUrl,
+      report: state.report,
+      locale: state.locale,
+      reportDataOrigin: BOT_REPORT_DATA_ORIGIN || window.location.origin,
+      pageHref: window.location.href,
+      pageSearch: window.location.search,
       title: t("reportShareTitle"),
       text: t("reportShareText", {
         appName: state.report.apkInfo?.appName || state.report.apkInfo?.packageName || t("unknown"),
       }),
     });
+    if (shareResult?.url) {
+      state.reportShareUrl = shareResult.url;
+    }
     if (shareResult?.cancelled) {
       state.reportShareStatusKey = "";
-      trackWebEvent("webui.report.share_cancelled", {
-        result: "cancelled",
-        operation: shareResult.operation || "share",
-        ...getReportAnalyticsFields(state.report),
-      });
       return;
     }
 
     state.reportShareStatusKey = shareResult?.operation === "copy" ? "reportShareCopied" : "reportShareShared";
-    trackWebEvent("webui.report.shared", {
-      result: "success",
-      operation: shareResult?.operation || "share",
-      ...getReportAnalyticsFields(state.report),
-    });
   } catch (error) {
     state.reportShareStatusKey = "reportShareFailed";
-    trackWebEvent("webui.report.share_failed", {
-      result: "error",
-      ...getClientErrorTelemetryFields(error),
-      ...getReportAnalyticsFields(state.report),
-    });
   } finally {
     state.reportShareBusy = false;
     updateReportShareControls();
   }
-}
-
-function buildReportPublishEndpoint() {
-  const origin = BOT_REPORT_DATA_ORIGIN || window.location.origin;
-  const url = new URL("/report-data", origin);
-  url.searchParams.set("lang", state.locale);
-  return url.href;
-}
-
-function getCurrentReportShareUrl() {
-  const ref = normalizeBotReportRef(new URLSearchParams(window.location.search).get("r"));
-  if (!ref) {
-    return "";
-  }
-
-  const url = new URL("/", window.location.href);
-  url.searchParams.set("r", ref);
-  url.searchParams.set("lang", state.locale);
-  return url.href;
 }
 
 async function analyzeSelectedFile() {

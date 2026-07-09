@@ -46,7 +46,6 @@ export function collectAppElements(root = document) {
     resultView: root.querySelector("#result-view"),
     reportHero: root.querySelector("#report-hero"),
     reportShareButton: root.querySelector("#report-share-button"),
-    reportShareStatus: root.querySelector("#report-share-status"),
     archiveDistribution: root.querySelector("#archive-distribution"),
     tabs: root.querySelector("#tabs"),
     tabButtons: [...root.querySelectorAll("#tabs [data-tab]")],

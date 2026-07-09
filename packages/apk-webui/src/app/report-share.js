@@ -1,3 +1,30 @@
+const REPORT_REF_PATTERN = /^rp_[a-f0-9]{32}$/u;
+
+export async function shareCurrentReport({
+  cachedUrl,
+  report,
+  locale,
+  reportDataOrigin,
+  pageHref,
+  pageSearch,
+  title,
+  text,
+}) {
+  let url = cachedUrl || getCurrentReportShareUrl(pageHref, pageSearch, locale);
+  if (!url) {
+    url = (await publishReport({
+      endpoint: buildReportPublishEndpoint(reportDataOrigin, locale),
+      report,
+      locale,
+    })).url;
+  }
+
+  return {
+    ...(await shareReportUrl({ url, title, text })),
+    url,
+  };
+}
+
 export async function publishReport({ endpoint, report, locale }) {
   const response = await fetch(endpoint, {
     method: "POST",
@@ -32,4 +59,22 @@ export async function shareReportUrl({ url, title, text }) {
 
   await navigator.clipboard.writeText(url);
   return { operation: "copy" };
+}
+
+function buildReportPublishEndpoint(origin, locale) {
+  const url = new URL("/report-data", origin);
+  url.searchParams.set("lang", locale);
+  return url.href;
+}
+
+function getCurrentReportShareUrl(pageHref, pageSearch, locale) {
+  const ref = new URLSearchParams(pageSearch || "").get("r") || "";
+  if (!REPORT_REF_PATTERN.test(ref)) {
+    return "";
+  }
+
+  const url = new URL("/", pageHref);
+  url.searchParams.set("r", ref);
+  url.searchParams.set("lang", locale);
+  return url.href;
 }
