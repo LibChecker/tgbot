@@ -133,6 +133,7 @@ export function createRuntimeState() {
     pendingHistoryViewMode: "",
     tabIndicatorFrame: 0,
     pendingTabIndicatorTab: "",
+    pendingTabIndicatorShouldScroll: false,
     reportRenderToken: 0,
     reportRevealToken: 0,
     compareController: null,

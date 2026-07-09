@@ -2815,6 +2815,11 @@ svg {
   scroll-margin-top: calc(var(--topbar-height) + var(--topbar-gap-after) + 10px);
 }
 
+.hero-copy {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .app-icon-frame,
 .app-icon-placeholder {
   width: clamp(72px, 10vw, 104px);
@@ -2958,6 +2963,8 @@ svg {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   margin-top: 10px;
 }
 
@@ -4662,8 +4669,6 @@ svg {
   }
 
   .topbar::before {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
     will-change: auto;
     transform: none;
   }

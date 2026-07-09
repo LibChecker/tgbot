@@ -3050,7 +3050,7 @@ function setActiveTab(tab) {
   }
 
   state.activeTab = tab;
-  updateTabs();
+  updateTabs({ scrollActiveTab: true });
   renderTabPanel();
   trackWebEvent("webui.tab.changed", {
     result: "success",
@@ -3059,8 +3059,10 @@ function setActiveTab(tab) {
   });
 }
 
-function updateTabIndicator(tab = state.activeTab) {
+function updateTabIndicator(tab = state.activeTab, options = {}) {
   runtime.pendingTabIndicatorTab = VALID_TABS.has(tab) ? tab : "summary";
+  runtime.pendingTabIndicatorShouldScroll = runtime.pendingTabIndicatorShouldScroll ||
+    Boolean(options.scrollActiveTab);
   if (runtime.tabIndicatorFrame || !elements.tabs) {
     return;
   }
@@ -3073,10 +3075,14 @@ function updateTabIndicator(tab = state.activeTab) {
       return;
     }
 
-    try {
-      activeButton.scrollIntoView({ block: "nearest", inline: "nearest" });
-    } catch {
-      activeButton.scrollIntoView();
+    const shouldScroll = runtime.pendingTabIndicatorShouldScroll;
+    runtime.pendingTabIndicatorShouldScroll = false;
+    if (shouldScroll) {
+      try {
+        activeButton.scrollIntoView({ block: "nearest", inline: "nearest" });
+      } catch {
+        activeButton.scrollIntoView();
+      }
     }
     const groupRect = elements.tabs.getBoundingClientRect();
     const buttonRect = activeButton.getBoundingClientRect();
@@ -4936,10 +4942,10 @@ function revealReportHeroAfterAnalysis(report) {
   });
 }
 
-function updateTabs() {
+function updateTabs(options = {}) {
   updateTabButtonsView(elements, state.activeTab);
   clearTabPendingButtons();
-  updateTabIndicator();
+  updateTabIndicator(state.activeTab, options);
 }
 
 function renderTabPanel() {
