@@ -362,7 +362,7 @@ function createMissingRemoteManifestError(diagnostics) {
     const compression = diagnostics.selected_apk_compression || "unknown";
     const message =
       compression === "deflate"
-        ? `The remote link is an APKM/APKS/XAPK container, and nested ${selectedEntry} is deflate-compressed. URL preview cannot read its AndroidManifest.xml without a full download; upload the file or provide a direct APK link.`
+        ? `The remote link is an APKM/APKS/XAPK container, and nested ${selectedEntry} is deflate-compressed. URL preview cannot read its AndroidManifest.xml without a full download; upload the file in the WebUI or provide a direct APK link.`
         : `The remote link is an APKM/APKS/XAPK container and has no top-level AndroidManifest.xml. URL preview has not parsed nested ${selectedEntry}.`;
 
     return createUrlAnalysisError(message, "remote_package_container_nested_manifest_unavailable", {

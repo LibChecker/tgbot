@@ -4,20 +4,20 @@ This repository contains two deployable parts:
 
 | Part | Path | Platform | Purpose |
 | --- | --- | --- | --- |
-| tgbot | `packages/bot-worker/` | Cloudflare Workers | Telegram bot, APK link preview, upload page, report rendering, webhook/admin APIs. |
+| tgbot | `packages/bot-worker/` | Cloudflare Workers | Telegram bot, APK link preview, WebUI upload guidance, report rendering, webhook/admin APIs. |
 | Web UI | `packages/apk-webui/` | Cloudflare Pages | Standalone browser APK analyzer powered by the same parser and LibChecker rules. |
 | Shared analyzer | `packages/shared/` | Worker and Pages | APK parser, signature parser, SDK marker runtime, and generated local bundles. |
 
 ## tgbot
 
-The Worker bot accepts APK files, APK links, and direct uploads. It returns a short Telegram summary and a full LibChecker-style report page.
+The Worker bot accepts APK links and guides local APK, APKS, APKM, and XAPK uploads to the Web UI. Link previews return a short Telegram summary and a full LibChecker-style report page.
 
 Key capabilities:
 
 - Telegram webhook handling for private chats, groups, and channels.
-- JavaScript APK parsing for manifest, resources, permissions, components, and native libraries.
+- Range-based APK link preview parsing for manifest, resources, permissions, components, and native libraries.
 - LibChecker-Rules-Bundle matching for SDK names, icons, and component markers.
-- `/upload` for APKs that are too large for Telegram Bot API downloads.
+- `/upload` guidance to the browser Web UI for local APK, APKS, APKM, and XAPK files.
 - Protected admin APIs for webhook and command-menu management.
 - Structured Worker logs and Analytics Engine events.
 
@@ -34,10 +34,9 @@ Key capabilities:
 
 ## Usage
 
-- Send or forward an `.apk` file to the Telegram bot.
-- Reply to an APK with `/apkinfo`.
 - Send an APK download link for range-based preview parsing.
-- Use `/upload` for larger files.
+- Reply to an APK link with `/apkinfo`.
+- Use `/upload` for local APK, APKS, APKM, and XAPK files.
 - Open the Web UI when you want browser-only local analysis.
 
 Group behavior depends on Telegram Privacy Mode. For the most reliable group flow, use `/apkinfo@your_bot_name` or disable Privacy Mode in BotFather.
@@ -242,7 +241,6 @@ packages/
       index.js       Worker entry, Telegram webhook, admin API
       apk-url-preview.js APK link preview parser
       report-store.js R2 report data storage
-      upload-view.js Worker-hosted upload page
       observability.js Logs and Analytics Engine events
     scripts/         Worker admin and webhook helpers
     wrangler.toml    Worker deployment config

@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
@@ -15,8 +14,6 @@ import {
 import { createSdkMarkerAnnotator } from "../../shared/src/sdk-markers.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
-const MAX_TELEGRAM_APK_BYTES = 20 * 1024 * 1024;
-const DEFAULT_DIRECT_UPLOAD_BYTES = 90 * 1024 * 1024;
 const MAX_REPORT_PUBLISH_BODY_BYTES = 4 * 1024 * 1024;
 const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
 const JSON_CONTENT_HEADERS = {
@@ -37,7 +34,6 @@ let cachedBotIdentity = null;
 let apkUrlPreviewModulePromise = null;
 let sdkRuleAnnotatorPromise = null;
 let reportStoreModulePromise = null;
-let uploadViewModulePromise = null;
 
 const app = new Hono();
 
@@ -163,14 +159,7 @@ app.post("/report-data", async (context) => {
   }
 });
 
-app.on(["GET", "POST"], "/upload", (context) => {
-  return handleUploadRequest(
-    context.req.raw,
-    context.env,
-    getRequestUrl(context),
-    getRequestTelemetry(context),
-  );
-});
+app.on(["GET", "POST"], "/upload", (context) => handleUploadRedirectRequest(context));
 
 app.all("/admin/webhook", handleAdminRoute);
 app.all("/admin/webhook/set", handleAdminRoute);
@@ -510,218 +499,23 @@ async function handleAdminRequest(request, env, url, telemetry) {
   return jsonResponse({ ok: false, error: "Not Found" }, 404);
 }
 
-async function handleUploadRequest(request, env, url, telemetry) {
-  const locale = normalizeUploadLocale(url.searchParams.get("lang"));
-  const publicBaseUrl = resolvePublicBaseUrl(env, url.origin);
-  const uploadUrl = buildUploadUrl(publicBaseUrl, locale);
-  const maxUploadBytes = getMaxDirectUploadBytes(env);
-  const maxSizeText = formatBytes(maxUploadBytes);
+function handleUploadRedirectRequest(context) {
+  const url = getRequestUrl(context);
+  const locale = normalizeLocale(url.searchParams.get("lang"));
+  const publicBaseUrl = resolvePublicBaseUrl(context.env, url.origin);
+  const webUiUploadUrl = buildWebUiUploadUrl(context.env, publicBaseUrl, locale);
 
-  if (request.method === "GET") {
-    logInfoEvent(env, telemetry, "upload.page_viewed", {
-      result: "success",
-      http_status: 200,
-    });
-    return renderUploadResponse({ locale, uploadUrl, maxSizeText });
-  }
+  logInfoEvent(context.env, getRequestTelemetry(context), "upload.redirected", {
+    result: "redirect",
+    http_status: 303,
+  });
 
-  const startedAt = Date.now();
-  let activeLocale = locale;
-  let activeUploadUrl = uploadUrl;
-
-  try {
-    const formData = await request.formData();
-    const formLocale = normalizeUploadLocale(formData.get("lang") || locale);
-    activeLocale = formLocale;
-    const formI18n = createI18n(formLocale);
-    const apkFile = formData.get("apk");
-    const formUploadUrl = buildUploadUrl(publicBaseUrl, formLocale);
-    activeUploadUrl = formUploadUrl;
-
-    if (!isUploadFile(apkFile)) {
-      logWarnEvent(env, telemetry, "upload.analysis.rejected", {
-        result: "missing_file",
-        http_status: 400,
-      });
-      return renderUploadResponse(
-        {
-          locale: formLocale,
-          uploadUrl: formUploadUrl,
-          maxSizeText,
-          error: formI18n.t("upload.choose_file"),
-        },
-        400,
-      );
-    }
-
-    if (!isUploadedApkFile(apkFile)) {
-      logWarnEvent(env, telemetry, "upload.analysis.rejected", {
-        result: "invalid_file",
-        http_status: 400,
-        file_name: apkFile.name || null,
-        file_size_bytes: apkFile.size || 0,
-      });
-      return renderUploadResponse(
-        {
-          locale: formLocale,
-          uploadUrl: formUploadUrl,
-          maxSizeText,
-          error: formI18n.t("upload.invalid_file"),
-        },
-        400,
-      );
-    }
-
-    if ((apkFile.size || 0) > maxUploadBytes) {
-      logWarnEvent(env, telemetry, "upload.analysis.skipped_too_large", {
-        result: "too_large",
-        file_name: apkFile.name || null,
-        file_size_bytes: apkFile.size || 0,
-      });
-      return renderUploadResponse(
-        {
-          locale: formLocale,
-          uploadUrl: formUploadUrl,
-          maxSizeText,
-          error: formI18n.t("upload.too_large", { maxSize: maxSizeText }),
-        },
-        413,
-      );
-    }
-
-    logInfoEvent(env, telemetry, "upload.analysis.started", {
-      result: "started",
-      file_name: apkFile.name || null,
-      file_size_bytes: apkFile.size || 0,
-    });
-
-    const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
-    const reportStoreModuleTask = loadReportStoreModule();
-    let stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "upload.analysis.file_read.started", {
-      result: "started",
-      analysis_stage: "file_read",
-      file_name: apkFile.name || null,
-      file_size_bytes: apkFile.size || 0,
-    }, { analytics: false });
-    const apkBuffer = await apkFile.arrayBuffer();
-    logInfoEvent(env, telemetry, "upload.analysis.file_read.succeeded", {
-      result: "success",
-      analysis_stage: "file_read",
-      duration_ms: Date.now() - stageStartedAt,
-      file_name: apkFile.name || null,
-      file_size_bytes: apkFile.size || 0,
-      downloaded_bytes: apkBuffer.byteLength || 0,
-    }, { analytics: false });
-
-    stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "upload.analysis.parse.started", {
-      result: "started",
-      analysis_stage: "apk_parse",
-      file_name: apkFile.name || null,
-      file_size_bytes: apkFile.size || 0,
-    }, { analytics: false });
-    const apkInfo = await readAndroidPackageInfo(apkBuffer);
-    logInfoEvent(env, telemetry, "upload.analysis.parse.succeeded", {
-      result: "success",
-      analysis_stage: "apk_parse",
-      duration_ms: Date.now() - stageStartedAt,
-      file_name: apkFile.name || null,
-      file_size_bytes: apkFile.size || 0,
-      package_name: apkInfo.packageName,
-      version_name: apkInfo.versionName,
-      permissions_count: apkInfo.permissions.length,
-      native_library_count: apkInfo.nativeLibraries.length,
-      component_count: countComponents(apkInfo.components),
-      meta_data_count: countMetaData(apkInfo.metaData),
-      has_app_icon: Boolean(apkInfo.icon?.dataUri),
-      app_icon_path: apkInfo.icon?.path || null,
-      ...getArchiveTelemetryFields(apkInfo),
-    }, { analytics: false });
-
-    stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "upload.analysis.report_build.started", {
-      result: "started",
-      analysis_stage: "report_build",
-      package_name: apkInfo.packageName,
-    }, { analytics: false });
-    const report = await buildApkReport(
-      buildWebUploadMessage(formLocale),
-      buildUploadDocument(apkFile),
-      apkInfo,
-      publicBaseUrl,
-      formLocale,
-      sdkRuleAnnotatorTask,
-    );
-    logInfoEvent(env, telemetry, "upload.analysis.report_build.succeeded", {
-      result: "success",
-      analysis_stage: "report_build",
-      duration_ms: Date.now() - stageStartedAt,
-      package_name: report.apkInfo.packageName,
-      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
-      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
-    }, { analytics: false });
-
-    const { createApkReportDataEntry } = await reportStoreModuleTask;
-    stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "upload.analysis.report_store.started", {
-      result: "started",
-      analysis_stage: "report_store",
-      package_name: report.apkInfo.packageName,
-    }, { analytics: false });
-    const reportEntry = await createApkReportDataEntry(env, report);
-    logInfoEvent(env, telemetry, "upload.analysis.report_store.succeeded", {
-      result: "success",
-      analysis_stage: "report_store",
-      duration_ms: Date.now() - stageStartedAt,
-      package_name: report.apkInfo.packageName,
-      report_ref: reportEntry.ref,
-    }, { analytics: false });
-    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, reportEntry.ref, formLocale);
-
-    logInfoEvent(env, telemetry, "upload.analysis.succeeded", {
-      result: "success",
-      duration_ms: Date.now() - startedAt,
-      file_name: apkFile.name || null,
-      file_size_bytes: apkFile.size || 0,
-      package_name: report.apkInfo.packageName,
-      permissions_count: report.apkInfo.permissions.length,
-      native_library_count: report.apkInfo.nativeLibraries.length,
-      component_count: countComponents(report.apkInfo.components),
-      meta_data_count: countMetaData(report.apkInfo.metaData),
-      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
-      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
-      has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
-      app_icon_path: report.apkInfo.icon?.path || null,
-      report_ref: reportEntry.ref,
-      ...getArchiveTelemetryFields(report.apkInfo),
-    });
-
-    return new Response(null, {
-      status: 303,
-      headers: {
-        location: reportUrl,
-      },
-    });
-  } catch (error) {
-    logErrorEvent(env, telemetry, "upload.analysis.failed", {
-      result: "error",
-      duration_ms: Date.now() - startedAt,
-      ...getErrorTelemetryFields(error),
-    });
-
-    return renderUploadResponse(
-      {
-        locale: activeLocale,
-        uploadUrl: activeUploadUrl,
-        maxSizeText,
-        error: createI18n(activeLocale).t("upload.parse_failed", {
-          message: getLocalizedErrorMessage(error, activeLocale),
-        }),
-      },
-      500,
-    );
-  }
+  return new Response(null, {
+    status: 303,
+    headers: {
+      location: webUiUploadUrl,
+    },
+  });
 }
 
 async function handleUpdate(update, env, requestOrigin, telemetry) {
@@ -771,7 +565,7 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
 
   if (command === "upload") {
     const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
-    const uploadUrl = buildUploadUrl(publicBaseUrl, locale);
+    const uploadUrl = buildWebUiUploadUrl(env, publicBaseUrl, locale);
     await sendText(
       env,
       message.chat.id,
@@ -840,7 +634,7 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
     { analytics: false },
   );
 
-  await analyzeApkDocument(env, message, targetDocument, requestOrigin, updateTelemetry, locale);
+  await sendWebUiUploadGuide(env, message, targetDocument, requestOrigin, updateTelemetry, locale);
 }
 
 function getTelegramMessage(update) {
@@ -1131,176 +925,24 @@ function getExternalReplyDocument(message, extractor) {
   return extractor(message.external_reply);
 }
 
-async function analyzeApkDocument(env, message, document, requestOrigin, telemetry, locale) {
-  const startedAt = Date.now();
+async function sendWebUiUploadGuide(env, message, document, requestOrigin, telemetry, locale) {
   const { t } = createI18n(locale);
   const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
+  const uploadUrl = buildWebUiUploadUrl(env, publicBaseUrl, locale);
 
-  if ((document.file_size || 0) > MAX_TELEGRAM_APK_BYTES) {
-    logWarnEvent(env, telemetry, "apk.analysis.skipped_too_large", {
-      result: "too_large",
-      file_name: document.file_name || null,
-      file_size_bytes: document.file_size || 0,
-    });
-    await sendText(
-      env,
-      message.chat.id,
-      t("bot.apk_too_large"),
-      message.message_id,
-      buildLinkReplyMarkup(
-        message.chat,
-        buildUploadUrl(publicBaseUrl, locale),
-        t("bot.open_upload_page"),
-      ),
-    );
-    return;
-  }
+  logInfoEvent(env, telemetry, "apk.document_upload.redirected", {
+    result: "webui_redirect",
+    file_name: document.file_name || null,
+    file_size_bytes: document.file_size || 0,
+  });
 
-  if (supportsChatAction(message.chat?.type)) {
-    await sendChatAction(env, message.chat.id, "typing");
-  }
-
-  logInfoEvent(
+  await sendText(
     env,
-    telemetry,
-    "apk.analysis.started",
-    {
-      result: "started",
-      file_name: document.file_name || null,
-      file_size_bytes: document.file_size || 0,
-    },
+    message.chat.id,
+    t("bot.upload_entry"),
+    message.message_id,
+    buildLinkReplyMarkup(message.chat, uploadUrl, t("bot.open_upload_page")),
   );
-
-  try {
-    const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
-    const reportStoreModuleTask = loadReportStoreModule();
-    let stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "apk.analysis.file_download.started", {
-      result: "started",
-      analysis_stage: "telegram_file_download",
-      file_name: document.file_name || null,
-      file_size_bytes: document.file_size || 0,
-    }, { analytics: false });
-    const apkBuffer = await downloadTelegramFile(env, document.file_id, locale);
-    logInfoEvent(env, telemetry, "apk.analysis.file_download.succeeded", {
-      result: "success",
-      analysis_stage: "telegram_file_download",
-      duration_ms: Date.now() - stageStartedAt,
-      file_name: document.file_name || null,
-      file_size_bytes: document.file_size || 0,
-      downloaded_bytes: apkBuffer.byteLength || 0,
-    }, { analytics: false });
-
-    stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "apk.analysis.parse.started", {
-      result: "started",
-      analysis_stage: "apk_parse",
-      file_name: document.file_name || null,
-      file_size_bytes: document.file_size || 0,
-    }, { analytics: false });
-    const apkInfo = await readAndroidPackageInfo(apkBuffer);
-    logInfoEvent(env, telemetry, "apk.analysis.parse.succeeded", {
-      result: "success",
-      analysis_stage: "apk_parse",
-      duration_ms: Date.now() - stageStartedAt,
-      file_name: document.file_name || null,
-      file_size_bytes: document.file_size || 0,
-      package_name: apkInfo.packageName,
-      version_name: apkInfo.versionName,
-      permissions_count: apkInfo.permissions.length,
-      native_library_count: apkInfo.nativeLibraries.length,
-      component_count: countComponents(apkInfo.components),
-      meta_data_count: countMetaData(apkInfo.metaData),
-      has_app_icon: Boolean(apkInfo.icon?.dataUri),
-      app_icon_path: apkInfo.icon?.path || null,
-      ...getArchiveTelemetryFields(apkInfo),
-    }, { analytics: false });
-
-    stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "apk.analysis.report_build.started", {
-      result: "started",
-      analysis_stage: "report_build",
-      package_name: apkInfo.packageName,
-    }, { analytics: false });
-    const report = await buildApkReport(
-      message,
-      document,
-      apkInfo,
-      publicBaseUrl,
-      locale,
-      sdkRuleAnnotatorTask,
-    );
-    logInfoEvent(env, telemetry, "apk.analysis.report_build.succeeded", {
-      result: "success",
-      analysis_stage: "report_build",
-      duration_ms: Date.now() - stageStartedAt,
-      package_name: report.apkInfo.packageName,
-      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
-      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
-    }, { analytics: false });
-
-    const { createApkReportDataEntry } = await reportStoreModuleTask;
-    stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "apk.analysis.report_store.started", {
-      result: "started",
-      analysis_stage: "report_store",
-      package_name: report.apkInfo.packageName,
-    }, { analytics: false });
-    const reportEntry = await createApkReportDataEntry(env, report);
-    logInfoEvent(env, telemetry, "apk.analysis.report_store.succeeded", {
-      result: "success",
-      analysis_stage: "report_store",
-      duration_ms: Date.now() - stageStartedAt,
-      package_name: report.apkInfo.packageName,
-      report_ref: reportEntry.ref,
-    }, { analytics: false });
-    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, reportEntry.ref, locale);
-
-    logInfoEvent(env, telemetry, "apk.analysis.succeeded", {
-      result: "success",
-      duration_ms: Date.now() - startedAt,
-      file_name: document.file_name || null,
-      file_size_bytes: document.file_size || 0,
-      package_name: report.apkInfo.packageName,
-      version_name: report.apkInfo.versionName,
-      permissions_count: report.apkInfo.permissions.length,
-      native_library_count: report.apkInfo.nativeLibraries.length,
-      component_count: countComponents(report.apkInfo.components),
-      meta_data_count: countMetaData(report.apkInfo.metaData),
-      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
-      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
-      has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
-      app_icon_path: report.apkInfo.icon?.path || null,
-      report_ref: reportEntry.ref,
-      source_label: report.sourceLabel,
-      ...getArchiveTelemetryFields(report.apkInfo),
-    });
-
-    const sdkCustomEmojiIds = await loadSdkCustomEmojiIds(env);
-    await sendText(
-      env,
-      message.chat.id,
-      formatApkSummary(report, sdkCustomEmojiIds),
-      message.message_id,
-      buildReportReplyMarkup(message.chat, reportUrl, t("bot.open_full_report")),
-    );
-  } catch (error) {
-    logErrorEvent(env, telemetry, "apk.analysis.failed", {
-      result: "error",
-      duration_ms: Date.now() - startedAt,
-      file_name: document.file_name || null,
-      file_size_bytes: document.file_size || 0,
-      ...getErrorTelemetryFields(error),
-    });
-    await sendText(
-      env,
-      message.chat.id,
-      t("bot.parse_failed", {
-        message: escapeHtml(getLocalizedErrorMessage(error, locale)),
-      }),
-      message.message_id,
-    );
-  }
 }
 
 async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, locale) {
@@ -1837,19 +1479,6 @@ function supportsChatAction(chatType) {
   return chatType !== "channel";
 }
 
-function normalizeUploadLocale(value) {
-  return normalizeLocale(value);
-}
-
-function getMaxDirectUploadBytes(env) {
-  const configuredMb = Number(env.MAX_DIRECT_UPLOAD_MB || env.MAX_UPLOAD_MB || 0);
-  if (Number.isFinite(configuredMb) && configuredMb > 0) {
-    return Math.floor(configuredMb * 1024 * 1024);
-  }
-
-  return DEFAULT_DIRECT_UPLOAD_BYTES;
-}
-
 function getLinkPreviewOptions(env) {
   return {
     maxCentralDirectoryBytes: parseOptionalMegabytes(env.MAX_LINK_PREVIEW_CD_MB),
@@ -1868,34 +1497,8 @@ function parseOptionalMegabytes(value) {
   return Math.floor(parsed * 1024 * 1024);
 }
 
-function isUploadFile(value) {
-  return Boolean(
-    value &&
-      typeof value === "object" &&
-      typeof value.arrayBuffer === "function" &&
-      typeof value.name === "string",
-  );
-}
-
-function isUploadedApkFile(file) {
-  const fileName = file.name?.toLowerCase() || "";
-  const mimeType = file.type?.toLowerCase() || "";
-  return hasAndroidPackageExtension(fileName) || mimeType.includes("android.package-archive");
-}
-
 function hasAndroidPackageExtension(fileName) {
   return ANDROID_PACKAGE_EXTENSIONS.some((extension) => fileName.endsWith(extension));
-}
-
-function buildWebUploadMessage(locale) {
-  return {
-    chat: {
-      type: "web_upload",
-    },
-    from: {
-      language_code: locale,
-    },
-  };
 }
 
 function buildUrlPreviewMessage(message) {
@@ -1905,14 +1508,6 @@ function buildUrlPreviewMessage(message) {
       ...message.chat,
       type: "url_preview",
     },
-  };
-}
-
-function buildUploadDocument(file) {
-  return {
-    file_name: file.name || "upload.apk",
-    file_size: file.size || 0,
-    mime_type: file.type || "application/vnd.android.package-archive",
   };
 }
 
@@ -1965,23 +1560,6 @@ function loadReportStoreModule() {
   }
 
   return reportStoreModulePromise;
-}
-
-function loadUploadViewModule() {
-  if (!uploadViewModulePromise) {
-    uploadViewModulePromise = import("./upload-view.js")
-      .catch((error) => {
-        uploadViewModulePromise = null;
-        throw error;
-      });
-  }
-
-  return uploadViewModulePromise;
-}
-
-async function renderUploadResponse(options, status = 200) {
-  const { htmlResponse, renderUploadPage } = await loadUploadViewModule();
-  return htmlResponse(renderUploadPage(options), status);
 }
 
 async function buildApkReport(
@@ -2051,19 +1629,16 @@ function buildLinkReplyMarkup(chat, url, buttonText) {
   };
 }
 
-function buildUploadUrl(publicBaseUrl, locale) {
+function buildWebUiUploadUrl(env, publicBaseUrl, locale) {
+  const webUiBaseUrl = resolveWebUiBaseUrl(env) || publicBaseUrl;
   const searchParams = new URLSearchParams({
     lang: locale,
   });
-  return `${publicBaseUrl}/upload?${searchParams.toString()}`;
+  return `${webUiBaseUrl}/?${searchParams.toString()}`;
 }
 
 function describeMessageSource(message, locale) {
   const { t } = createI18n(locale);
-  if (message.chat?.type === "web_upload") {
-    return t("bot.source_web_upload");
-  }
-
   if (message.chat?.type === "url_preview") {
     return t("bot.source_link_preview");
   }
@@ -2103,35 +1678,6 @@ function formatBytes(bytes) {
 
   const precision = value >= 10 || index === 0 ? 0 : 1;
   return `${value.toFixed(precision)} ${units[index]}`;
-}
-
-async function downloadTelegramFile(env, fileId, locale = undefined) {
-  const startedAt = Date.now();
-  const file = await telegramApi(env, "getFile", { file_id: fileId }, locale);
-  if (!file?.file_path) {
-    const { t } = createI18n(locale);
-    throw new Error(t("errors.telegram_missing_file_path"));
-  }
-
-  const response = await fetch(`${TELEGRAM_API_BASE}/file/bot${env.BOT_TOKEN}/${file.file_path}`);
-  if (!response.ok) {
-    logErrorEvent(env, { surface: "worker", route: "telegram_file" }, "telegram.file_download.failed", {
-      http_status: response.status,
-      result: "error",
-      duration_ms: Date.now() - startedAt,
-    });
-    const { t } = createI18n(locale);
-    throw new Error(t("errors.telegram_file_download_failed", { status: response.status }));
-  }
-
-  const buffer = await response.arrayBuffer();
-  logInfoEvent(env, { surface: "worker", route: "telegram_file" }, "telegram.file_download.succeeded", {
-    result: "success",
-    duration_ms: Date.now() - startedAt,
-    downloaded_bytes: buffer.byteLength || 0,
-    http_status: response.status,
-  });
-  return buffer;
 }
 
 async function sendText(env, chatId, text, replyToMessageId, replyMarkup = undefined) {

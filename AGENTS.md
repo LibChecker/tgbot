@@ -18,7 +18,7 @@ and recurring pitfalls only.
 
 | Area | Path | Runtime | What it owns |
 | --- | --- | --- | --- |
-| Telegram bot / Worker | `packages/bot-worker/` | Cloudflare Workers + Hono | Telegram webhook, APK URL preview, upload page, report data, admin APIs, observability. |
+| Telegram bot / Worker | `packages/bot-worker/` | Cloudflare Workers + Hono | Telegram webhook, APK URL preview, WebUI upload guidance, report data, admin APIs, observability. |
 | Browser Web UI | `packages/apk-webui/` | Cloudflare Pages + Vite | Browser-first APK analyzer UI, local Web Worker analysis, history, compare, report rendering, Pages Functions. |
 | Shared analyzer | `packages/shared/` | Worker + browser | APK parsing, signatures, SDK marker matching, shared contracts, i18n runtime, generated rule/icon/catalog bundles. |
 | Translations | `locales/` | Shared | Source-of-truth locale JSON for both bot and Web UI. |
@@ -28,7 +28,6 @@ and recurring pitfalls only.
 
 - Worker entry and Telegram flow: `packages/bot-worker/src/index.js`
 - APK link preview/range parsing: `packages/bot-worker/src/apk-url-preview.js`
-- Worker upload page: `packages/bot-worker/src/upload-view.js`
 - Worker R2 report storage: `packages/bot-worker/src/report-store.js`
 - Web UI shell: `packages/apk-webui/src/index.html`
 - Web UI controller: `packages/apk-webui/src/app.js`
@@ -126,7 +125,8 @@ and recurring pitfalls only.
   `packages/bot-worker/src/index.js`, use `context.env` and
   `context.executionCtx`, and leave heavy logic in existing modules/functions.
 - Keep remote APK URL/range preview logic in `apk-url-preview.js`.
-- Keep Worker HTML rendering in `upload-view.js`.
+- Bot-side APK file uploads should guide users to the Web UI; local file
+  analysis belongs in the browser worker.
 - Store bot report data through `report-store.js`; keep the Web UI-facing data
   shape validated with shared contracts.
 - Use `observability.js` helpers for structured logs and Analytics Engine

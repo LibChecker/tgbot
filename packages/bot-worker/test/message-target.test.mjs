@@ -19,7 +19,7 @@ const apkDocument = {
   mime_type: "application/vnd.android.package-archive",
 };
 
-test("private chats auto-analyze direct APK documents", () => {
+test("private chats guide direct APK documents to WebUI upload", () => {
   const message = {
     chat: { id: 1, type: "private" },
     document: apkDocument,
@@ -28,7 +28,7 @@ test("private chats auto-analyze direct APK documents", () => {
   assert.equal(selectTargetDocument(message, null, false, false), apkDocument);
 });
 
-test("group chats ignore APK documents unless the bot is explicitly targeted", () => {
+test("group chats ignore APK documents unless WebUI upload guidance is targeted", () => {
   const message = {
     chat: { id: -1, type: "supergroup" },
     document: apkDocument,
@@ -105,6 +105,26 @@ test("report URLs fall back to Worker report data when WebUI is not configured",
   assert.equal(url.pathname, "/report-data");
   assert.equal(url.searchParams.get("ref"), sampleReportRef);
   assert.equal(url.searchParams.get("lang"), "zh-Hans");
+});
+
+test("upload route redirects to the configured WebUI upload entry", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const response = await app.request("https://worker.example.com/upload?lang=zh-Hans", {
+      method: "POST",
+    }, {
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+    const url = new URL(response.headers.get("location"));
+
+    assert.equal(response.status, 303);
+    assert.equal(url.origin, "https://webui.example.com");
+    assert.equal(url.pathname, "/");
+    assert.equal(url.searchParams.get("lang"), "zh-Hans");
+  } finally {
+    console.log = originalLog;
+  }
 });
 
 test("SDK marker summary lists bounded markers with icons and overflow", () => {
