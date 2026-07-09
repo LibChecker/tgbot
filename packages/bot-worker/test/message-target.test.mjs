@@ -11,6 +11,7 @@ const {
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
+  shouldUseWebUiUploadGuide,
 } = __botWorkerTestInternals;
 
 const apkDocument = {
@@ -19,7 +20,7 @@ const apkDocument = {
   mime_type: "application/vnd.android.package-archive",
 };
 
-test("private chats guide direct APK documents to WebUI upload", () => {
+test("private chats select direct APK documents for handling", () => {
   const message = {
     chat: { id: 1, type: "private" },
     document: apkDocument,
@@ -28,7 +29,33 @@ test("private chats guide direct APK documents to WebUI upload", () => {
   assert.equal(selectTargetDocument(message, null, false, false), apkDocument);
 });
 
-test("group chats ignore APK documents unless WebUI upload guidance is targeted", () => {
+test("Telegram APK documents up to the Bot API limit stay on bot analysis", () => {
+  const telegramBotApiLimitBytes = 20 * 1024 * 1024;
+
+  assert.equal(
+    shouldUseWebUiUploadGuide({ ...apkDocument, file_size: telegramBotApiLimitBytes }),
+    false,
+  );
+  assert.equal(
+    shouldUseWebUiUploadGuide({ ...apkDocument, file_size: 1 }),
+    false,
+  );
+  assert.equal(
+    shouldUseWebUiUploadGuide({ ...apkDocument }),
+    false,
+  );
+});
+
+test("Telegram APK documents over the Bot API limit use WebUI upload guidance", () => {
+  const telegramBotApiLimitBytes = 20 * 1024 * 1024;
+
+  assert.equal(
+    shouldUseWebUiUploadGuide({ ...apkDocument, file_size: telegramBotApiLimitBytes + 1 }),
+    true,
+  );
+});
+
+test("group chats ignore APK documents unless the bot is explicitly targeted", () => {
   const message = {
     chat: { id: -1, type: "supergroup" },
     document: apkDocument,

@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
@@ -14,6 +15,7 @@ import {
 import { createSdkMarkerAnnotator } from "../../shared/src/sdk-markers.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
+const MAX_TELEGRAM_APK_BYTES = 20 * 1024 * 1024;
 const MAX_REPORT_PUBLISH_BODY_BYTES = 4 * 1024 * 1024;
 const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
 const JSON_CONTENT_HEADERS = {
@@ -634,7 +636,12 @@ async function handleUpdate(update, env, requestOrigin, telemetry) {
     { analytics: false },
   );
 
-  await sendWebUiUploadGuide(env, message, targetDocument, requestOrigin, updateTelemetry, locale);
+  if (shouldUseWebUiUploadGuide(targetDocument)) {
+    await sendWebUiUploadGuide(env, message, targetDocument, requestOrigin, updateTelemetry, locale);
+    return;
+  }
+
+  await analyzeApkDocument(env, message, targetDocument, requestOrigin, updateTelemetry, locale);
 }
 
 function getTelegramMessage(update) {
@@ -943,6 +950,158 @@ async function sendWebUiUploadGuide(env, message, document, requestOrigin, telem
     message.message_id,
     buildLinkReplyMarkup(message.chat, uploadUrl, t("bot.open_upload_page")),
   );
+}
+
+async function analyzeApkDocument(env, message, document, requestOrigin, telemetry, locale) {
+  const startedAt = Date.now();
+  const { t } = createI18n(locale);
+  const publicBaseUrl = resolvePublicBaseUrl(env, requestOrigin);
+
+  if (supportsChatAction(message.chat?.type)) {
+    await sendChatAction(env, message.chat.id, "typing");
+  }
+
+  logInfoEvent(
+    env,
+    telemetry,
+    "apk.analysis.started",
+    {
+      result: "started",
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+    },
+  );
+
+  try {
+    const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
+    const reportStoreModuleTask = loadReportStoreModule();
+    let stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.analysis.file_download.started", {
+      result: "started",
+      analysis_stage: "telegram_file_download",
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+    }, { analytics: false });
+    const apkBuffer = await downloadTelegramFile(env, document.file_id, locale);
+    logInfoEvent(env, telemetry, "apk.analysis.file_download.succeeded", {
+      result: "success",
+      analysis_stage: "telegram_file_download",
+      duration_ms: Date.now() - stageStartedAt,
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      downloaded_bytes: apkBuffer.byteLength || 0,
+    }, { analytics: false });
+
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.analysis.parse.started", {
+      result: "started",
+      analysis_stage: "apk_parse",
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+    }, { analytics: false });
+    const apkInfo = await readAndroidPackageInfo(apkBuffer);
+    logInfoEvent(env, telemetry, "apk.analysis.parse.succeeded", {
+      result: "success",
+      analysis_stage: "apk_parse",
+      duration_ms: Date.now() - stageStartedAt,
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      package_name: apkInfo.packageName,
+      version_name: apkInfo.versionName,
+      permissions_count: apkInfo.permissions.length,
+      native_library_count: apkInfo.nativeLibraries.length,
+      component_count: countComponents(apkInfo.components),
+      meta_data_count: countMetaData(apkInfo.metaData),
+      has_app_icon: Boolean(apkInfo.icon?.dataUri),
+      app_icon_path: apkInfo.icon?.path || null,
+      ...getArchiveTelemetryFields(apkInfo),
+    }, { analytics: false });
+
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.analysis.report_build.started", {
+      result: "started",
+      analysis_stage: "report_build",
+      package_name: apkInfo.packageName,
+    }, { analytics: false });
+    const report = await buildApkReport(
+      message,
+      document,
+      apkInfo,
+      publicBaseUrl,
+      locale,
+      sdkRuleAnnotatorTask,
+    );
+    logInfoEvent(env, telemetry, "apk.analysis.report_build.succeeded", {
+      result: "success",
+      analysis_stage: "report_build",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: report.apkInfo.packageName,
+      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+    }, { analytics: false });
+
+    const { createApkReportDataEntry } = await reportStoreModuleTask;
+    stageStartedAt = Date.now();
+    logInfoEvent(env, telemetry, "apk.analysis.report_store.started", {
+      result: "started",
+      analysis_stage: "report_store",
+      package_name: report.apkInfo.packageName,
+    }, { analytics: false });
+    const reportEntry = await createApkReportDataEntry(env, report);
+    logInfoEvent(env, telemetry, "apk.analysis.report_store.succeeded", {
+      result: "success",
+      analysis_stage: "report_store",
+      duration_ms: Date.now() - stageStartedAt,
+      package_name: report.apkInfo.packageName,
+      report_ref: reportEntry.ref,
+    }, { analytics: false });
+    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, reportEntry.ref, locale);
+
+    logInfoEvent(env, telemetry, "apk.analysis.succeeded", {
+      result: "success",
+      duration_ms: Date.now() - startedAt,
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      package_name: report.apkInfo.packageName,
+      version_name: report.apkInfo.versionName,
+      permissions_count: report.apkInfo.permissions.length,
+      native_library_count: report.apkInfo.nativeLibraries.length,
+      component_count: countComponents(report.apkInfo.components),
+      meta_data_count: countMetaData(report.apkInfo.metaData),
+      sdk_native_match_count: report.apkInfo.sdkSummary?.native.length || 0,
+      sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
+      has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
+      app_icon_path: report.apkInfo.icon?.path || null,
+      report_ref: reportEntry.ref,
+      source_label: report.sourceLabel,
+      ...getArchiveTelemetryFields(report.apkInfo),
+    });
+
+    const sdkCustomEmojiIds = await loadSdkCustomEmojiIds(env);
+    await sendText(
+      env,
+      message.chat.id,
+      formatApkSummary(report, sdkCustomEmojiIds),
+      message.message_id,
+      buildReportReplyMarkup(message.chat, reportUrl, t("bot.open_full_report")),
+    );
+  } catch (error) {
+    logErrorEvent(env, telemetry, "apk.analysis.failed", {
+      result: "error",
+      duration_ms: Date.now() - startedAt,
+      file_name: document.file_name || null,
+      file_size_bytes: document.file_size || 0,
+      ...getErrorTelemetryFields(error),
+    });
+    await sendText(
+      env,
+      message.chat.id,
+      t("bot.parse_failed", {
+        message: escapeHtml(getLocalizedErrorMessage(error, locale)),
+      }),
+      message.message_id,
+    );
+  }
 }
 
 async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, locale) {
@@ -1502,6 +1661,10 @@ function isApkDocument(document) {
   return hasAndroidPackageExtension(fileName) || mimeType.includes("android.package-archive");
 }
 
+function shouldUseWebUiUploadGuide(document) {
+  return (document?.file_size || 0) > MAX_TELEGRAM_APK_BYTES;
+}
+
 function isPrivateChat(chat) {
   return chat?.type === "private";
 }
@@ -1719,6 +1882,35 @@ function formatBytes(bytes) {
 
   const precision = value >= 10 || index === 0 ? 0 : 1;
   return `${value.toFixed(precision)} ${units[index]}`;
+}
+
+async function downloadTelegramFile(env, fileId, locale = undefined) {
+  const startedAt = Date.now();
+  const file = await telegramApi(env, "getFile", { file_id: fileId }, locale);
+  if (!file?.file_path) {
+    const { t } = createI18n(locale);
+    throw new Error(t("errors.telegram_missing_file_path"));
+  }
+
+  const response = await fetch(`${TELEGRAM_API_BASE}/file/bot${env.BOT_TOKEN}/${file.file_path}`);
+  if (!response.ok) {
+    logErrorEvent(env, { surface: "worker", route: "telegram_file" }, "telegram.file_download.failed", {
+      http_status: response.status,
+      result: "error",
+      duration_ms: Date.now() - startedAt,
+    });
+    const { t } = createI18n(locale);
+    throw new Error(t("errors.telegram_file_download_failed", { status: response.status }));
+  }
+
+  const buffer = await response.arrayBuffer();
+  logInfoEvent(env, { surface: "worker", route: "telegram_file" }, "telegram.file_download.succeeded", {
+    result: "success",
+    duration_ms: Date.now() - startedAt,
+    downloaded_bytes: buffer.byteLength || 0,
+    http_status: response.status,
+  });
+  return buffer;
 }
 
 async function sendText(env, chatId, text, replyToMessageId, replyMarkup = undefined) {
@@ -2201,4 +2393,5 @@ export const __botWorkerTestInternals = {
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
+  shouldUseWebUiUploadGuide,
 };
