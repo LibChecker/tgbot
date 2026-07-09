@@ -1252,6 +1252,7 @@ renderHistoryList();
 updateHistoryCollapse();
 updateAppMode();
 bindEvents();
+syncMobileBottomControls();
 initColorOrbBackground();
 initWebAnalytics(() => ({
   locale: state.locale,
@@ -1307,6 +1308,7 @@ function bindEvents() {
     updateTabIndicator();
     scheduleTopbarReportIdentityCheck();
   });
+  mobileTopbarMedia.addEventListener("change", syncMobileBottomControls);
   window.addEventListener("scroll", scheduleTopbarReportIdentityCheck, { passive: true });
   window.addEventListener("pagehide", flushScheduledHistoryReports);
 
@@ -1524,6 +1526,42 @@ function bindEvents() {
       operation: state.activeNativeAbi,
     });
   });
+}
+
+function syncMobileBottomControls() {
+  const bottomControls = elements.mobileBottomControls;
+  const topbarActions = elements.topbarActions;
+  if (!bottomControls || !topbarActions) {
+    return;
+  }
+
+  const useBottomControls = mobileTopbarMedia.matches;
+  const target = useBottomControls ? bottomControls : topbarActions;
+  if (useBottomControls) {
+    bottomControls.hidden = false;
+  }
+
+  for (const node of getMobileBottomControlNodes()) {
+    if (node.parentElement !== target) {
+      target.append(node);
+    }
+  }
+
+  if (!useBottomControls) {
+    bottomControls.hidden = true;
+  }
+  topbarActions.scrollLeft = 0;
+  updateModeIndicator();
+  updateThemeIndicator();
+  scheduleTopbarReportIdentityCheck();
+}
+
+function getMobileBottomControlNodes() {
+  return [
+    elements.themeChipGroup,
+    elements.languageSelect?.closest(".select-control"),
+    elements.topbarGithubLink,
+  ].filter(Boolean);
 }
 
 function handleModeChipGroupClick(event) {
@@ -2136,6 +2174,10 @@ function maybeStartSegmentDrag(event, dragState, group, options = {}) {
     return false;
   }
 
+  if (isMobileTopbarSegmentPointer(event)) {
+    return false;
+  }
+
   const dragThreshold = isMobileTopbarSegmentPointer(event)
     ? SEGMENT_TOUCH_DRAG_START_THRESHOLD_PX
     : SEGMENT_DRAG_START_THRESHOLD_PX;
@@ -2160,15 +2202,13 @@ function captureSegmentPointer(group, event) {
 }
 
 function shouldStartTopbarSegmentScroll(event, dragState, absDeltaX) {
-  return !dragState.startedOnActiveSegment &&
-    absDeltaX >= TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX &&
+  return absDeltaX >= TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX &&
     isMobileTopbarSegmentPointer(event) &&
     isScrollableTopbarActions(elements.topbarActions);
 }
 
 function shouldStartSegmentScroll(event, dragState, absDeltaX, scroller) {
-  return !dragState.startedOnActiveSegment &&
-    absDeltaX >= TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX &&
+  return absDeltaX >= TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX &&
     isMobileTopbarSegmentPointer(event) &&
     isScrollableTopbarActions(scroller);
 }

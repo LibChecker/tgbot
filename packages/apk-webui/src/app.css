@@ -168,6 +168,10 @@
   corner-shape: var(--corner-curve);
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   width: 100%;
@@ -2102,14 +2106,6 @@ svg {
   background: transparent;
 }
 
-.progress[hidden],
-.alert[hidden],
-.result-view[hidden],
-.compare-view[hidden],
-.compare-warning[hidden] {
-  display: none;
-}
-
 .progress-header {
   display: flex;
   align-items: center;
@@ -2209,10 +2205,6 @@ svg {
   min-height: 220px;
   padding: clamp(24px, 5vw, 44px);
   text-align: left;
-}
-
-.empty-state[hidden] {
-  display: none;
 }
 
 .empty-state-icon {
@@ -3852,10 +3844,6 @@ svg {
   pointer-events: auto;
 }
 
-.lcapps-picker[hidden] {
-  display: none;
-}
-
 .lcapps-picker__panel {
   --liquid-glass-x: 62%;
   --liquid-glass-y: 16%;
@@ -3978,10 +3966,6 @@ svg {
 
 .lcapps-picker__status {
   display: grid;
-}
-
-.lcapps-picker__status[hidden] {
-  display: none;
 }
 
 .lcapps-status-card {
@@ -4109,6 +4093,15 @@ svg {
   text-decoration: underline;
   text-underline-offset: 3px;
   outline: none;
+}
+
+.mobile-bottom-controls {
+  display: flex;
+  flex: 1 0 100%;
+  flex-flow: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .lcapps-app-package {
@@ -4530,64 +4523,37 @@ svg {
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 700px) {
+  .topbar {
+    padding:
+      max(8px, env(safe-area-inset-top))
+      8px;
+  }
+
   .brand {
-    max-width: min(32vw, 136px);
-    --brand-title-max-width: clamp(72px, 18vw, 96px);
+    flex: 1 1 auto;
+    max-width: none;
+    margin-right: 0;
+    --brand-title-max-width: min(47vw, 190px);
+  }
+
+  .topbar-actions {
+    flex: 0 0 auto;
+    overflow: visible;
+    padding: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .topbar-actions > :not(.mode-chip-group) {
+    display: none;
   }
 }
 
 @media (max-width: 480px) {
-  :root {
-    --topbar-height: 52px;
-  }
-
-  .brand-mark {
-    flex-basis: 26px;
-    width: 26px;
-    height: 26px;
-  }
-
-  .brand-orb {
-    width: 26px;
-    height: 26px;
-  }
-
-  .brand-orb__icon,
-  .brand-orb__gloss {
-    width: 24px;
-    height: 24px;
-  }
-
-  .brand-title {
-    font-size: 14px;
-  }
-
-  .select-control {
-    width: auto;
-  }
-
   .select-control select {
-    width: auto;
     min-width: 118px;
     padding-right: 30px;
-  }
-
-  .theme-chip-group {
-    width: auto;
-  }
-
-  .mode-chip-group {
-    flex: 0 0 auto;
-    width: auto;
-  }
-
-  .mode-chip {
-    flex: 1 1 0;
-  }
-
-  .theme-chip {
-    flex: 1 1 0;
   }
 
   .drop-zone {
