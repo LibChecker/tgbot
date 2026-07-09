@@ -122,6 +122,7 @@ export function createRuntimeState() {
     runtimeLogStylesPromise: null,
     reportShareModalPromise: null,
     reportShareModalModule: null,
+    backgroundEffectsPromise: null,
     lcappsBubbleStylesPromise: null,
     analyzePanelHeightAnimation: null,
     modeIndicatorFrame: 0,
