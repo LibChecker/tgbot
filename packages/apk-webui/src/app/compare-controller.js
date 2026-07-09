@@ -1,3 +1,6 @@
+import "../report.css";
+import "../compare.css";
+
 import { escapeAttr, escapeHtml } from "./html.js";
 import { clamp } from "./math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./format.js";

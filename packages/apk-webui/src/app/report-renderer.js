@@ -1,3 +1,5 @@
+import "../report.css";
+
 import { escapeAttr, escapeHtml } from "./html.js";
 import { formatBytes, formatResourceId, getInitial, sanitizeFilePart, sanitizeImageSrc, stripDataUris } from "./format.js";
 import {
