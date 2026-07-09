@@ -236,6 +236,15 @@
   .report-share-modal:not([hidden]) .report-share-panel {
     animation: report-share-sheet 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
+
+  .report-share-modal.is-closing {
+    pointer-events: none;
+    animation: report-share-fade-out 140ms ease-in forwards;
+  }
+
+  .report-share-modal.is-closing .report-share-panel {
+    animation: report-share-sheet-out 180ms cubic-bezier(0.64, 0, 0.78, 0) forwards;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -252,6 +261,19 @@
 
 @keyframes report-share-sheet {
   from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@keyframes report-share-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes report-share-sheet-out {
+  to {
     opacity: 0;
     transform: translateY(8px) scale(0.985);
   }

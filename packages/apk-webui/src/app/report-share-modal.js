@@ -48,6 +48,11 @@ export function openReportShareModal({ state, elements, t, onClose, onControlsCh
       onControlsChange,
     }),
   }));
+  if (elements.reportShareCloseTimer) {
+    window.clearTimeout(elements.reportShareCloseTimer);
+    elements.reportShareCloseTimer = 0;
+  }
+  elements.reportShareModal.classList.remove("is-closing");
   elements.reportShareModal.hidden = false;
   renderReportShareModal({ state, elements, t });
   window.setTimeout(() => {
@@ -129,11 +134,16 @@ export function ensureReportShareModalElements({ root = document.body, t, onClos
   };
 
   if (modal.dataset.reportShareBound !== "true") {
+    let pointerStartedOnBackdrop = false;
     refs.reportShareClose?.addEventListener("click", onClose);
+    refs.reportShareModal?.addEventListener("pointerdown", (event) => {
+      pointerStartedOnBackdrop = event.target === refs.reportShareModal;
+    });
     refs.reportShareModal?.addEventListener("click", (event) => {
-      if (event.target === refs.reportShareModal) {
+      if (shouldCloseReportShareModalOnBackdropClick(event, refs.reportShareModal, pointerStartedOnBackdrop)) {
         onClose();
       }
+      pointerStartedOnBackdrop = false;
     });
     refs.reportShareBody?.addEventListener("click", onActionClick);
     modal.dataset.reportShareBound = "true";
@@ -141,6 +151,10 @@ export function ensureReportShareModalElements({ root = document.body, t, onClos
 
   updateReportShareModalChrome(refs, t);
   return refs;
+}
+
+export function shouldCloseReportShareModalOnBackdropClick(event, modal, pointerStartedOnBackdrop) {
+  return pointerStartedOnBackdrop && event.target === modal;
 }
 
 export function updateReportShareModalChrome(elements, t) {

@@ -67,6 +67,7 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
   report_build: "progressReportBuild",
 });
 const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
+const REPORT_SHARE_MODAL_CLOSE_ANIMATION_MS = 180;
 const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
 const MAX_RUNTIME_LOGS = 200;
@@ -3507,8 +3508,28 @@ async function loadReportShareModalModule() {
 
 function closeReportShareModal(options = {}) {
   state.reportShareModalOpen = false;
-  if (elements.reportShareModal) {
-    elements.reportShareModal.hidden = true;
+  const modal = elements.reportShareModal;
+  if (modal) {
+    if (elements.reportShareCloseTimer) {
+      window.clearTimeout(elements.reportShareCloseTimer);
+      elements.reportShareCloseTimer = 0;
+    }
+    const shouldAnimate = options.animate !== false
+      && !modal.hidden
+      && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (shouldAnimate) {
+      modal.classList.add("is-closing");
+      elements.reportShareCloseTimer = window.setTimeout(() => {
+        if (!state.reportShareModalOpen) {
+          modal.hidden = true;
+        }
+        modal.classList.remove("is-closing");
+        elements.reportShareCloseTimer = 0;
+      }, REPORT_SHARE_MODAL_CLOSE_ANIMATION_MS);
+    } else {
+      modal.hidden = true;
+      modal.classList.remove("is-closing");
+    }
   }
   if (options.restoreFocus !== false) {
     elements.reportShareButton?.focus();
