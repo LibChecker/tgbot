@@ -8,6 +8,7 @@ test("APK report view model keeps shared report sections aligned", () => {
     locale: "en",
     fileName: "sample.apk",
     fileSizeBytes: 2048,
+    sourceUrl: "https://example.com/sample.apk",
     analyzedAt: "2026-07-08T00:00:00.000Z",
     durationMs: 1200,
     terminalSystem: { name: "macOS", version: "15", source: "navigator" },
@@ -23,6 +24,7 @@ test("APK report view model keeps shared report sections aligned", () => {
         kotlinDetected: true,
         kotlinVersion: "2.0",
         agpVersion: "8.7",
+        appMetadataVersion: "1.0",
       },
       permissions: ["z.permission", "a.permission"],
       nativeLibraries: [
@@ -63,6 +65,9 @@ test("APK report view model keeps shared report sections aligned", () => {
   assert.deepEqual(model.summary.features.map((item) => item.text), ["Kotlin 2.0", "AGP 8.7"]);
   assert.equal(model.summary.rows.find((row) => row.key === "versionName")?.label, "Version Name");
   assert.equal(model.summary.rows.find((row) => row.key === "versionCode")?.label, "Version Code");
+  const fileNameRowIndex = model.summary.rows.findIndex((row) => row.key === "fileName");
+  assert.equal(model.summary.rows[fileNameRowIndex + 1]?.key, "downloadUrl");
+  assert.equal(model.summary.rows[fileNameRowIndex + 1]?.value, "https://example.com/sample.apk");
   assert.equal(model.summary.sdkPreview[0].label, "SDK A");
   assert.equal(model.native.groups[0].abi, "arm64-v8a");
   const signatureRows = model.signatures.certificates[0].rows;

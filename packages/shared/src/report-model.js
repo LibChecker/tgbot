@@ -72,6 +72,7 @@ export function buildApkReportViewModel(report, options = {}) {
         row("minSdk", labels.minSdk || "Min SDK", info.minSdk),
         row("compileSdk", labels.compileSdk || "Compile SDK", info.compileSdk),
         row("fileName", labels.fileName || "File Name", report?.fileName),
+        row("downloadUrl", labels.downloadUrl || "Download Link", report?.sourceUrl),
         row("fileSize", labels.fileSize || "File Size", fileSize),
         row("source", labels.source || "Source", report?.sourceLabel),
         row("analyzedAt", labels.analyzedAt || "Analyzed At", report?.analyzedAt ? formatDate(report.analyzedAt) : ""),
@@ -145,14 +146,6 @@ export function getBuildFeatureItems(buildFeatures = {}, labels = {}) {
   }
   if (buildFeatures.agpVersion) {
     items.push(featureItem("agp", labels.agp || "AGP", buildFeatures.agpVersion, detected));
-  }
-  if (buildFeatures.appMetadataVersion) {
-    items.push(featureItem(
-      "appMetadataVersion",
-      labels.appMetadataVersion || "App Metadata",
-      buildFeatures.appMetadataVersion,
-      detected,
-    ));
   }
 
   return items;

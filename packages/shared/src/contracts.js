@@ -212,6 +212,8 @@
  * @property {number} durationMs
  * @property {string} fileName
  * @property {number} fileSizeBytes
+ * @property {string=} sourceUrl
+ * @property {string=} sourceLabel
  * @property {string} analyzedAt
  * @property {ApkInfo} apkInfo
  */

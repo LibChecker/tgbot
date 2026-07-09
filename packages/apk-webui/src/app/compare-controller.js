@@ -843,12 +843,6 @@ export class CompareController {
         pairValue: features.agpVersion,
       }));
     }
-    if (features.appMetadataVersion) {
-      items.push(compareItem(`app-metadata:${features.appMetadataVersion}`, `App Metadata ${features.appMetadataVersion}`, "", {
-        identityKey: "app-metadata",
-        pairValue: features.appMetadataVersion,
-      }));
-    }
     return items;
   }
 

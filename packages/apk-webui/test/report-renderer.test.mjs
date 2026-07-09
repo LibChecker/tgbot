@@ -63,7 +63,56 @@ test("report renderer caps long native library groups", () => {
   assert.doesNotMatch(html, /libsample123\.so/);
 });
 
-function setupRenderer(activeTab) {
+test("report renderer adds build feature icons and hides app metadata", () => {
+  setupRenderer("summary", {
+    renderSdkIcon: (src, label, singleColorIcon = false) => src
+      ? `<i class="feature-icon-test" data-label="${label}" data-src="${src}" data-mono="${String(singleColorIcon)}">${label}</i>`
+      : "",
+  });
+  const report = createReport({
+    buildFeatures: {
+      kotlinDetected: true,
+      kotlinVersion: "2.0",
+      agpVersion: "8.7",
+      appMetadataVersion: "1.0",
+    },
+  });
+  report.featureIcons = {
+    kotlin: "data:image/svg+xml;charset=UTF-8,kotlin",
+    gradle: "data:image/svg+xml;charset=UTF-8,gradle",
+  };
+  const html = reportRenderer.renderTabPanelHtml(report);
+
+  assert.match(html, /feature-icon-test/);
+  assert.match(html, /Kotlin 2\.0/);
+  assert.match(html, /data-label="AGP" data-src="data:image\/svg\+xml;charset=UTF-8,gradle" data-mono="true"/);
+  assert.doesNotMatch(html, /App Metadata/);
+});
+
+test("report renderer shows download URL below file name", () => {
+  setupRenderer("summary");
+  const report = createReport();
+  report.sourceUrl = "https://example.com/app.apk?channel=stable";
+  const html = reportRenderer.renderTabPanelHtml(report);
+
+  assert.match(html, /File Name[\s\S]*sample\.apk[\s\S]*Download Link[\s\S]*https:\/\/example\.com\/app\.apk\?channel=stable[\s\S]*File Size/);
+});
+
+test("report hero labels only local reports as local files", () => {
+  setupRenderer("summary");
+  const localReport = createReport();
+  assert.match(reportRenderer.renderHero(localReport), /Local file/);
+
+  const urlReport = createReport();
+  urlReport.sourceUrl = "https://example.com/app.apk";
+  assert.doesNotMatch(reportRenderer.renderHero(urlReport), /Local file/);
+
+  const legacyUrlReport = createReport();
+  legacyUrlReport.terminalSystem = { name: "Cloudflare Pages", version: "", source: "webui-link" };
+  assert.doesNotMatch(reportRenderer.renderHero(legacyUrlReport), /Local file/);
+});
+
+function setupRenderer(activeTab, sdkIconRendererOverrides = {}) {
   reportRenderer.configureReportRenderer({
     runtime: {
       sdkIconRendererModule: {
@@ -71,6 +120,7 @@ function setupRenderer(activeTab) {
         renderSdkIcon: () => "",
         renderSdkInline: () => "",
         renderSdkRuleLabel: (sdk, unknownLabel) => sdk?.label || unknownLabel,
+        ...sdkIconRendererOverrides,
       },
     },
     state: {
@@ -142,8 +192,10 @@ const LABELS = {
   components: "Components",
   duration: "Duration",
   fileName: "File Name",
+  downloadUrl: "Download Link",
   fileSize: "File Size",
   metaData: "Meta-Data",
+  localFile: "Local file",
   minSdk: "Min SDK",
   nativeLibraries: "Native Libraries",
   noComponents: "No components",

@@ -3313,9 +3313,19 @@ svg {
 }
 
 .feature-pill {
-  min-height: 36px;
-  padding: 0.4rem 0.72rem;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 0.82rem;
+  border-radius: 999px;
+  corner-shape: round;
   font-weight: 600;
+  line-height: 1;
+}
+
+.feature-pill .sdk-icon {
+  flex-basis: 20px;
+  width: 20px;
+  height: 20px;
 }
 
 .code-chip {

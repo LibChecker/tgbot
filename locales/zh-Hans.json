@@ -171,6 +171,7 @@
     "heroVersionName": "版本名称",
     "heroVersionCode": "版本号",
     "fileName": "文件名",
+    "downloadUrl": "下载链接",
     "fileSize": "文件大小",
     "analyzedAt": "分析时间",
     "duration": "耗时",

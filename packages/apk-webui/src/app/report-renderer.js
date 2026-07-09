@@ -93,19 +93,26 @@ export function renderTabPanelHtml(report) {
 export { renderArchiveDistribution, renderHero };
 function renderHero(report) {
   const info = report.apkInfo;
+  const localFileMeta = isLocalFileReport(report)
+    ? [`<div class="hero-meta">`, chip(t("localFile"), { appData: false }), `</div>`].join("")
+    : "";
   return [
     renderAppIcon(info),
     `<div class="hero-copy">`,
     renderAppTitle(info.appName || t("unknown")),
-    `<div class="hero-meta">`,
-    chip(info.packageName || t("unknown")),
-    chip(`${t("heroVersionName")}: ${info.versionName || t("unknown")}`),
-    chip(`${t("heroVersionCode")}: ${info.versionCode || t("unknown")}`),
-    chip(`${t("targetSdk")}: ${info.targetSdk || t("unknown")}`),
-    chip(t("localFile"), { appData: false }),
-    `</div>`,
+    localFileMeta,
     `</div>`,
   ].join("");
+}
+
+function isLocalFileReport(report) {
+  if (report?.sourceUrl || report?.sourceLabel) {
+    return false;
+  }
+  if (report?.terminalSystem?.source === "webui-link") {
+    return false;
+  }
+  return report?.analysisProfile?.id !== "webui-http-range-apk-analyzer";
 }
 
 function renderArchiveDistribution(report) {
@@ -301,7 +308,7 @@ function formatSvgNumber(value) {
 
 function renderSummaryTab(report) {
   const model = buildWebReportViewModel(report);
-  const featureHtml = renderFeaturePills(model.summary.features);
+  const featureHtml = renderFeaturePills(model.summary.features, report.featureIcons);
 
   return sectionStack([
     `<section class="summary-grid">`,
@@ -640,12 +647,16 @@ function joinTextParts(parts) {
   return values.join(" · ");
 }
 
-function renderFeaturePills(features = []) {
+function renderFeaturePills(features = [], featureIcons = {}) {
   if (!features.length) {
     return "";
   }
 
-  return `<div class="feature-grid">${features.map((item) => `<span class="feature-pill app-data-text">${escapeHtml(item.text)}</span>`).join("")}</div>`;
+  return `<div class="feature-grid">${features.map((item) => {
+    const iconSrc = featureIcons?.[item.key] || (item.key === "agp" ? featureIcons?.gradle : "");
+    const icon = renderSdkIcon(iconSrc, item.name, item.key === "agp" || item.key === "gradle");
+    return `<span class="feature-pill app-data-text">${icon}<span>${escapeHtml(item.text)}</span></span>`;
+  }).join("")}</div>`;
 }
 
 function renderSdkChip(sdk) {
@@ -816,6 +827,7 @@ function getReportModelLabels() {
     components: t("components"),
     duration: t("duration"),
     fileName: t("fileName"),
+    downloadUrl: t("downloadUrl"),
     fileSize: t("fileSize"),
     metaData: t("metaData"),
     minSdk: t("minSdk"),
@@ -861,7 +873,6 @@ function getReportModelLabels() {
 function getFeatureLabels() {
   return {
     agp: "AGP",
-    appMetadataVersion: "App Metadata",
     compose: "Compose",
     detected: t("unknown"),
     gradle: "Gradle",
