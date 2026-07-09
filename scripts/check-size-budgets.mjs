@@ -23,7 +23,7 @@ const ASSET_BUDGETS = [
     label: "WebUI entry JS",
     pattern: /^assets\/index-[\w-]+\.js$/u,
     maxBytes: 128 * 1024,
-    maxGzipBytes: 36 * 1024,
+    maxGzipBytes: FIRST_SCREEN_JS_GZIP_BUDGET,
   },
   {
     label: "WebUI CSS",
