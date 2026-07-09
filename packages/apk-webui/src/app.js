@@ -1680,7 +1680,6 @@ function beginModeDrag(event) {
   modeDrag.pendingMode = "";
   modeDrag.suppressClick = false;
   modeDrag.buttonCenters = measureChoiceCenters(elements.modeButtons, "appMode");
-  captureSegmentPointer(elements.modeChipGroup, event);
 }
 
 function updateModeDrag(event) {
@@ -1799,7 +1798,6 @@ function beginThemeDrag(event) {
   themeDrag.pendingChoice = "";
   themeDrag.suppressClick = false;
   themeDrag.buttonCenters = measureChoiceCenters(elements.themeButtons, "themeChoice");
-  captureSegmentPointer(elements.themeChipGroup, event);
 }
 
 function updateThemeDrag(event) {
@@ -1918,7 +1916,6 @@ function beginHistoryViewDrag(event) {
   historyViewDrag.pendingViewMode = "";
   historyViewDrag.suppressClick = false;
   historyViewDrag.buttonCenters = measureChoiceCenters(elements.historyViewButtons, "historyViewMode");
-  captureSegmentPointer(elements.historyViewGroup, event);
 }
 
 function updateHistoryViewDrag(event) {
@@ -2037,7 +2034,6 @@ function beginTabDrag(event) {
   tabDrag.pendingTab = "";
   tabDrag.suppressClick = false;
   tabDrag.buttonCenters = measureChoiceCenters(elements.tabButtons, "tab");
-  captureSegmentPointer(elements.tabs, event);
 }
 
 function updateTabDrag(event) {
