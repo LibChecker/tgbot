@@ -1,4 +1,4 @@
-import { readApkInfoFromUrl } from "../../bot-worker/src/apk-url-preview.js";
+import { parseHttpUrl, readApkInfoFromUrl } from "../../bot-worker/src/apk-url-preview.js";
 import { assertApkReport } from "../../shared/src/contracts.js";
 import { LIBCHECKER_RULES_CORE } from "../../shared/src/generated/libchecker-rules-core.js";
 import { LIBCHECKER_SDK_ICON_SVGS } from "../../shared/src/generated/libchecker-sdk-icons.js";
@@ -331,74 +331,15 @@ async function readJsonBody(request) {
 }
 
 function normalizeDownloadUrl(value) {
-  const url = new URL(String(value || "").trim());
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw createCodedError("Only HTTP/HTTPS APK download links are supported", "invalid_download_url");
+  try {
+    const url = parseHttpUrl(value);
+    return url.toString();
+  } catch (error) {
+    if (error?.code === "invalid_download_url") {
+      throw createCodedError(error.message, "invalid_download_url");
+    }
+    throw createCodedError("Invalid APK download link", "invalid_download_url");
   }
-
-  url.hash = "";
-  if (isBlockedHostname(url.hostname)) {
-    throw createCodedError("This download host is not allowed", "invalid_download_url");
-  }
-
-  return url.toString();
-}
-
-function isBlockedHostname(value) {
-  const hostname = String(value || "").trim().toLowerCase().replace(/^\[|\]$/gu, "").replace(/\.$/u, "");
-  if (!hostname) {
-    return true;
-  }
-
-  if (
-    hostname === "localhost" ||
-    hostname === "local" ||
-    hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
-  ) {
-    return true;
-  }
-
-  if (hostname.includes(":")) {
-    return (
-      hostname === "::1" ||
-      hostname === "0:0:0:0:0:0:0:1" ||
-      hostname.startsWith("fe80:") ||
-      hostname.startsWith("fc") ||
-      hostname.startsWith("fd")
-    );
-  }
-
-  const ipv4 = parseIpv4(hostname);
-  if (!ipv4) {
-    return false;
-  }
-
-  const [a, b] = ipv4;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    a >= 224 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19))
-  );
-}
-
-function parseIpv4(hostname) {
-  const parts = hostname.split(".");
-  if (parts.length !== 4) {
-    return null;
-  }
-
-  const values = parts.map((part) => Number(part));
-  if (values.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
-    return null;
-  }
-  return values;
 }
 
 function resolveAnalysisTerminalSystem() {

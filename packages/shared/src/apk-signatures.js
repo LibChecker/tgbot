@@ -58,6 +58,15 @@ const MD5_CONSTANTS = Array.from({ length: 64 }, (_, index) =>
 );
 
 export async function readApkSignatures(source, options = {}) {
+  const profileSignatures = await callParserProfileHook(
+    options.parserProfile,
+    "readApkSignatures",
+    [source, options],
+  );
+  if (profileSignatures) {
+    return profileSignatures;
+  }
+
   const schemes = new Set();
   const certificateRecords = [];
   const warnings = [];
@@ -114,6 +123,19 @@ export async function readApkSignatures(source, options = {}) {
     certificates,
     ...(warnings.length ? { warnings } : {}),
   };
+}
+
+async function callParserProfileHook(parserProfile, hookName, args) {
+  const hook = parserProfile?.[hookName];
+  if (typeof hook !== "function") {
+    return null;
+  }
+
+  try {
+    return (await hook(...args)) || null;
+  } catch {
+    return null;
+  }
 }
 
 async function buildSignatureCertificateList(records, warnings) {

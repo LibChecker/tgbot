@@ -32,6 +32,12 @@ export class CompareController {
     this.getFileAnalyticsFields = typeof options.getFileAnalyticsFields === "function"
       ? options.getFileAnalyticsFields
       : () => ({});
+    this.getClientErrorTelemetryFields = typeof options.getClientErrorTelemetryFields === "function"
+      ? options.getClientErrorTelemetryFields
+      : () => ({});
+    this.getErrorMessage = typeof options.getErrorMessage === "function"
+      ? options.getErrorMessage
+      : (error) => error instanceof Error ? error.message : "";
     this.getReportAnalyticsFields = typeof options.getReportAnalyticsFields === "function"
       ? options.getReportAnalyticsFields
       : () => ({});
@@ -333,15 +339,52 @@ export class CompareController {
       return;
     }
 
+    let fileBuffer;
+    try {
+      fileBuffer = await file.arrayBuffer();
+    } catch (error) {
+      if (slot.jobId !== jobId || !this.hasJob(jobId)) {
+        return;
+      }
+
+      this.deleteJob(jobId);
+      Object.assign(slot, {
+        report: null,
+        source: "upload",
+        historyId: "",
+        fileName: file.name || "",
+        fileSizeBytes: file.size || 0,
+        status: "error",
+        progressKey: "",
+        error: this.getErrorMessage(error) || this.t("unknownError"),
+        jobId: null,
+      });
+      this.renderSlotPageState(slotKey, { historyOptions: true });
+      this.trackCompareEvent("webui.compare.analysis.failed", {
+        result: "error",
+        error_name: "ReadFileFailed",
+        slot: slotKey,
+        input_source: "upload",
+        ...this.getFileAnalyticsFields(file),
+        ...this.getClientErrorTelemetryFields(error),
+      });
+      return;
+    }
+
     /** @type {AnalyzerWorkerRequest} */
     const request = {
       type: "analyze",
       jobId,
       locale: this.getLocale(),
-      file,
+      file: {
+        name: file.name || "local.apk",
+        type: file.type || "",
+        size: Number(file.size) || fileBuffer.byteLength || 0,
+      },
+      fileBuffer,
       terminalSystem,
     };
-    worker.postMessage(request);
+    worker.postMessage(request, [fileBuffer]);
   }
 
   handleProgress(slotKey, jobId, progressKey) {

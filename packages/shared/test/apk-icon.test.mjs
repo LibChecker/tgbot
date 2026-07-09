@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { deflateRawSync } from "node:zlib";
 
 import { __apkTestInternals } from "../src/apk.js";
 
@@ -135,6 +136,28 @@ test("annotates native libraries with ELF page size and ZIP alignment", async ()
   assert.equal(libraries[0].zip16kbAligned, false);
 });
 
+test("reads deflated native library ELF info without full entry extraction", async () => {
+  const elfBytes = new Uint8Array(1024 * 1024);
+  elfBytes.set(createElf64WithLoadAlignment(0x4000));
+  const zipBytes = createDeflatedZipWithSingleEntry("lib/arm64-v8a/libpage.so", elfBytes);
+  const zipEntries = __apkTestInternals.parseZipEntries(zipBytes);
+  const stages = [];
+  const libraries = await __apkTestInternals.collectNativeLibraries({
+    zipEntries,
+    apkBytes: zipBytes,
+    extractEntry: async () => {
+      throw new Error("full extraction should not be used");
+    },
+  }, {
+    parserProfile: { stages },
+  });
+
+  assert.equal(libraries.length, 1);
+  assert.equal(libraries[0].elfPageSize, 0x4000);
+  assert.equal(libraries[0].elf16kbAligned, true);
+  assert.ok(stages.find((stage) => stage.stage === "parse-native-elf").bytes < elfBytes.byteLength);
+});
+
 function decodeSvgDataUri(dataUri) {
   const [, base64] = dataUri.split(",");
   return Buffer.from(base64, "base64").toString("utf8");
@@ -192,6 +215,14 @@ function createElf64WithLoadAlignment(alignment) {
 }
 
 function createStoredZipWithSingleEntry(path, data, alignment) {
+  return createZipWithSingleEntry(path, data, data, 0, alignment);
+}
+
+function createDeflatedZipWithSingleEntry(path, data) {
+  return createZipWithSingleEntry(path, data, deflateRawSync(data), 8, 1);
+}
+
+function createZipWithSingleEntry(path, data, storedData, compressionMethod, alignment) {
   const nameBytes = textEncoder.encode(path);
   const localHeaderLength = 30 + nameBytes.length;
   const extraLength = (alignment - (localHeaderLength % alignment)) % alignment;
@@ -199,19 +230,21 @@ function createStoredZipWithSingleEntry(path, data, alignment) {
   const localView = new DataView(localHeader.buffer);
   localView.setUint32(0, 0x04034b50, true);
   localView.setUint16(4, 20, true);
-  localView.setUint32(18, data.byteLength, true);
+  localView.setUint16(8, compressionMethod, true);
+  localView.setUint32(18, storedData.byteLength, true);
   localView.setUint32(22, data.byteLength, true);
   localView.setUint16(26, nameBytes.length, true);
   localView.setUint16(28, extraLength, true);
   localHeader.set(nameBytes, 30);
 
-  const centralDirectoryOffset = localHeader.byteLength + data.byteLength;
+  const centralDirectoryOffset = localHeader.byteLength + storedData.byteLength;
   const centralDirectory = new Uint8Array(46 + nameBytes.length);
   const centralView = new DataView(centralDirectory.buffer);
   centralView.setUint32(0, 0x02014b50, true);
   centralView.setUint16(4, 20, true);
   centralView.setUint16(6, 20, true);
-  centralView.setUint32(20, data.byteLength, true);
+  centralView.setUint16(10, compressionMethod, true);
+  centralView.setUint32(20, storedData.byteLength, true);
   centralView.setUint32(24, data.byteLength, true);
   centralView.setUint16(28, nameBytes.length, true);
   centralDirectory.set(nameBytes, 46);
@@ -224,7 +257,7 @@ function createStoredZipWithSingleEntry(path, data, alignment) {
   eocdView.setUint32(12, centralDirectory.byteLength, true);
   eocdView.setUint32(16, centralDirectoryOffset, true);
 
-  return concatBytes(localHeader, data, centralDirectory, eocd);
+  return concatBytes(localHeader, storedData, centralDirectory, eocd);
 }
 
 function concatBytes(...chunks) {

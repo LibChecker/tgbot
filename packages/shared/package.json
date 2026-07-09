@@ -19,6 +19,7 @@
     "generated:generate": "node scripts/generate_shared_assets.mjs",
     "generated:refresh": "node scripts/generate_shared_assets.mjs --refresh",
     "rules:update": "python scripts/generate_libchecker_bundle.py",
+    "benchmark:parser": "node scripts/benchmark_apk_parser.mjs",
     "syntax:check": "node scripts/check.mjs",
     "test": "node --test test/*.test.mjs",
     "check": "npm run generated:generate && npm run i18n:check && npm run syntax:check && npm test"
