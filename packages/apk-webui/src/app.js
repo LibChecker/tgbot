@@ -386,24 +386,27 @@ function createCompareController(CompareController) {
 }
 
 function ensureCompareController() {
-  if (runtime.compareController) {
-    return Promise.resolve(runtime.compareController);
-  }
-
   if (!runtime.compareControllerPromise) {
     runtime.compareControllerPromise = import("./app/compare-controller.js")
       .then(({ CompareController }) => {
         runtime.compareController = createCompareController(CompareController);
         runtime.compareController.bindEvents();
         preloadReportPreviewInteractions();
-        runtime.compareController.setVisible(state.appMode === "compare");
-        updateClearButton();
         return runtime.compareController;
       })
       .catch((error) => {
         runtime.compareControllerPromise = null;
-        handleCompareControllerLoadError(error);
-        return null;
+        console.error("Failed to load compare controller", error);
+        trackWebEvent("webui.compare.load_failed", {
+          result: "error",
+          error_name: error?.name || "CompareControllerLoadError",
+        });
+        if (state.appMode === "compare") {
+          elements.compareView.hidden = false;
+          elements.compareWarning.hidden = false;
+          elements.compareWarning.textContent = t("workerFailed");
+          updateClearButton();
+        }
       });
   }
 
@@ -434,10 +437,6 @@ function loadLcappsReaderModule() {
 }
 
 function loadSdkIconRendererModule() {
-  if (runtime.sdkIconRendererModule) {
-    return Promise.resolve(runtime.sdkIconRendererModule);
-  }
-
   if (!runtime.sdkIconRendererModulePromise) {
     runtime.sdkIconRendererModulePromise = import("./app/sdk-icon-renderer.js")
       .then((module) => {
@@ -454,10 +453,6 @@ function loadSdkIconRendererModule() {
 }
 
 function loadReportRendererModule() {
-  if (runtime.reportRendererModule) {
-    return Promise.resolve(runtime.reportRendererModule);
-  }
-
   if (!runtime.reportRendererModulePromise) {
     runtime.reportRendererModulePromise = import("./app/report-renderer.js")
       .then((module) => {
@@ -483,22 +478,6 @@ function loadReportRendererModule() {
 
 function preloadReportRenderer() {
   void loadReportRendererModule().catch(() => {});
-}
-
-function handleCompareControllerLoadError(error) {
-  console.error("Failed to load compare controller", error);
-  trackWebEvent("webui.compare.load_failed", {
-    result: "error",
-    error_name: error?.name || "CompareControllerLoadError",
-  });
-  if (state.appMode !== "compare") {
-    return;
-  }
-
-  elements.compareView.hidden = false;
-  elements.compareWarning.hidden = false;
-  elements.compareWarning.textContent = t("workerFailed");
-  updateClearButton();
 }
 
 function renderComparePageIfLoaded() {

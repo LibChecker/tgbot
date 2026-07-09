@@ -20,4 +20,6 @@ test("report and compare styles stay behind lazy module boundaries", async () =>
   assert.match(reportRenderer, /^import "\.\.\/report\.css";/mu);
   assert.match(compareController, /^import "\.\.\/report\.css";/mu);
   assert.match(compareController, /^import "\.\.\/compare\.css";/mu);
+  assert.match(reportCss, /^\.group-block\s*\{[^}]*\bpadding:\s*14px;/msu);
+  assert.doesNotMatch(compareCss, /^\.compare-diff-block\s*\{[^}]*\bpadding:/msu);
 });

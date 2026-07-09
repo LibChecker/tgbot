@@ -339,10 +339,6 @@
   font-weight: 700;
 }
 
-.compare-diff-block {
-  padding: 0;
-}
-
 .compare-diff-block + .compare-diff-block {
   margin-top: 10px;
 }
