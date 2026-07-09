@@ -1154,7 +1154,22 @@ function getCorsRequestedMethod(context) {
 }
 
 function isAllowedReportPublishOrigin(env, origin) {
-  return Boolean(origin && resolveWebUiBaseUrl(env) === normalizeBaseUrl(origin));
+  const resolved = resolveWebUiBaseUrl(env);
+  const requestOrigin = normalizeBaseUrl(origin);
+  if (!resolved || !requestOrigin) {
+    return false;
+  }
+  if (resolved === requestOrigin) {
+    return true;
+  }
+
+  const normalizedResolvedWebUiHost = resolvePagesProjectHost(resolved);
+  const normalizedRequestHost = resolvePagesProjectHost(requestOrigin);
+  if (!normalizedResolvedWebUiHost || !normalizedRequestHost) {
+    return false;
+  }
+
+  return normalizedResolvedWebUiHost === normalizedRequestHost;
 }
 
 function normalizeBaseUrl(value) {
@@ -1164,6 +1179,24 @@ function normalizeBaseUrl(value) {
   }
 
   return trimmed.replace(/\/+$/u, "");
+}
+
+function resolvePagesProjectHost(value) {
+  const host = parseHost(value);
+  if (!host || !host.endsWith(".pages.dev")) {
+    return null;
+  }
+
+  const parts = host.split(".");
+  if (parts.length < 3) {
+    return null;
+  }
+
+  if (parts.length === 3) {
+    return host;
+  }
+
+  return parts.slice(1).join(".");
 }
 
 function normalizeWebhookUrl(value) {
@@ -1178,6 +1211,14 @@ function normalizeWebhookUrl(value) {
 function parseContentLengthHeader(value) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function parseHost(value) {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return null;
+  }
 }
 
 function safeUrlHost(value) {

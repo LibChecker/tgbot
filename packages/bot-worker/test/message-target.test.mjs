@@ -92,6 +92,19 @@ test("report URLs target the configured WebUI with a short report ref", () => {
   assert.deepEqual(Array.from(url.searchParams.keys()), ["r", "lang"]);
 });
 
+test("report URLs preserve the configured Pages preview URL", () => {
+  const reportUrl = buildWebUiReportUrl(
+    { WEBUI_SITE_URL: "https://codex-share.tgbot-apk-webui.pages.dev/" },
+    "https://worker.example.com",
+    sampleReportRef,
+    "en",
+  );
+  const url = new URL(reportUrl);
+
+  assert.equal(url.origin, "https://codex-share.tgbot-apk-webui.pages.dev");
+  assert.equal(url.searchParams.get("r"), sampleReportRef);
+});
+
 test("report URLs fall back to Worker report data when WebUI is not configured", () => {
   const reportUrl = buildWebUiReportUrl(
     {},
@@ -192,6 +205,27 @@ test("report data route handles CORS preflight through Hono middleware", async (
   }
 });
 
+test("report data route allows CORS preflight from other Pages preview subdomains", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const response = await app.request("https://worker.example.com/report-data", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://feature.tgbot-apk-webui.pages.dev",
+        "access-control-request-method": "POST",
+      },
+    }, {
+      WEBUI_SITE_URL: "https://codex-share.tgbot-apk-webui.pages.dev/",
+    });
+
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://feature.tgbot-apk-webui.pages.dev");
+  } finally {
+    console.log = originalLog;
+  }
+});
+
 test("report data route publishes reports from the configured WebUI origin", async () => {
   const originalLog = console.log;
   console.log = () => {};
@@ -219,6 +253,37 @@ test("report data route publishes reports from the configured WebUI origin", asy
     assert.equal(url.origin, "https://webui.example.com");
     assert.equal(url.searchParams.get("r"), body.ref);
     assert.equal(url.searchParams.get("lang"), "zh-Hans");
+    assert.equal(bucket.objects.size, 1);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("report data route accepts different Pages preview origins for the same project", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const bucket = createMemoryBucket();
+    const response = await app.request("https://worker.example.com/report-data?lang=en", {
+      method: "POST",
+      headers: {
+        origin: "https://feature.tgbot-apk-webui.pages.dev",
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        locale: "en",
+        report: createSampleReport(),
+      }),
+    }, {
+      REPORT_DATA_BUCKET: bucket,
+      WEBUI_SITE_URL: "https://codex-share.tgbot-apk-webui.pages.dev/",
+    });
+    const body = await response.json();
+    const url = new URL(body.url);
+
+    assert.equal(response.status, 200);
+    assert.equal(url.origin, "https://codex-share.tgbot-apk-webui.pages.dev");
+    assert.equal(url.searchParams.get("r"), body.ref);
     assert.equal(bucket.objects.size, 1);
   } finally {
     console.log = originalLog;
