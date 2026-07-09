@@ -12,10 +12,6 @@ const pagesProjectName = "tgbot-apk-webui";
 const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
 const wranglerBin = resolve(repoDir, "node_modules/.bin", process.platform === "win32" ? "wrangler.cmd" : "wrangler");
 const DEFAULT_SDK_EMOJI_KV_NAMESPACE_TITLE = "tgbot-sdk-emojis";
-const DEFAULT_REPORT_DATA_BUCKET_NAMES = {
-  preview: "tgbot-preview-report-data",
-  production: "tgbot-report-data",
-};
 let activeWorkerConfigPath = workerConfigPath;
 let temporaryWorkerConfigPath = null;
 
@@ -35,14 +31,12 @@ const TARGETS = {
     pagesBranch: previewPagesBranch,
     workerUrl: normalizeOptionalUrl(process.env.PREVIEW_WORKER_URL, "PREVIEW_WORKER_URL"),
     webuiUrl: resolvePreviewWebUiUrl(previewPagesBranch),
-    reportDataBucketName: DEFAULT_REPORT_DATA_BUCKET_NAMES.preview,
   },
   production: {
     workerEnv: "production",
     pagesBranch: "main",
     workerUrl: normalizeOptionalUrl(process.env.WORKER_URL, "WORKER_URL"),
     webuiUrl: normalizeOptionalUrl(process.env.WEBUI_SITE_URL, "WEBUI_SITE_URL"),
-    reportDataBucketName: DEFAULT_REPORT_DATA_BUCKET_NAMES.production,
   },
 };
 
@@ -83,7 +77,6 @@ if (options["skip-preflight"]) {
 requireDeployEnvironment(targetName, target);
 
 if (!options["pages-only"]) {
-  await ensureReportDataBucket(target);
   await run(wranglerBin, [
     "deploy",
     "--config",
@@ -109,32 +102,6 @@ if (!options["worker-only"]) {
 }
 
 process.stdout.write(`Cloudflare ${targetName} deploy finished.\n`);
-
-async function ensureReportDataBucket(targetValue) {
-  const bucketName = normalizeText(targetValue.reportDataBucketName);
-  if (!bucketName) {
-    return;
-  }
-
-  const result = await run(wranglerBin, [
-    "r2",
-    "bucket",
-    "create",
-    bucketName,
-  ], { capture: true, allowFailure: true });
-
-  if (result.ok) {
-    process.stdout.write(`Ensured report data R2 bucket: ${bucketName}\n`);
-    return;
-  }
-
-  if (/already (?:exists|own)|bucket.+already/iu.test(result.output)) {
-    process.stdout.write(`Report data R2 bucket already exists: ${bucketName}\n`);
-    return;
-  }
-
-  fail(`Failed to ensure report data R2 bucket ${bucketName}.`);
-}
 
 async function prepareWorkerConfig(targetValue) {
   const namespaceId = await resolveSdkEmojiKvNamespaceId({ create: !options["preflight-only"] });
@@ -469,11 +436,7 @@ function run(command, args, options = {}) {
     child.on("error", rejectRun);
     child.on("close", (code, signal) => {
       if (code === 0) {
-        resolveRun(options.allowFailure ? { ok: true, output, code, signal } : output);
-        return;
-      }
-      if (options.allowFailure) {
-        resolveRun({ ok: false, output, code, signal });
+        resolveRun(output);
         return;
       }
       rejectRun(new Error(`${formatCommand(command, args)} failed with ${signal || `exit code ${code}`}`));

@@ -83,8 +83,8 @@ set `TEST_BOT_TOKEN`; the workflow syncs it into the preview Worker as
 
 Report sharing uses the `REPORT_DATA_BUCKET` R2 binding declared in
 `packages/bot-worker/wrangler.toml`. Deploys use separate preview and
-production buckets, and the deploy script creates the target bucket when it is
-missing during a real deploy.
+production buckets. Create `tgbot-preview-report-data` and
+`tgbot-report-data` once before deploying environments that use report sharing.
 
 SDK custom emoji ids are runtime data. The sync and deploy scripts resolve a
 Workers KV namespace named `tgbot-sdk-emojis`; real sync/deploy runs create it
