@@ -171,11 +171,11 @@ export function renderReportShareModalContent({ body, report, shareUrl, statusKe
   const copyDisabled = !shareUrl || actionBusy || !navigator.clipboard?.writeText;
 
   body.innerHTML = [
-    `<div class="report-share-app">`,
+    `<div class="report-share-target">`,
     renderReportShareAppIcon(info, t),
-    `<div class="report-share-app-copy">`,
+    `<div class="report-share-target-copy">`,
     `<strong>${escapeHtml(title)}</strong>`,
-    `<code class="app-data-text">${escapeHtml(packageName)}</code>`,
+    `<span class="app-data-text">${escapeHtml(packageName)}</span>`,
     `</div>`,
     `</div>`,
     `<label class="report-share-link-field">`,
