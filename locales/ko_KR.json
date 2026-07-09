@@ -171,6 +171,7 @@
     "heroVersionName": "Version Name",
     "heroVersionCode": "Version Code",
     "fileName": "File Name",
+    "downloadUrl": "Download Link",
     "fileSize": "File Size",
     "analyzedAt": "Analyzed At",
     "duration": "Duration",
