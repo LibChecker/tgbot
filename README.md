@@ -83,8 +83,9 @@ set `TEST_BOT_TOKEN`; the workflow syncs it into the preview Worker as
 
 Report sharing uses the `REPORT_DATA_BUCKET` R2 binding declared in
 `packages/bot-worker/wrangler.toml`. Deploys use separate preview and
-production buckets. Create `tgbot-preview-report-data` and
-`tgbot-report-data` once before deploying environments that use report sharing.
+production buckets, and the deploy script creates the target bucket when it is
+missing during a real deploy. The deploy `CLOUDFLARE_API_TOKEN` must include
+R2 Admin Read & Write permission for bucket creation.
 
 SDK custom emoji ids are runtime data. The sync and deploy scripts resolve a
 Workers KV namespace named `tgbot-sdk-emojis`; real sync/deploy runs create it
@@ -209,7 +210,7 @@ POST /admin/commands/delete
 
 Required repository secrets:
 
-- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_API_TOKEN`, including R2 Admin Read & Write for report bucket creation
 - `CLOUDFLARE_ACCOUNT_ID`
 - `BOT_TOKEN` for production
 - `TEST_BOT_TOKEN` for preview bot testing
