@@ -203,8 +203,15 @@
 
         <section class="result-view" id="result-view" hidden>
           <div class="result-main">
-            <div class="report-hero" id="report-hero"></div>
-            <button class="secondary-button report-share-button" id="report-share-button" type="button" disabled data-i18n="reportShare">Share report</button>
+            <div class="report-hero-shell metric-card" style="position:relative">
+              <div class="report-hero" id="report-hero"></div>
+              <button class="icon-button report-share-button" id="report-share-button" type="button" disabled aria-label="Share report" data-title-i18n="reportShare">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="grid-area:1/1">
+                  <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"></path>
+                </svg>
+                <span class="report-share-button__spinner" aria-hidden="true" style="grid-area:1/1"></span>
+              </button>
+            </div>
             <nav class="tabs" id="tabs" role="tablist" aria-label="Report tabs">
               <button type="button" class="tab is-active" data-tab="summary" role="tab" aria-selected="true" data-i18n="tabSummary">Summary</button>
               <button type="button" class="tab" data-tab="sdk" role="tab" aria-selected="false" data-i18n="tabSdk">SDK</button>

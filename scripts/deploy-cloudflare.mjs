@@ -116,6 +116,11 @@ async function ensureReportDataBucket(targetValue) {
     return;
   }
 
+  if (await reportDataBucketExists(bucketName)) {
+    process.stdout.write(`Report data R2 bucket already exists: ${bucketName}\n`);
+    return;
+  }
+
   const result = await run(wranglerBin, [
     "r2",
     "bucket",
@@ -128,12 +133,27 @@ async function ensureReportDataBucket(targetValue) {
     return;
   }
 
-  if (/already (?:exists|own)|bucket.+already/iu.test(result.output)) {
+  if (/\[code:\s*10004\]|already (?:exists|own)|bucket.+already/iu.test(result.output)) {
     process.stdout.write(`Report data R2 bucket already exists: ${bucketName}\n`);
     return;
   }
 
   fail(`Failed to ensure report data R2 bucket ${bucketName}.`);
+}
+
+async function reportDataBucketExists(bucketName) {
+  try {
+    const result = await cloudflareApi(
+      `/accounts/${encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)}/r2/buckets`,
+      { fatal: false },
+    );
+    const buckets = Array.isArray(result?.buckets) ? result.buckets : [];
+    return buckets.some((bucket) => bucket?.name === bucketName);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`Unable to list R2 buckets before create: ${message}\n`);
+    return false;
+  }
 }
 
 async function prepareWorkerConfig(targetValue) {

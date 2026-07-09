@@ -2819,6 +2819,7 @@ svg {
   align-items: center;
   gap: 16px;
   min-width: 0;
+  padding-right: 48px;
   scroll-margin-top: calc(var(--topbar-height) + var(--topbar-gap-after) + 10px);
 }
 
@@ -2877,7 +2878,26 @@ svg {
 }
 
 .report-share-button {
-  margin: 10px 0 0;
+  position: absolute;
+  inset: 14px 14px auto auto;
+}
+
+.report-share-button__spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.report-share-button.is-loading svg {
+  opacity: 0;
+}
+
+.report-share-button.is-loading .report-share-button__spinner {
+  opacity: 1;
+  animation: compare-spin 1s linear infinite;
 }
 
 .app-title-mask {

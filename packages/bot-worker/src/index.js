@@ -76,8 +76,8 @@ app.get("/", (context) => {
 });
 
 app.use("/report-data", cors({
-  origin: "*",
-  allowMethods: ["GET", "POST", "OPTIONS"],
+  origin: getReportDataCorsOrigin,
+  allowMethods: getReportDataCorsAllowMethods,
   allowHeaders: ["content-type"],
   maxAge: 86400,
 }));
@@ -124,6 +124,9 @@ app.post("/report-data", async (context) => {
   const locale = normalizeLocale(url.searchParams.get("lang"));
 
   try {
+    if (!isAllowedReportPublishOrigin(context.env, context.req.header("origin") || "")) {
+      throw createErrorWithCode("report_data_publish_origin_forbidden", "Report publishing is not allowed from this origin");
+    }
     const payload = await readJsonBodyWithLimit(context.req.raw, MAX_REPORT_PUBLISH_BODY_BYTES);
     const { createApkReportDataEntry } = await loadReportStoreModule();
     const entry = await createApkReportDataEntry(context.env, payload?.report);
@@ -1488,6 +1491,30 @@ function resolveWebUiBaseUrl(env) {
   return normalizeBaseUrl(env.WEBUI_SITE_URL) || normalizeBaseUrl(env.WEBUI_URL);
 }
 
+function getReportDataCorsOrigin(origin, context) {
+  const method = getCorsRequestedMethod(context);
+  if (method === "POST") {
+    return isAllowedReportPublishOrigin(context.env, origin) ? origin : null;
+  }
+  return "*";
+}
+
+function getReportDataCorsAllowMethods(origin, context) {
+  const method = getCorsRequestedMethod(context);
+  if (method === "POST") {
+    return isAllowedReportPublishOrigin(context.env, origin) ? ["POST", "OPTIONS"] : [];
+  }
+  return ["GET", "OPTIONS"];
+}
+
+function getCorsRequestedMethod(context) {
+  return String(context.req.header("access-control-request-method") || context.req.method || "").toUpperCase();
+}
+
+function isAllowedReportPublishOrigin(env, origin) {
+  return Boolean(origin && resolveWebUiBaseUrl(env) === normalizeBaseUrl(origin));
+}
+
 function normalizeBaseUrl(value) {
   const trimmed = value?.trim();
   if (!trimmed) {
@@ -1632,6 +1659,8 @@ function getReportDataErrorStatus(error, fallbackStatus = 500) {
       return 400;
     case "request_body_too_large":
       return 413;
+    case "report_data_publish_origin_forbidden":
+      return 403;
     case "report_data_not_found":
       return 404;
     case "report_data_bucket_missing":

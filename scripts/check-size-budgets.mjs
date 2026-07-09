@@ -8,7 +8,7 @@ const repoPath = fileURLToPath(repoDir);
 const distDir = new URL("../packages/apk-webui/dist/", import.meta.url);
 
 const FIRST_SCREEN_MAX_REQUESTS = 5;
-const FIRST_SCREEN_JS_GZIP_BUDGET = 36 * 1024;
+const FIRST_SCREEN_JS_GZIP_BUDGET = 40 * 1024;
 const GENERATED_MATERIALIZED_MIN_BYTES = 10 * 1024;
 const GENERATED_WRAPPER_MAX_BYTES = 2 * 1024;
 

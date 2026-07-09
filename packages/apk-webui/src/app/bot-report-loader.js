@@ -1,4 +1,11 @@
 import { assertReportDataReport } from "@shared/contracts.js";
+import { resolveBotReportUrlFromLocation } from "./bot-report-url.js";
+
+const BOT_REPORT_DATA_ORIGIN = typeof __BOT_REPORT_DATA_ORIGIN__ === "string" ? __BOT_REPORT_DATA_ORIGIN__ : "";
+
+export function resolveCurrentBotReportUrl(search, locale) {
+  return resolveBotReportUrlFromLocation(search, BOT_REPORT_DATA_ORIGIN, locale);
+}
 
 export async function loadBotReportFromUrl([
   reportUrl,

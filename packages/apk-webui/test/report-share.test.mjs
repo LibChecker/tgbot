@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { publishReport } from "../src/app/report-share.js";
+import { prepareReportShareUrl, publishReport } from "../src/app/report-share.js";
 
 test("report sharing strips hydrated SDK rule details before publishing", async () => {
   const report = createReportWithHydratedRuleDetails();
@@ -50,6 +50,28 @@ test("report sharing strips hydrated SDK rule details before publishing", async 
   assert.equal(report.apkInfo.sdkSummary.native[0].ruleDetail.locales.en.description.length, 1024 * 1024);
   assert.ok(rawBodyBytes > 4 * 1024 * 1024);
   assert.ok(publishedBodyBytes < 4 * 1024 * 1024);
+});
+
+test("report share preparation reuses the current report ref without publishing", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("fetch should not be called");
+  };
+
+  try {
+    const url = await prepareReportShareUrl({
+      cachedUrl: "",
+      report: createReportWithHydratedRuleDetails(),
+      locale: "zh-Hans",
+      reportDataOrigin: "https://worker.example",
+      pageHref: "https://web.example/?r=rp_0123456789abcdef0123456789abcdef&lang=en",
+      pageSearch: "?r=rp_0123456789abcdef0123456789abcdef&lang=en",
+    });
+
+    assert.equal(url, "https://web.example/?r=rp_0123456789abcdef0123456789abcdef&lang=zh-Hans");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 function createReportWithHydratedRuleDetails() {

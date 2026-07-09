@@ -3,7 +3,6 @@ import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate
 import { clamp } from "./app/math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./app/format.js";
 import { getStats } from "./app/report-model.js";
-import { resolveBotReportUrlFromLocation } from "./app/bot-report-url.js";
 import {
   buildHistorySummary,
   createHistoryEntry,
@@ -70,7 +69,6 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
 const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
 const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
-const BOT_REPORT_DATA_ORIGIN = typeof __BOT_REPORT_DATA_ORIGIN__ === "string" ? __BOT_REPORT_DATA_ORIGIN__ : "";
 const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const RUNTIME_LOG_DETAIL_KEYS = new Set([
@@ -1356,6 +1354,8 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.runtimeLogOpen) {
       closeRuntimeLogModal();
+    } else if (event.key === "Escape" && state.reportShareModalOpen) {
+      closeReportShareModal();
     }
   });
 
@@ -1439,7 +1439,7 @@ function bindEvents() {
   });
 
   elements.reportShareButton?.addEventListener("click", () => {
-    void shareCurrentReport();
+    void prepareCurrentReportShare();
   });
 
   elements.historyToggleButton.addEventListener("click", () => {
@@ -3096,6 +3096,9 @@ function applyLocale() {
   }
   renderLinkStatus();
   updateReportShareControls();
+  if (state.reportShareModalOpen) {
+    runtime.reportShareModalModule?.renderReportShareModal({ state, elements, t });
+  }
   renderHistoryViewMode();
   renderRuntimeLogs();
   renderLcappsPicker();
@@ -3396,6 +3399,9 @@ function clearReportShareState() {
   state.reportShareUrl = "";
   state.reportShareStatusKey = "";
   state.reportShareBusy = false;
+  state.reportShareModalOpen = false;
+  state.reportShareActionBusy = false;
+  closeReportShareModal({ restoreFocus: false });
   updateReportShareControls();
 }
 
@@ -3407,10 +3413,13 @@ function updateReportShareControls() {
   const canShare = state.appMode === "analyze" && Boolean(state.report) && !state.analyzeBusy;
   elements.reportShareButton.disabled = !canShare || state.reportShareBusy;
   elements.reportShareButton.setAttribute("aria-busy", state.reportShareBusy ? "true" : "false");
-  elements.reportShareButton.textContent = t(state.reportShareStatusKey || "reportShare");
+  elements.reportShareButton.classList.toggle("is-loading", state.reportShareBusy);
+  const label = t(state.reportShareBusy ? "reportSharePreparing" : "reportShare");
+  elements.reportShareButton.setAttribute("aria-label", label);
+  elements.reportShareButton.title = label;
 }
 
-async function shareCurrentReport() {
+async function prepareCurrentReportShare() {
   if (!state.report || state.reportShareBusy) {
     return;
   }
@@ -3420,33 +3429,44 @@ async function shareCurrentReport() {
   updateReportShareControls();
 
   try {
-    const { shareCurrentReport: shareReport } = await import("./app/report-share.js");
-    const shareResult = await shareReport({
-      cachedUrl: state.reportShareUrl,
-      report: state.report,
-      locale: state.locale,
-      reportDataOrigin: BOT_REPORT_DATA_ORIGIN || window.location.origin,
+    const modalModule = await loadReportShareModalModule();
+    await modalModule.prepareAndOpenReportShare({
+      state,
+      elements,
+      t,
       pageHref: window.location.href,
       pageSearch: window.location.search,
-      title: t("reportShareTitle"),
-      text: t("reportShareText", {
-        appName: state.report.apkInfo?.appName || state.report.apkInfo?.packageName || t("unknown"),
-      }),
+      onClose: closeReportShareModal,
+      onControlsChange: updateReportShareControls,
     });
-    if (shareResult?.url) {
-      state.reportShareUrl = shareResult.url;
-    }
-    if (shareResult?.cancelled) {
-      state.reportShareStatusKey = "";
-      return;
-    }
-
-    state.reportShareStatusKey = shareResult?.operation === "copy" ? "reportShareCopied" : "reportShareShared";
   } catch (error) {
-    state.reportShareStatusKey = "reportShareFailed";
-  } finally {
     state.reportShareBusy = false;
+    state.reportShareStatusKey = "reportShareFailed";
     updateReportShareControls();
+    appendRuntimeLog("warn", "webui.report_share.modal_failed", {
+      error_name: getErrorName(error),
+    });
+  }
+}
+
+async function loadReportShareModalModule() {
+  if (!runtime.reportShareModalPromise) {
+    runtime.reportShareModalPromise = import("./app/report-share-modal.js").then((module) => {
+      runtime.reportShareModalModule = module;
+      return module;
+    });
+  }
+
+  return runtime.reportShareModalPromise;
+}
+
+function closeReportShareModal(options = {}) {
+  state.reportShareModalOpen = false;
+  if (elements.reportShareModal) {
+    elements.reportShareModal.hidden = true;
+  }
+  if (options.restoreFocus !== false) {
+    elements.reportShareButton?.focus();
   }
 }
 
@@ -3687,40 +3707,45 @@ async function analyzeDownloadUrl() {
 }
 
 function loadBotReportFromUrlIfPresent() {
-  const reportUrl = getBotReportUrlFromLocation();
-  if (!reportUrl) {
+  if (!new URLSearchParams(window.location.search || "").has("r")) {
     return;
   }
 
   void import("./app/bot-report-loader.js")
-    .then(({ loadBotReportFromUrl }) => loadBotReportFromUrl([
-      reportUrl,
-      state,
-      elements,
-      t,
-      cancelLcappsReportActivation,
-      finishAnalysis,
-      getClientErrorTelemetryFields,
-      getElapsedMs,
-      getErrorMessage,
-      getReportAnalyticsFields,
-      hideError,
-      preloadReportRenderer,
-      renderLinkStatus,
-      renderReport,
-      renderSelectedFile,
-      revealReportHeroAfterAnalysis,
-      scheduleHistoryReportSave,
-      scheduleReportSdkRuleDetailHydration,
-      hydrateReportSdkIconImagesForRender,
-      setAppMode,
-      setBusy,
-      showError,
-      showProgress,
-      startTimer,
-      trackWebEvent,
-      updateClearButton,
-    ]))
+    .then(({ loadBotReportFromUrl, resolveCurrentBotReportUrl }) => {
+      const reportUrl = resolveCurrentBotReportUrl(window.location.search, state.locale);
+      if (!reportUrl) {
+        return null;
+      }
+      return loadBotReportFromUrl([
+        reportUrl,
+        state,
+        elements,
+        t,
+        cancelLcappsReportActivation,
+        finishAnalysis,
+        getClientErrorTelemetryFields,
+        getElapsedMs,
+        getErrorMessage,
+        getReportAnalyticsFields,
+        hideError,
+        preloadReportRenderer,
+        renderLinkStatus,
+        renderReport,
+        renderSelectedFile,
+        revealReportHeroAfterAnalysis,
+        scheduleHistoryReportSave,
+        scheduleReportSdkRuleDetailHydration,
+        hydrateReportSdkIconImagesForRender,
+        setAppMode,
+        setBusy,
+        showError,
+        showProgress,
+        startTimer,
+        trackWebEvent,
+        updateClearButton,
+      ]);
+    })
     .catch((error) => {
       showError(getErrorMessage(error) || t("unknownError"));
       trackWebEvent("webui.bot_report.failed", {
@@ -3729,14 +3754,6 @@ function loadBotReportFromUrlIfPresent() {
         ...getClientErrorTelemetryFields(error),
       });
     });
-}
-
-function getBotReportUrlFromLocation() {
-  return resolveBotReportUrlFromLocation(
-    window.location.search,
-    BOT_REPORT_DATA_ORIGIN,
-    state.locale,
-  );
 }
 
 function ensureWorker() {

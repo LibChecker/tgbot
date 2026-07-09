@@ -160,14 +160,104 @@ test("report data route handles CORS preflight through Hono middleware", async (
         origin: "https://webui.example.com",
         "access-control-request-method": "POST",
       },
+    }, {
+      WEBUI_SITE_URL: "https://webui.example.com/",
     });
 
     assert.equal(response.status, 204);
-    assert.equal(response.headers.get("access-control-allow-origin"), "*");
-    assert.match(response.headers.get("access-control-allow-methods") || "", /GET/u);
+    assert.equal(response.headers.get("access-control-allow-origin"), "https://webui.example.com");
     assert.match(response.headers.get("access-control-allow-methods") || "", /POST/u);
   } finally {
     console.log = originalLog;
+  }
+});
+
+test("report data route publishes reports from the configured WebUI origin", async () => {
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    const bucket = createMemoryBucket();
+    const response = await app.request("https://worker.example.com/report-data?lang=zh-Hans", {
+      method: "POST",
+      headers: {
+        origin: "https://webui.example.com",
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        locale: "zh-Hans",
+        report: createSampleReport(),
+      }),
+    }, {
+      REPORT_DATA_BUCKET: bucket,
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+    const body = await response.json();
+    const url = new URL(body.url);
+
+    assert.equal(response.status, 200);
+    assert.match(body.ref, /^rp_[a-f0-9]{32}$/u);
+    assert.equal(url.origin, "https://webui.example.com");
+    assert.equal(url.searchParams.get("r"), body.ref);
+    assert.equal(url.searchParams.get("lang"), "zh-Hans");
+    assert.equal(bucket.objects.size, 1);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("report data route rejects publishes from untrusted origins", async () => {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = () => {};
+  console.warn = () => {};
+  try {
+    const bucket = createMemoryBucket();
+    const response = await app.request("https://worker.example.com/report-data?lang=en", {
+      method: "POST",
+      headers: {
+        origin: "https://attacker.example.com",
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        report: createSampleReport(),
+      }),
+    }, {
+      REPORT_DATA_BUCKET: bucket,
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(bucket.objects.size, 0);
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  }
+});
+
+test("report data route rejects oversized publish bodies", async () => {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = () => {};
+  console.warn = () => {};
+  try {
+    const response = await app.request("https://worker.example.com/report-data?lang=en", {
+      method: "POST",
+      headers: {
+        origin: "https://webui.example.com",
+        "content-type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        report: "x".repeat(4 * 1024 * 1024),
+      }),
+    }, {
+      REPORT_DATA_BUCKET: createMemoryBucket(),
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+
+    assert.equal(response.status, 413);
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
   }
 });
 
@@ -232,3 +322,56 @@ test("custom emoji fallback keeps the readable SDK summary text", () => {
     '🔹 <code>Android</code>',
   );
 });
+
+function createSampleReport() {
+  return {
+    locale: "en",
+    fileName: "sample.apk",
+    fileSizeBytes: 2048,
+    fileSizeText: "2 KB",
+    sourceLabel: "Private Chat Message",
+    analyzedAt: "2026-07-08T00:00:00.000Z",
+    featureIcons: {
+      kotlin: "https://example.com/kotlin.svg",
+      gradle: "https://example.com/gradle.svg",
+      compose: "https://example.com/compose.svg",
+    },
+    apkInfo: {
+      appName: "Sample",
+      packageName: "com.example.sample",
+      versionName: "1.0",
+      versionCode: "1",
+      targetSdk: 35,
+      minSdk: 23,
+      compileSdk: 35,
+      icon: null,
+      buildFeatures: {},
+      permissions: ["android.permission.INTERNET"],
+      nativeLibraries: [],
+      components: {
+        activities: [],
+        services: [],
+        receivers: [],
+        providers: [],
+      },
+    },
+  };
+}
+
+function createMemoryBucket() {
+  const objects = new Map();
+  return {
+    objects,
+    async put(key, value, options) {
+      objects.set(key, { value, options });
+    },
+    async get(key) {
+      const object = objects.get(key);
+      return object
+        ? {
+            text: async () => object.value,
+          }
+        : null;
+    },
+  };
+}

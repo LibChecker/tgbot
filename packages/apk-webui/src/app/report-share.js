@@ -10,19 +10,39 @@ export async function shareCurrentReport({
   title,
   text,
 }) {
-  let url = cachedUrl || getCurrentReportShareUrl(pageHref, pageSearch, locale);
-  if (!url) {
-    url = (await publishReport({
-      endpoint: buildReportPublishEndpoint(reportDataOrigin, locale),
-      report,
-      locale,
-    })).url;
-  }
+  const url = await prepareReportShareUrl({
+    cachedUrl,
+    report,
+    locale,
+    reportDataOrigin,
+    pageHref,
+    pageSearch,
+  });
 
   return {
     ...(await shareReportUrl({ url, title, text })),
     url,
   };
+}
+
+export async function prepareReportShareUrl({
+  cachedUrl,
+  report,
+  locale,
+  reportDataOrigin,
+  pageHref,
+  pageSearch,
+}) {
+  const url = cachedUrl || getCurrentReportShareUrl(pageHref, pageSearch, locale);
+  if (url) {
+    return url;
+  }
+
+  return (await publishReport({
+    endpoint: buildReportPublishEndpoint(reportDataOrigin, locale),
+    report,
+    locale,
+  })).url;
 }
 
 export async function publishReport({ endpoint, report, locale }) {
