@@ -54,7 +54,7 @@ const PRIVATE_EVENT_KEYS = new Set([
   "error_message",
   "error_stack",
   "file_size_bytes",
-  "report_path",
+  "report_ref",
   "url_host",
   "url_path",
 ]);

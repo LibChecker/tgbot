@@ -11,7 +11,7 @@ const PRIVATE_EVENT_KEYS = new Set([
   "chat_id",
   "error_message",
   "error_stack",
-  "report_path",
+  "report_ref",
   "url_host",
   "url_path",
 ]);

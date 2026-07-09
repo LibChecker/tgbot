@@ -3,7 +3,7 @@ import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate
 import { clamp } from "./app/math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./app/format.js";
 import { getStats } from "./app/report-model.js";
-import { resolveBotReportUrlFromLocation } from "./app/bot-report-url.js";
+import { normalizeBotReportRef, resolveBotReportUrlFromLocation } from "./app/bot-report-url.js";
 import {
   buildHistorySummary,
   createHistoryEntry,
@@ -100,6 +100,7 @@ const RUNTIME_LOG_DETAIL_KEYS = new Set([
   "range_request_count",
   "range_cache_hit_count",
   "render_ms",
+  "report_ref",
   "response_text_ms",
   "remote_package_type",
   "result",
@@ -1436,6 +1437,10 @@ function bindEvents() {
     } else {
       resetState();
     }
+  });
+
+  elements.reportShareButton?.addEventListener("click", () => {
+    void shareCurrentReport();
   });
 
   elements.historyToggleButton.addEventListener("click", () => {
@@ -3091,6 +3096,7 @@ function applyLocale() {
     elements.appVersion.setAttribute("aria-label", t("runtimeLogVersionLabel", { version: APP_VERSION }));
   }
   renderLinkStatus();
+  updateReportShareControls();
   renderHistoryViewMode();
   renderRuntimeLogs();
   renderLcappsPicker();
@@ -3387,6 +3393,110 @@ function renderLinkStatus() {
   elements.linkStatus.classList.toggle("is-active", key !== "linkIdle");
 }
 
+function clearReportShareState() {
+  state.reportShareUrl = "";
+  state.reportShareStatusKey = "";
+  state.reportShareBusy = false;
+  updateReportShareControls();
+}
+
+function updateReportShareControls() {
+  if (!elements.reportShareButton) {
+    return;
+  }
+
+  const canShare = state.appMode === "analyze" && Boolean(state.report) && !state.analyzeBusy;
+  elements.reportShareButton.disabled = !canShare || state.reportShareBusy;
+  elements.reportShareButton.setAttribute("aria-busy", state.reportShareBusy ? "true" : "false");
+
+  if (elements.reportShareStatus) {
+    elements.reportShareStatus.textContent = state.reportShareStatusKey ? t(state.reportShareStatusKey) : "";
+  }
+}
+
+async function shareCurrentReport() {
+  if (!state.report || state.reportShareBusy) {
+    return;
+  }
+
+  state.reportShareBusy = true;
+  state.reportShareStatusKey = "reportSharePreparing";
+  updateReportShareControls();
+
+  try {
+    const { publishReport, shareReportUrl } = await import("./app/report-share.js");
+    let shareUrl = state.reportShareUrl || getCurrentReportShareUrl();
+    if (!shareUrl) {
+      const publishResult = await publishReport({
+        endpoint: buildReportPublishEndpoint(),
+        report: state.report,
+        locale: state.locale,
+      });
+      shareUrl = publishResult.url;
+      state.reportShareUrl = shareUrl;
+      trackWebEvent("webui.report.published", {
+        result: "success",
+        input_source: "webui",
+        report_ref: publishResult.ref || "",
+        ...getReportAnalyticsFields(state.report),
+      });
+    }
+
+    const shareResult = await shareReportUrl({
+      url: shareUrl,
+      title: t("reportShareTitle"),
+      text: t("reportShareText", {
+        appName: state.report.apkInfo?.appName || state.report.apkInfo?.packageName || t("unknown"),
+      }),
+    });
+    if (shareResult?.cancelled) {
+      state.reportShareStatusKey = "";
+      trackWebEvent("webui.report.share_cancelled", {
+        result: "cancelled",
+        operation: shareResult.operation || "share",
+        ...getReportAnalyticsFields(state.report),
+      });
+      return;
+    }
+
+    state.reportShareStatusKey = shareResult?.operation === "copy" ? "reportShareCopied" : "reportShareShared";
+    trackWebEvent("webui.report.shared", {
+      result: "success",
+      operation: shareResult?.operation || "share",
+      ...getReportAnalyticsFields(state.report),
+    });
+  } catch (error) {
+    state.reportShareStatusKey = "reportShareFailed";
+    trackWebEvent("webui.report.share_failed", {
+      result: "error",
+      ...getClientErrorTelemetryFields(error),
+      ...getReportAnalyticsFields(state.report),
+    });
+  } finally {
+    state.reportShareBusy = false;
+    updateReportShareControls();
+  }
+}
+
+function buildReportPublishEndpoint() {
+  const origin = BOT_REPORT_DATA_ORIGIN || window.location.origin;
+  const url = new URL("/report-data", origin);
+  url.searchParams.set("lang", state.locale);
+  return url.href;
+}
+
+function getCurrentReportShareUrl() {
+  const ref = normalizeBotReportRef(new URLSearchParams(window.location.search).get("r"));
+  if (!ref) {
+    return "";
+  }
+
+  const url = new URL("/", window.location.href);
+  url.searchParams.set("r", ref);
+  url.searchParams.set("lang", state.locale);
+  return url.href;
+}
+
 async function analyzeSelectedFile() {
   const file = state.selectedFile;
   hideError();
@@ -3430,6 +3540,7 @@ async function analyzeSelectedFile() {
   const jobId = state.jobId;
   state.startedAt = performance.now();
   state.report = null;
+  clearReportShareState();
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   state.activeAnalyzeJobId = jobId;
@@ -3494,6 +3605,7 @@ async function analyzeDownloadUrl() {
   const abortController = new AbortController();
   state.startedAt = performance.now();
   state.report = null;
+  clearReportShareState();
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   state.activeAnalyzeJobId = jobId;
@@ -3564,6 +3676,7 @@ async function analyzeDownloadUrl() {
     state.activeAnalyzeJobId = null;
     state.linkAbortController = null;
     state.report = payload.report;
+    clearReportShareState();
     state.activeNativeAbi = "";
     state.linkStatusKey = "linkDone";
     renderLinkStatus();
@@ -3773,6 +3886,7 @@ function handleWorkerMessage(event) {
     finishAnalysis();
     state.activeAnalyzeJobId = null;
     state.report = message.report;
+    clearReportShareState();
     state.activeNativeAbi = "";
     updateClearButton();
     showProgress("progressDone");
@@ -3822,6 +3936,7 @@ function finishAnalysis() {
 function setBusy(isBusy) {
   state.analyzeBusy = Boolean(isBusy);
   updateAnalyzeControls();
+  updateReportShareControls();
   if (elements.analyzeButtonLabel) {
     elements.analyzeButtonLabel.textContent = isBusy ? t("analyzing") : t("analyze");
   }
@@ -4098,6 +4213,7 @@ function resetState() {
   state.downloadUrl = "";
   state.linkStatusKey = "linkIdle";
   state.report = null;
+  clearReportShareState();
   state.lcappsArchive = null;
   state.lcappsPicker.open = false;
   state.lcappsPicker.loading = false;
@@ -4432,6 +4548,7 @@ async function openHistoryItem(id) {
     }
 
     state.report = report;
+    clearReportShareState();
     state.activeTab = "summary";
     state.activeNativeAbi = "";
     resetProgressView();
@@ -4700,12 +4817,14 @@ async function renderReport() {
   if (state.appMode !== "analyze") {
     hideAnalyzeReportViews(elements);
     setTopbarReportIdentity(false, { animate: true });
+    updateReportShareControls();
     return;
   }
 
   if (!state.report) {
     showEmptyReportState(elements);
     setTopbarReportIdentity(false, { animate: true });
+    updateReportShareControls();
     return;
   }
 
@@ -4737,6 +4856,7 @@ async function renderReport() {
   updateTopbarReportIdentity({ animate: true });
   updateTabs();
   renderTabPanel();
+  updateReportShareControls();
 }
 
 function revealReportHeroAfterAnalysis(report) {
@@ -5195,6 +5315,7 @@ function activateLcappsReport(report) {
   finishAnalysis();
   hideError();
   state.report = report;
+  clearReportShareState();
   state.activeTab = "summary";
   state.activeNativeAbi = "";
   resetProgressView();

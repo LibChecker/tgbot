@@ -1,7 +1,6 @@
-export const BOT_REPORT_PATH_PARAM = "r";
+export const BOT_REPORT_REF_PARAM = "r";
 
-const MAX_REPORT_PATH_LENGTH = 512;
-const REPORT_PATH_FORBIDDEN_PATTERN = /[\u0000-\u001F\u007F/?#\\]/u;
+const REPORT_REF_PATTERN = /^rp_[a-f0-9]{32}$/u;
 
 export function resolveBotReportUrlFromLocation(
   search,
@@ -9,34 +8,30 @@ export function resolveBotReportUrlFromLocation(
   fallbackLocale = "en",
 ) {
   const params = new URLSearchParams(search || "");
-  const path = normalizeBotReportPath(params.get(BOT_REPORT_PATH_PARAM));
-  if (!path) {
+  const ref = normalizeBotReportRef(params.get(BOT_REPORT_REF_PARAM));
+  if (!ref) {
     return "";
   }
 
-  return buildBotReportDataUrl(reportDataOrigin, path, params.get("lang") || fallbackLocale);
+  return buildBotReportDataUrl(reportDataOrigin, ref, params.get("lang") || fallbackLocale);
 }
 
-export function buildBotReportDataUrl(reportDataOrigin, path, locale = "en") {
+export function buildBotReportDataUrl(reportDataOrigin, ref, locale = "en") {
   const origin = normalizeReportDataOrigin(reportDataOrigin);
-  const normalizedPath = normalizeBotReportPath(path);
-  if (!origin || !normalizedPath) {
+  const normalizedRef = normalizeBotReportRef(ref);
+  if (!origin || !normalizedRef) {
     return "";
   }
 
   const url = new URL("/report-data", origin);
-  url.searchParams.set("path", normalizedPath);
+  url.searchParams.set("ref", normalizedRef);
   url.searchParams.set("lang", normalizeLocaleParam(locale));
   return url.href;
 }
 
-export function normalizeBotReportPath(value) {
+export function normalizeBotReportRef(value) {
   const text = String(value || "").trim();
-  if (!text || text.length > MAX_REPORT_PATH_LENGTH || REPORT_PATH_FORBIDDEN_PATTERN.test(text)) {
-    return "";
-  }
-
-  return text;
+  return REPORT_REF_PATTERN.test(text) ? text : "";
 }
 
 function normalizeReportDataOrigin(value) {

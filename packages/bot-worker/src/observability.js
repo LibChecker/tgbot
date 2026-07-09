@@ -63,7 +63,7 @@ const ANALYTICS_PRIVATE_TELEMETRY_KEYS = new Set([
   ...CONSOLE_PRIVATE_TELEMETRY_KEYS,
   "app_icon_path",
   "error_message",
-  "report_path",
+  "report_ref",
   "url_host",
   "url_path",
 ]);
@@ -163,7 +163,7 @@ function writeConsole(level, entry) {
 }
 
 function writeAnalyticsDataPoint(env, context, event, fields) {
-  const dataset = env.USAGE_ANALYTICS;
+  const dataset = env?.USAGE_ANALYTICS;
   if (!dataset?.writeDataPoint) {
     return;
   }

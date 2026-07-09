@@ -73,15 +73,18 @@ npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml -
 npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml --env preview
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml --env production
 npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml --env preview
-npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml --env production
-npx wrangler secret put TELEGRAPH_ACCESS_TOKEN --config packages/bot-worker/wrangler.toml --env preview
 ```
 
 Use a dedicated test bot token for the preview environment. In GitHub Actions,
 set `TEST_BOT_TOKEN`; the workflow syncs it into the preview Worker as
 `BOT_TOKEN` so production `BOT_TOKEN` stays isolated.
 
-`TELEGRAM_WEBHOOK_SECRET` and `TELEGRAPH_ACCESS_TOKEN` are optional, but recommended for production.
+`TELEGRAM_WEBHOOK_SECRET` is optional, but recommended for production.
+
+Report sharing uses the `REPORT_DATA_BUCKET` R2 binding declared in
+`packages/bot-worker/wrangler.toml`. Deploys use separate preview and
+production buckets, and the deploy script creates the target bucket when it is
+missing during a real deploy.
 
 SDK custom emoji ids are runtime data. The sync and deploy scripts resolve a
 Workers KV namespace named `tgbot-sdk-emojis`; real sync/deploy runs create it
@@ -212,7 +215,6 @@ Required repository secrets:
 - `TEST_BOT_TOKEN` for preview bot testing
 - `ADMIN_TOKEN`
 - `TELEGRAM_WEBHOOK_SECRET`
-- `TELEGRAPH_ACCESS_TOKEN`
 - `TELEGRAM_STICKER_OWNER_ID` for the SDK custom emoji sync workflow
 
 Optional repository secret:
@@ -238,7 +240,7 @@ packages/
     src/
       index.js       Worker entry, Telegram webhook, admin API
       apk-url-preview.js APK link preview parser
-      telegraph.js   Telegraph report data storage
+      report-store.js R2 report data storage
       upload-view.js Worker-hosted upload page
       observability.js Logs and Analytics Engine events
     scripts/         Worker admin and webhook helpers

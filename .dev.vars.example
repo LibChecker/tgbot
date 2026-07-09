@@ -1,9 +1,6 @@
 BOT_TOKEN=your-telegram-bot-token
 ADMIN_TOKEN=your-admin-token
 TELEGRAM_WEBHOOK_SECRET=your-telegram-webhook-secret
-TELEGRAPH_ACCESS_TOKEN=your-telegraph-access-token
-TELEGRAPH_AUTHOR_NAME=Telegram APK Info Bot
-TELEGRAPH_AUTHOR_URL=https://t.me/your_bot_username
 PUBLIC_WEBHOOK_URL=https://your-worker.your-subdomain.workers.dev
 TELEGRAM_STICKER_OWNER_ID=your-telegram-user-id
 TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME=tgbot-sdk-emojis

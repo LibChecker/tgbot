@@ -385,6 +385,17 @@ export function assertTelegramApkReport(value) {
   return value;
 }
 
+export function isReportDataReport(value) {
+  return isApkReport(value) || isTelegramApkReport(value);
+}
+
+export function assertReportDataReport(value) {
+  if (!isReportDataReport(value)) {
+    throw new TypeError("Invalid report data contract");
+  }
+  return value;
+}
+
 export function isAnalyzerWorkerRequest(value) {
   return (
     isObject(value) &&

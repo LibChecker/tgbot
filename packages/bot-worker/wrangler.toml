@@ -19,6 +19,10 @@ binding = "CF_VERSION_METADATA"
 binding = "USAGE_ANALYTICS"
 dataset = "Libchecker_TG_Bot"
 
+[[r2_buckets]]
+binding = "REPORT_DATA_BUCKET"
+bucket_name = "tgbot-report-data-dev"
+
 [env.preview]
 name = "tgbot-preview"
 workers_dev = true
@@ -40,6 +44,10 @@ binding = "CF_VERSION_METADATA"
 binding = "USAGE_ANALYTICS"
 dataset = "Libchecker_TG_Bot_Preview"
 
+[[env.preview.r2_buckets]]
+binding = "REPORT_DATA_BUCKET"
+bucket_name = "tgbot-preview-report-data"
+
 [env.production]
 name = "tgbot"
 workers_dev = false
@@ -60,3 +68,7 @@ binding = "CF_VERSION_METADATA"
 [[env.production.analytics_engine_datasets]]
 binding = "USAGE_ANALYTICS"
 dataset = "Libchecker_TG_Bot"
+
+[[env.production.r2_buckets]]
+binding = "REPORT_DATA_BUCKET"
+bucket_name = "tgbot-report-data"

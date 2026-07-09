@@ -76,11 +76,9 @@
     "telegram_file_download_failed": "Telegram 文件下载失败 ({status})",
     "telegram_api_request_failed": "Telegram API {method} 请求失败 ({status})",
     "telegram_api_result_failed": "Telegram API {method} 返回失败",
-    "telegraph_invalid_path": "Telegraph 页面路径无效",
-    "telegraph_fetch_failed": "Telegraph 页面获取失败 ({status})",
-    "telegraph_fetch_failed_generic": "Telegraph 页面获取失败",
-    "telegraph_api_failed": "Telegraph API {method} 请求失败 ({status})",
-    "telegraph_api_result_failed": "Telegraph API {method} 返回失败"
+    "report_data_invalid_ref": "报告链接无效",
+    "report_data_not_found": "没有找到报告数据",
+    "report_data_bucket_missing": "报告存储未配置"
   },
   "webui": {
     "subtitle": "在线分析 APK/APKS/APKM/XAPK",
@@ -93,6 +91,13 @@
     "themeSystem": "系统",
     "languageLabel": "语言",
     "exportJson": "导出 JSON",
+    "reportShare": "分享报告",
+    "reportShareTitle": "LibChecker 报告",
+    "reportShareText": "{appName} 的 LibChecker 报告",
+    "reportSharePreparing": "正在准备分享链接...",
+    "reportShareShared": "已分享",
+    "reportShareCopied": "链接已复制",
+    "reportShareFailed": "分享失败",
     "clear": "清空",
     "filePrompt": "选择或拖入",
     "fileIdle": "未选择文件",

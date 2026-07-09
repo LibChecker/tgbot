@@ -17,6 +17,7 @@ import { createSdkMarkerAnnotator } from "../../shared/src/sdk-markers.js";
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_TELEGRAM_APK_BYTES = 20 * 1024 * 1024;
 const DEFAULT_DIRECT_UPLOAD_BYTES = 90 * 1024 * 1024;
+const MAX_REPORT_PUBLISH_BODY_BYTES = 4 * 1024 * 1024;
 const ANDROID_PACKAGE_EXTENSIONS = [".apk", ".apks", ".apkm", ".xapk"];
 const JSON_CONTENT_HEADERS = {
   "content-type": "application/json; charset=UTF-8",
@@ -35,7 +36,7 @@ const MANAGED_COMMAND_LANGUAGE_CODES = [null, ...SUPPORTED_LOCALES.filter((local
 let cachedBotIdentity = null;
 let apkUrlPreviewModulePromise = null;
 let sdkRuleAnnotatorPromise = null;
-let telegraphModulePromise = null;
+let reportStoreModulePromise = null;
 let uploadViewModulePromise = null;
 
 const app = new Hono();
@@ -76,7 +77,7 @@ app.get("/", (context) => {
 
 app.use("/report-data", cors({
   origin: "*",
-  allowMethods: ["GET", "OPTIONS"],
+  allowMethods: ["GET", "POST", "OPTIONS"],
   allowHeaders: ["content-type"],
   maxAge: 86400,
 }));
@@ -85,26 +86,69 @@ app.get("/report-data", async (context) => {
   const url = getRequestUrl(context);
   const telemetry = getRequestTelemetry(context);
   const startedAt = Date.now();
-  const reportPath = url.searchParams.get("path") || "";
+  const reportRef = url.searchParams.get("ref") || "";
   const locale = normalizeLocale(url.searchParams.get("lang"));
 
   try {
-    const { fetchTelegraphReportData } = await loadTelegraphModule();
-    const report = await fetchTelegraphReportData(reportPath, locale, context.env);
+    const { fetchReportData } = await loadReportStoreModule();
+    const report = await fetchReportData(reportRef, context.env);
     logInfoEvent(context.env, telemetry, "report.data_viewed", {
       result: "success",
       http_status: 200,
-      report_path: reportPath || null,
+      report_ref: reportRef || null,
       duration_ms: Date.now() - startedAt,
       package_name: report.apkInfo.packageName,
     });
     return context.json({ report });
   } catch (error) {
-    const status = reportPath ? 404 : 400;
+    const status = getReportDataErrorStatus(error, 500);
     logWarnEvent(context.env, telemetry, "report.data_view_failed", {
       result: "error",
       http_status: status,
-      report_path: reportPath || null,
+      report_ref: reportRef || null,
+      duration_ms: Date.now() - startedAt,
+      ...getErrorTelemetryFields(error),
+    });
+    return context.json({
+      error: {
+        message: getLocalizedErrorMessage(error, locale),
+      },
+    }, status);
+  }
+});
+
+app.post("/report-data", async (context) => {
+  const url = getRequestUrl(context);
+  const telemetry = getRequestTelemetry(context);
+  const startedAt = Date.now();
+  const locale = normalizeLocale(url.searchParams.get("lang"));
+
+  try {
+    const payload = await readJsonBodyWithLimit(context.req.raw, MAX_REPORT_PUBLISH_BODY_BYTES);
+    const { createApkReportDataEntry } = await loadReportStoreModule();
+    const entry = await createApkReportDataEntry(context.env, payload?.report);
+    const reportUrl = buildWebUiReportUrl(
+      context.env,
+      resolvePublicBaseUrl(context.env, url.origin),
+      entry.ref,
+      normalizeLocale(payload?.locale || locale),
+    );
+    logInfoEvent(context.env, telemetry, "report.data_published", {
+      result: "success",
+      http_status: 200,
+      report_ref: entry.ref,
+      duration_ms: Date.now() - startedAt,
+      package_name: payload?.report?.apkInfo?.packageName || null,
+    });
+    return context.json({
+      ref: entry.ref,
+      url: reportUrl,
+    });
+  } catch (error) {
+    const status = getReportPublishErrorStatus(error);
+    logWarnEvent(context.env, telemetry, "report.data_publish_failed", {
+      result: "error",
+      http_status: status,
       duration_ms: Date.now() - startedAt,
       ...getErrorTelemetryFields(error),
     });
@@ -549,7 +593,7 @@ async function handleUploadRequest(request, env, url, telemetry) {
     });
 
     const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
-    const telegraphModuleTask = loadTelegraphModule();
+    const reportStoreModuleTask = loadReportStoreModule();
     let stageStartedAt = Date.now();
     logInfoEvent(env, telemetry, "upload.analysis.file_read.started", {
       result: "started",
@@ -615,22 +659,22 @@ async function handleUploadRequest(request, env, url, telemetry) {
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
     }, { analytics: false });
 
-    const { createApkTelegraphReportDataPage } = await telegraphModuleTask;
+    const { createApkReportDataEntry } = await reportStoreModuleTask;
     stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "upload.analysis.telegraph.started", {
+    logInfoEvent(env, telemetry, "upload.analysis.report_store.started", {
       result: "started",
-      analysis_stage: "telegraph_create",
+      analysis_stage: "report_store",
       package_name: report.apkInfo.packageName,
     }, { analytics: false });
-    const telegraphPage = await createApkTelegraphReportDataPage(env, report);
-    logInfoEvent(env, telemetry, "upload.analysis.telegraph.succeeded", {
+    const reportEntry = await createApkReportDataEntry(env, report);
+    logInfoEvent(env, telemetry, "upload.analysis.report_store.succeeded", {
       result: "success",
-      analysis_stage: "telegraph_create",
+      analysis_stage: "report_store",
       duration_ms: Date.now() - stageStartedAt,
       package_name: report.apkInfo.packageName,
-      report_path: telegraphPage.path || null,
+      report_ref: reportEntry.ref,
     }, { analytics: false });
-    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, telegraphPage.path, formLocale);
+    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, reportEntry.ref, formLocale);
 
     logInfoEvent(env, telemetry, "upload.analysis.succeeded", {
       result: "success",
@@ -646,7 +690,7 @@ async function handleUploadRequest(request, env, url, telemetry) {
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
       has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
       app_icon_path: report.apkInfo.icon?.path || null,
-      report_path: telegraphPage.path || null,
+      report_ref: reportEntry.ref,
       ...getArchiveTelemetryFields(report.apkInfo),
     });
 
@@ -1126,7 +1170,7 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
 
   try {
     const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
-    const telegraphModuleTask = loadTelegraphModule();
+    const reportStoreModuleTask = loadReportStoreModule();
     let stageStartedAt = Date.now();
     logInfoEvent(env, telemetry, "apk.analysis.file_download.started", {
       result: "started",
@@ -1192,22 +1236,22 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
     }, { analytics: false });
 
-    const { createApkTelegraphReportDataPage } = await telegraphModuleTask;
+    const { createApkReportDataEntry } = await reportStoreModuleTask;
     stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "apk.analysis.telegraph.started", {
+    logInfoEvent(env, telemetry, "apk.analysis.report_store.started", {
       result: "started",
-      analysis_stage: "telegraph_create",
+      analysis_stage: "report_store",
       package_name: report.apkInfo.packageName,
     }, { analytics: false });
-    const telegraphPage = await createApkTelegraphReportDataPage(env, report);
-    logInfoEvent(env, telemetry, "apk.analysis.telegraph.succeeded", {
+    const reportEntry = await createApkReportDataEntry(env, report);
+    logInfoEvent(env, telemetry, "apk.analysis.report_store.succeeded", {
       result: "success",
-      analysis_stage: "telegraph_create",
+      analysis_stage: "report_store",
       duration_ms: Date.now() - stageStartedAt,
       package_name: report.apkInfo.packageName,
-      report_path: telegraphPage.path || null,
+      report_ref: reportEntry.ref,
     }, { analytics: false });
-    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, telegraphPage.path, locale);
+    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, reportEntry.ref, locale);
 
     logInfoEvent(env, telemetry, "apk.analysis.succeeded", {
       result: "success",
@@ -1224,7 +1268,7 @@ async function analyzeApkDocument(env, message, document, requestOrigin, telemet
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
       has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
       app_icon_path: report.apkInfo.icon?.path || null,
-      report_path: telegraphPage.path || null,
+      report_ref: reportEntry.ref,
       source_label: report.sourceLabel,
       ...getArchiveTelemetryFields(report.apkInfo),
     });
@@ -1280,7 +1324,7 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
 
   try {
     const sdkRuleAnnotatorTask = loadSdkRuleAnnotator();
-    const telegraphModuleTask = loadTelegraphModule();
+    const reportStoreModuleTask = loadReportStoreModule();
     const { readApkInfoFromUrl } = await apkUrlPreviewModuleTask;
     let stageStartedAt = Date.now();
     logInfoEvent(env, telemetry, "apk.link_analysis.preview.started", {
@@ -1332,22 +1376,22 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
     }, { analytics: false });
 
-    const { createApkTelegraphReportDataPage } = await telegraphModuleTask;
+    const { createApkReportDataEntry } = await reportStoreModuleTask;
     stageStartedAt = Date.now();
-    logInfoEvent(env, telemetry, "apk.link_analysis.telegraph.started", {
+    logInfoEvent(env, telemetry, "apk.link_analysis.report_store.started", {
       result: "started",
-      analysis_stage: "telegraph_create",
+      analysis_stage: "report_store",
       package_name: report.apkInfo.packageName,
     }, { analytics: false });
-    const telegraphPage = await createApkTelegraphReportDataPage(env, report);
-    logInfoEvent(env, telemetry, "apk.link_analysis.telegraph.succeeded", {
+    const reportEntry = await createApkReportDataEntry(env, report);
+    logInfoEvent(env, telemetry, "apk.link_analysis.report_store.succeeded", {
       result: "success",
-      analysis_stage: "telegraph_create",
+      analysis_stage: "report_store",
       duration_ms: Date.now() - stageStartedAt,
       package_name: report.apkInfo.packageName,
-      report_path: telegraphPage.path || null,
+      report_ref: reportEntry.ref,
     }, { analytics: false });
-    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, telegraphPage.path, locale);
+    const reportUrl = buildWebUiReportUrl(env, publicBaseUrl, reportEntry.ref, locale);
 
     logInfoEvent(env, telemetry, "apk.link_analysis.succeeded", {
       result: "success",
@@ -1372,7 +1416,7 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
       sdk_component_match_count: report.apkInfo.sdkSummary?.components.length || 0,
       has_app_icon: Boolean(report.apkInfo.icon?.dataUri),
       app_icon_path: report.apkInfo.icon?.path || null,
-      report_path: telegraphPage.path || null,
+      report_ref: reportEntry.ref,
       source_label: report.sourceLabel,
       ...getArchiveTelemetryFields(report.apkInfo),
     });
@@ -1555,6 +1599,55 @@ async function readJsonBody(request) {
   } catch {
     return {};
   }
+}
+
+async function readJsonBodyWithLimit(request, maxBytes) {
+  const contentLength = parseContentLengthHeader(request.headers.get("content-length"));
+  if (contentLength > maxBytes) {
+    throw createErrorWithCode("request_body_too_large", "Request body is too large");
+  }
+
+  let text = "";
+  try {
+    text = await request.text();
+  } catch {
+    throw createErrorWithCode("invalid_json_request_body", "Invalid JSON request body");
+  }
+
+  if (new TextEncoder().encode(text).byteLength > maxBytes) {
+    throw createErrorWithCode("request_body_too_large", "Request body is too large");
+  }
+
+  try {
+    return JSON.parse(text || "{}");
+  } catch {
+    throw createErrorWithCode("invalid_json_request_body", "Invalid JSON request body");
+  }
+}
+
+function getReportDataErrorStatus(error, fallbackStatus = 500) {
+  switch (getErrorCode(error)) {
+    case "invalid_json_request_body":
+    case "report_data_invalid_ref":
+      return 400;
+    case "request_body_too_large":
+      return 413;
+    case "report_data_not_found":
+      return 404;
+    case "report_data_bucket_missing":
+      return 500;
+    default:
+      return fallbackStatus;
+  }
+}
+
+function getReportPublishErrorStatus(error) {
+  const status = getReportDataErrorStatus(error, 500);
+  if (status !== 500) {
+    return status;
+  }
+
+  return error instanceof TypeError ? 400 : 500;
 }
 
 function jsonResponse(data, status = 200) {
@@ -1833,16 +1926,16 @@ function loadSdkRuleAnnotator() {
   return sdkRuleAnnotatorPromise;
 }
 
-function loadTelegraphModule() {
-  if (!telegraphModulePromise) {
-    telegraphModulePromise = import("./telegraph.js")
+function loadReportStoreModule() {
+  if (!reportStoreModulePromise) {
+    reportStoreModulePromise = import("./report-store.js")
       .catch((error) => {
-        telegraphModulePromise = null;
+        reportStoreModulePromise = null;
         throw error;
       });
   }
 
-  return telegraphModulePromise;
+  return reportStoreModulePromise;
 }
 
 function loadUploadViewModule() {
@@ -1893,22 +1986,22 @@ async function buildApkReport(
   });
 }
 
-function buildReportDataUrl(publicBaseUrl, path, locale) {
+function buildReportDataUrl(publicBaseUrl, ref, locale) {
   const searchParams = new URLSearchParams({
-    path: path || "",
+    ref: ref || "",
     lang: locale,
   });
   return `${publicBaseUrl}/report-data?${searchParams.toString()}`;
 }
 
-function buildWebUiReportUrl(env, publicBaseUrl, path, locale) {
+function buildWebUiReportUrl(env, publicBaseUrl, ref, locale) {
   const webUiBaseUrl = resolveWebUiBaseUrl(env);
   if (!webUiBaseUrl) {
-    return buildReportDataUrl(publicBaseUrl, path, locale);
+    return buildReportDataUrl(publicBaseUrl, ref, locale);
   }
 
   const searchParams = new URLSearchParams({
-    r: path || "",
+    r: ref || "",
     lang: locale,
   });
   return `${webUiBaseUrl}/?${searchParams.toString()}`;
@@ -2475,6 +2568,12 @@ function getErrorStack(error) {
   }
 
   return null;
+}
+
+function createErrorWithCode(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
 }
 
 export const __botWorkerTestInternals = {

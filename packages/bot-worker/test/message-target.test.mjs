@@ -74,18 +74,20 @@ test("private chat report buttons use regular URLs", () => {
   assert.equal(button.web_app, undefined);
 });
 
-test("report URLs target the configured WebUI with a short report path", () => {
+const sampleReportRef = "rp_0123456789abcdef0123456789abcdef";
+
+test("report URLs target the configured WebUI with a short report ref", () => {
   const reportUrl = buildWebUiReportUrl(
     { WEBUI_SITE_URL: "https://webui.example.com/" },
     "https://worker.example.com",
-    "Sample-07-08",
+    sampleReportRef,
     "zh-Hans",
   );
   const url = new URL(reportUrl);
 
   assert.equal(url.origin, "https://webui.example.com");
   assert.equal(url.pathname, "/");
-  assert.equal(url.searchParams.get("r"), "Sample-07-08");
+  assert.equal(url.searchParams.get("r"), sampleReportRef);
   assert.equal(url.searchParams.get("lang"), "zh-Hans");
   assert.deepEqual(Array.from(url.searchParams.keys()), ["r", "lang"]);
 });
@@ -94,14 +96,14 @@ test("report URLs fall back to Worker report data when WebUI is not configured",
   const reportUrl = buildWebUiReportUrl(
     {},
     "https://worker.example.com",
-    "Sample-07-08",
+    sampleReportRef,
     "zh-Hans",
   );
   const url = new URL(reportUrl);
 
   assert.equal(url.origin, "https://worker.example.com");
   assert.equal(url.pathname, "/report-data");
-  assert.equal(url.searchParams.get("path"), "Sample-07-08");
+  assert.equal(url.searchParams.get("ref"), sampleReportRef);
   assert.equal(url.searchParams.get("lang"), "zh-Hans");
 });
 
@@ -156,15 +158,33 @@ test("report data route handles CORS preflight through Hono middleware", async (
       method: "OPTIONS",
       headers: {
         origin: "https://webui.example.com",
-        "access-control-request-method": "GET",
+        "access-control-request-method": "POST",
       },
     });
 
     assert.equal(response.status, 204);
     assert.equal(response.headers.get("access-control-allow-origin"), "*");
     assert.match(response.headers.get("access-control-allow-methods") || "", /GET/u);
+    assert.match(response.headers.get("access-control-allow-methods") || "", /POST/u);
   } finally {
     console.log = originalLog;
+  }
+});
+
+test("report data route treats missing R2 binding as server configuration error", async () => {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = () => {};
+  console.warn = () => {};
+  try {
+    const response = await app.request(`https://worker.example.com/report-data?ref=${sampleReportRef}&lang=en`);
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(body.error.message, "Report storage is not configured.");
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
   }
 });
 
