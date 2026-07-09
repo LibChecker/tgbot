@@ -186,7 +186,7 @@ export function renderReportShareModalContent({ body, report, shareUrl, statusKe
     `<button class="primary-button report-share-copy" type="button" data-report-share-action="copy" ${copyDisabled ? "disabled" : ""}>${escapeHtml(t("reportShareCopy"))}</button>`,
     `<button class="secondary-button report-share-system" type="button" data-report-share-action="share" ${nativeDisabled ? "disabled" : ""}>${escapeHtml(t("reportShareSystem"))}</button>`,
     `</div>`,
-    `<p class="report-share-status${isFailure ? " is-error" : ""}" aria-live="polite">${escapeHtml(t(statusKey))}</p>`,
+    isFailure ? `<p class="report-share-status is-error" aria-live="polite">${escapeHtml(t(statusKey))}</p>` : "",
   ].join("");
 }
 
@@ -212,7 +212,7 @@ function renderReportShareModalShell() {
 }
 
 function renderReportShareAppIcon(info, t) {
-  const src = sanitizeImageSrc(info?.icon || "");
+  const src = sanitizeImageSrc(info?.icon?.dataUri || (typeof info?.icon === "string" ? info.icon : ""));
   if (src) {
     return `<img class="report-share-app-icon" src="${escapeAttr(src)}" alt="${escapeAttr(info.appName || t("appName"))}">`;
   }

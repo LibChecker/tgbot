@@ -2883,11 +2883,6 @@ svg {
 }
 
 .report-share-button__spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid;
-  border-top-color: var(--accent);
-  border-radius: 50%;
   opacity: 0;
 }
 
@@ -2897,7 +2892,7 @@ svg {
 
 .report-share-button.is-loading .report-share-button__spinner {
   opacity: 1;
-  animation: compare-spin 1s linear infinite;
+  animation: compare-spin 760ms linear infinite;
 }
 
 .app-title-mask {
