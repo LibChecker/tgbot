@@ -826,10 +826,14 @@ async function inflateRaw(bytes) {
   return new Uint8Array(buffer);
 }
 
-function parseHttpUrl(rawUrl) {
+export function parseHttpUrl(rawUrl) {
   const url = new URL(String(rawUrl).trim());
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Only HTTP/HTTPS APK download links are supported");
+    throw createUrlAnalysisError("Only HTTP/HTTPS APK download links are supported", "invalid_download_url");
+  }
+
+  if (isBlockedDownloadHost(url.hostname)) {
+    throw createUrlAnalysisError("This download host is not allowed", "invalid_download_url");
   }
 
   url.hash = "";
@@ -922,4 +926,187 @@ function formatBytes(bytes) {
 
   const precision = value >= 10 || index === 0 ? 0 : 1;
   return `${value.toFixed(precision)} ${units[index]}`;
+}
+
+function isBlockedDownloadHost(value) {
+  const hostname = normalizeDownloadHostname(value);
+  if (!hostname) {
+    return true;
+  }
+
+  if (
+    hostname === "localhost" ||
+    hostname === "local" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local")
+  ) {
+    return true;
+  }
+
+  const ipv4 = parseIpv4(hostname);
+  if (ipv4) {
+    return isBlockedIpv4(ipv4);
+  }
+
+  const ipv6 = parseIpv6(hostname);
+  if (ipv6) {
+    return isBlockedIpv6(ipv6);
+  }
+
+  return false;
+}
+
+function normalizeDownloadHostname(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/gu, "")
+    .replace(/\.$/u, "");
+}
+
+function parseIpv4(value) {
+  const parts = String(value || "").split(".");
+  if (parts.length !== 4) {
+    return null;
+  }
+
+  const parsed = [];
+  for (const part of parts) {
+    if (!/^(?:\d{1,3})$/u.test(part)) {
+      return null;
+    }
+
+    const number = Number(part);
+    if (number < 0 || number > 255) {
+      return null;
+    }
+
+    parsed.push(number);
+  }
+
+  return parsed;
+}
+
+function isBlockedIpv4(values) {
+  const [a, b] = values;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    a >= 224 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19))
+  );
+}
+
+function isBlockedIpv6(parts) {
+  if (parts.length !== 8 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 0xffff)) {
+    return false;
+  }
+
+  if (parts.every((part) => part === 0)) {
+    return true;
+  }
+
+  const isIpv4Mapped = parts[0] === 0 &&
+    parts[1] === 0 &&
+    parts[2] === 0 &&
+    parts[3] === 0 &&
+    parts[4] === 0 &&
+    parts[5] === 0xffff;
+  if (isIpv4Mapped) {
+    return isBlockedIpv4([
+      (parts[6] >> 8) & 0xff,
+      parts[6] & 0xff,
+      (parts[7] >> 8) & 0xff,
+      parts[7] & 0xff,
+    ]);
+  }
+
+  const isLoopback = parts[0] === 0 && parts[1] === 0 && parts[2] === 0 && parts[3] === 0 && parts[4] === 0 && parts[5] === 0 && parts[6] === 0 && parts[7] === 1;
+  if (isLoopback) {
+    return true;
+  }
+
+  if ((parts[0] & 0xffc0) === 0xfe80) {
+    return true;
+  }
+  if ((parts[0] & 0xffc0) === 0xfc00 || (parts[0] & 0xffc0) === 0xfec0) {
+    return true;
+  }
+
+  if ((parts[0] & 0xff00) === 0xff00) {
+    return true;
+  }
+
+  return false;
+}
+
+function parseIpv6(hostname) {
+  const normalized = normalizeDownloadHostname(hostname);
+  const zoneIndex = normalized.indexOf("%");
+  const zoneFree = zoneIndex >= 0 ? normalized.slice(0, zoneIndex) : normalized;
+  if (!zoneFree || zoneFree.includes("]") || zoneFree.includes("[")) {
+    return null;
+  }
+
+  const [leftPart, rightPart, extra] = zoneFree.split("::");
+  if (extra !== undefined) {
+    return null;
+  }
+
+  const leftSections = leftPart ? leftPart.split(":").filter(Boolean) : [];
+  const rightSections = rightPart ? rightPart.split(":").filter(Boolean) : [];
+
+  const leftGroups = expandIpv6Sections(leftSections);
+  if (leftGroups === null) {
+    return null;
+  }
+  const rightGroups = expandIpv6Sections(rightSections);
+  if (rightGroups === null) {
+    return null;
+  }
+
+  if (zoneFree.includes("::")) {
+    const zerosToInsert = 8 - (leftGroups.length + rightGroups.length);
+    if (zerosToInsert < 1) {
+      return null;
+    }
+    return [...leftGroups, ...Array(zerosToInsert).fill(0), ...rightGroups];
+  }
+
+  if (leftGroups.length + rightGroups.length !== 8) {
+    return null;
+  }
+
+  return [...leftGroups, ...rightGroups];
+}
+
+function expandIpv6Sections(sections) {
+  const output = [];
+  for (const section of sections) {
+    if (section.includes(".")) {
+      const ipv4 = parseIpv4(section);
+      if (!ipv4) {
+        return null;
+      }
+      output.push((ipv4[0] << 8) | ipv4[1]);
+      output.push((ipv4[2] << 8) | ipv4[3]);
+      continue;
+    }
+
+    if (!/^[0-9a-f]+$/u.test(section) || section.length > 4) {
+      return null;
+    }
+
+    const parsed = Number.parseInt(section, 16);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 0xffff) {
+      return null;
+    }
+    output.push(parsed);
+  }
+  return output;
 }
