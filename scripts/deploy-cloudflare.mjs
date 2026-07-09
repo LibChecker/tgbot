@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -16,6 +16,7 @@ const DEFAULT_REPORT_DATA_BUCKET_NAMES = {
   preview: "tgbot-preview-report-data",
   production: "tgbot-report-data",
 };
+const DEFAULT_PREVIEW_PAGES_BRANCH = "preview";
 let activeWorkerConfigPath = workerConfigPath;
 let temporaryWorkerConfigPath = null;
 
@@ -341,13 +342,17 @@ function logPagesCustomDomainDnsHint(targetValue, hostname) {
     return;
   }
 
-  const targetHostname = `${toPagesPreviewAlias(targetValue.pagesBranch)}.${pagesProjectName}.pages.dev`;
-  if (hostname === targetHostname) {
+  const projectHostname = `${pagesProjectName}.pages.dev`;
+  if (hostname === projectHostname) {
     return;
   }
 
+  const previewAlias = `${toPagesPreviewAlias(targetValue.pagesBranch)}.${projectHostname}`;
   process.stdout.write(
-    `Preview branch DNS target: ${hostname} CNAME ${targetHostname} (proxied)\n`,
+    `Preview Pages alias: https://${previewAlias}\n`,
+  );
+  process.stdout.write(
+    `Pages custom domain DNS target: ${hostname} CNAME ${projectHostname} (proxied)\n`,
   );
 }
 
@@ -441,17 +446,7 @@ function resolvePreviewBranch() {
     return sanitizePagesBranch(explicit);
   }
 
-  const githubBranch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME;
-  if (githubBranch) {
-    return sanitizePagesBranch(githubBranch);
-  }
-
-  const currentBranch = runSync("git", ["branch", "--show-current"]).trim();
-  if (currentBranch) {
-    return sanitizePagesBranch(currentBranch);
-  }
-
-  return "preview";
+  return DEFAULT_PREVIEW_PAGES_BRANCH;
 }
 
 function sanitizePagesBranch(value) {
@@ -499,15 +494,6 @@ function run(command, args, options = {}) {
       rejectRun(new Error(`${formatCommand(command, args)} failed with ${signal || `exit code ${code}`}`));
     });
   });
-}
-
-function runSync(command, args) {
-  const spawnSpec = resolveSpawnSpec(command, args);
-  const result = spawnSync(spawnSpec.command, spawnSpec.args, {
-    cwd: repoDir,
-    encoding: "utf8",
-  });
-  return result.status === 0 ? result.stdout : "";
 }
 
 function resolveSpawnSpec(command, args) {

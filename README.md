@@ -114,7 +114,7 @@ npm run deploy:setup
 
 The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.toml`:
 
-- `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, uses `TEST_BOT_TOKEN` for preview bot testing, points report buttons at `PREVIEW_WEBUI_SITE_URL` or the Cloudflare Pages branch preview alias, registers the preview Web UI Pages custom domain when configured, and injects the preview Worker origin so Web UI report links can resolve `?r=...`.
+- `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, uses `TEST_BOT_TOKEN` for preview bot testing, points report buttons at `PREVIEW_WEBUI_SITE_URL` or the fixed Cloudflare Pages preview alias, registers the preview Web UI Pages custom domain when configured, and injects the preview Worker origin so Web UI report links can resolve `?r=...`.
 - `production`: deploys `tgbot`, binds the custom domain from repository variable `WORKER_URL`, uses `Libchecker_TG_Bot`, injects that URL as `PUBLIC_WEBHOOK_URL`, points report buttons at `WEBUI_SITE_URL`, registers the production Web UI Pages custom domain when configured, and injects the production Worker origin so Web UI report links can resolve `?r=...`.
 
 ## Web UI Deployment
@@ -227,7 +227,7 @@ Optional repository variable:
 
 - `PREVIEW_WORKER_URL`, the full preview Worker URL used for the preview custom domain, test bot webhook, and Web UI report-data origin.
 - `WORKER_URL`, the full production Worker URL used for the production custom domain, bot webhook, and Web UI report-data origin.
-- `PREVIEW_WEBUI_SITE_URL`, the optional full preview Web UI URL used by preview bot report buttons and preview metadata. When omitted, preview deploys use the Pages branch preview alias. For a custom preview domain, keep the DNS CNAME proxied and pointed at the Pages branch alias, for example `<branch-alias>.tgbot-apk-webui.pages.dev`.
+- `PREVIEW_WEBUI_SITE_URL`, the optional full preview Web UI URL used by preview bot report buttons and preview metadata. When omitted, preview deploys use the fixed Pages preview alias, `preview.tgbot-apk-webui.pages.dev`. For a custom preview domain, set this variable to the custom origin and create the CNAME exactly as Cloudflare Pages shows in the domain setup UI.
 - `WEBUI_SITE_URL`, the full production Web UI URL used by production bot report buttons and Web UI metadata.
 - `TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME`, optional namespace name override for SDK custom emoji ids. Defaults to `tgbot-sdk-emojis`.
 - `PREVIEW_TELEGRAM_SDK_EMOJI_KV_NAMESPACE_NAME`, optional preview namespace name override.
