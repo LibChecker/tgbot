@@ -945,6 +945,9 @@ function isBlockedDownloadHost(value) {
 
   const ipv4 = parseIpv4(hostname);
   if (ipv4) {
+    if (ipv4._ambiguousLeadingZero) {
+      return true;
+    }
     return isBlockedIpv4(ipv4);
   }
 
@@ -966,24 +969,64 @@ function normalizeDownloadHostname(value) {
 
 function parseIpv4(value) {
   const parts = String(value || "").split(".");
-  if (parts.length !== 4) {
+  if (parts.length < 1 || parts.length > 4) {
     return null;
   }
 
+  let hasLeadingZero = false;
   const parsed = [];
   for (const part of parts) {
-    if (!/^(?:\d{1,3})$/u.test(part)) {
+    if (!/^(?:\d+)$/u.test(part)) {
+      return null;
+    }
+    if (part.length > 1 && part.startsWith("0")) {
+      hasLeadingZero = true;
+    }
+
+    if (part.length > 10) {
       return null;
     }
 
     const number = Number(part);
-    if (number < 0 || number > 255) {
+    if (!Number.isSafeInteger(number) || number < 0) {
       return null;
     }
-
     parsed.push(number);
   }
 
+  const [a, b, c] = parsed;
+  if (parts.length === 1) {
+    const number = Number(a);
+    if (number > 0xffffffff) {
+      return null;
+    }
+    const bytes = [number >>> 24, (number >>> 16) & 0xff, (number >>> 8) & 0xff, number & 0xff];
+    bytes._ambiguousLeadingZero = hasLeadingZero;
+    return bytes;
+  }
+
+  if (parts.length === 2) {
+    if (a > 0xff || b > 0xffffff) {
+      return null;
+    }
+    const bytes = [a, (b >>> 16) & 0xff, (b >>> 8) & 0xff, b & 0xff];
+    bytes._ambiguousLeadingZero = hasLeadingZero;
+    return bytes;
+  }
+
+  if (parts.length === 3) {
+    if (a > 0xff || b > 0xff || c > 0xffff) {
+      return null;
+    }
+    const bytes = [a, b, (c >>> 8) & 0xff, c & 0xff];
+    bytes._ambiguousLeadingZero = hasLeadingZero;
+    return bytes;
+  }
+
+  if (parsed.some((part) => part > 0xff)) {
+    return null;
+  }
+  parsed._ambiguousLeadingZero = hasLeadingZero;
   return parsed;
 }
 

@@ -14,6 +14,7 @@ const ELF_CLASS_64 = 2;
 const ELF_DATA_BIG_ENDIAN = 2;
 const ELF_PROGRAM_HEADER_LOAD = 1;
 const ELF_MAX_HEADER_SIZE = 0x40;
+const MAX_ELF_PREFIX_BYTES = 2 * 1024 * 1024;
 const NATIVE_PAGE_SIZE_16_KB = 0x4000;
 const ZIP_INFLATE_CHUNK_BYTES = 64 * 1024;
 
@@ -2624,7 +2625,11 @@ async function getNativeLibraryBytesForElf(source, entry) {
 
 async function extractZipEntryElfPrefix(zipBytes, entry) {
   const headerBytes = await extractZipEntryPrefix(zipBytes, entry, ELF_MAX_HEADER_SIZE);
-  const byteLength = getElfProgramHeaderEndOffset(headerBytes, entry.uncompressedSize || headerBytes.byteLength);
+  const maxPrefixBytes = Math.min(
+    Math.max(headerBytes.byteLength, entry.uncompressedSize || headerBytes.byteLength),
+    MAX_ELF_PREFIX_BYTES,
+  );
+  const byteLength = getElfProgramHeaderEndOffset(headerBytes, maxPrefixBytes);
   if (byteLength <= headerBytes.byteLength) {
     return headerBytes;
   }
