@@ -23,3 +23,8 @@ test("report and compare styles stay behind lazy module boundaries", async () =>
   assert.match(reportCss, /^\.group-block\s*\{[^}]*\bpadding:\s*14px;/msu);
   assert.doesNotMatch(compareCss, /^\.compare-diff-block\s*\{[^}]*\bpadding:/msu);
 });
+
+test("static shell styling stays in stylesheets", async () => {
+  const indexHtml = await readSource("src/index.html");
+  assert.doesNotMatch(indexHtml, /\sstyle="/u);
+});

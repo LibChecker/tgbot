@@ -120,6 +120,10 @@
   grid-area: panel;
 }
 
+.report-hero-shell {
+  position: relative;
+}
+
 .report-hero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -192,6 +196,24 @@
 .report-share-button {
   position: absolute;
   inset: 14px 14px auto auto;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+.report-share-button svg {
+  grid-area: 1 / 1;
+}
+
+.report-share-button__spinner {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  fill: currentColor;
+  transform-origin: center;
 }
 
 .report-share-button.is-loading svg {
