@@ -32,7 +32,7 @@ export async function publishReport({ endpoint, report, locale }) {
       accept: "application/json",
       "content-type": "application/json; charset=UTF-8",
     },
-    body: JSON.stringify({ report, locale }),
+    body: JSON.stringify({ report, locale }, stripReportPublishJson),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload?.url) {
@@ -77,4 +77,8 @@ function getCurrentReportShareUrl(pageHref, pageSearch, locale) {
   url.searchParams.set("r", ref);
   url.searchParams.set("lang", locale);
   return url.href;
+}
+
+function stripReportPublishJson(key, value) {
+  return key === "ruleDetail" ? null : value;
 }
