@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
-import { BUILD_FEATURE_ICON_NAMES, BUILD_FEATURE_ICON_SVGS } from "../packages/shared/src/build-feature-icons.js";
+import { BUILD_FEATURE_ICON_NAMES } from "../packages/shared/src/build-feature-icons.js";
 import { LIBCHECKER_SDK_ICON_SVGS } from "../packages/shared/src/generated/libchecker-sdk-icons.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -506,9 +506,6 @@ function buildStickerIconSvgMap(sdkIconSvgs) {
   const icons = { ...sdkIconSvgs };
   for (const [key, iconName] of Object.entries(BUILD_FEATURE_ICON_NAMES)) {
     icons[`ic_feature_${key}`] = sdkIconSvgs[iconName];
-  }
-  for (const [key, svg] of Object.entries(BUILD_FEATURE_ICON_SVGS)) {
-    icons[`ic_feature_${key}`] = svg;
   }
   return Object.fromEntries(Object.entries(icons).filter(([, svg]) => typeof svg === "string" && svg));
 }
@@ -1164,14 +1161,15 @@ function runSelfTest() {
     "uploaded sticker filenames include the render version",
   );
   const stickerIconMap = buildStickerIconSvgMap({
-    ic_lib_jetbrain_kmp: "<svg id=\"kotlin\" />",
+    ic_gradle: "<svg id=\"gradle\" />",
     ic_lib_jetpack_compose: "<svg id=\"compose\" />",
+    ic_lib_kotlin: "<svg id=\"kotlin\" />",
     ic_lib_existing: "<svg id=\"existing\" />",
   });
-  assert(stickerIconMap.ic_feature_kotlin === stickerIconMap.ic_lib_jetbrain_kmp, "Kotlin sticker icon reuses the WebUI SDK icon source");
+  assert(stickerIconMap.ic_feature_kotlin === stickerIconMap.ic_lib_kotlin, "Kotlin sticker icon reuses the WebUI SDK icon source");
   assert(stickerIconMap.ic_feature_compose === stickerIconMap.ic_lib_jetpack_compose, "Compose sticker icon reuses the WebUI SDK icon source");
-  assert(stickerIconMap.ic_feature_agp === BUILD_FEATURE_ICON_SVGS.agp, "AGP sticker icon uses the WebUI feature icon source");
-  assert(stickerIconMap.ic_feature_gradle === BUILD_FEATURE_ICON_SVGS.gradle, "Gradle sticker icon uses the WebUI feature icon source");
+  assert(stickerIconMap.ic_feature_agp === stickerIconMap.ic_gradle, "AGP sticker icon reuses the WebUI SDK icon source");
+  assert(stickerIconMap.ic_feature_gradle === stickerIconMap.ic_gradle, "Gradle sticker icon reuses the WebUI SDK icon source");
   const legacySetName = buildSetName("libchecker_sdk", "examplebot", 1);
   const filteredManifest = filterManifestForSetBase(normalizeManifest({
     sets: [

@@ -1,6 +1,6 @@
 import { sanitizeImageSrc } from "./format.js";
 import { COMPONENT_SECTIONS } from "./report-model.js";
-import { BUILD_FEATURE_ICON_NAMES, BUILD_FEATURE_ICON_SVGS } from "@shared/build-feature-icons.js";
+import { BUILD_FEATURE_ICON_NAMES } from "@shared/build-feature-icons.js";
 import libcheckerRulesCoreUrl from "@shared/generated/libchecker-rules-core.js?url";
 import libcheckerRulesDetailUrl from "@shared/generated/libchecker-rules-detail.js?url";
 import libcheckerSdkIconsUrl from "@shared/generated/libchecker-sdk-icons.js?url";
@@ -80,9 +80,10 @@ function hydrateBuildFeatureIcons(report, iconMap) {
   const featureIcons = report.featureIcons && typeof report.featureIcons === "object"
     ? report.featureIcons
     : {};
-  for (const key of [...Object.keys(BUILD_FEATURE_ICON_NAMES), ...Object.keys(BUILD_FEATURE_ICON_SVGS)]) {
-    if (!sanitizeImageSrc(featureIcons[key] || "")) {
-      featureIcons[key] = resolveBuildFeatureIconDataUri(key, iconMap);
+  for (const key of Object.keys(BUILD_FEATURE_ICON_NAMES)) {
+    const iconDataUri = resolveBuildFeatureIconDataUri(key, iconMap);
+    if (iconDataUri || !sanitizeImageSrc(featureIcons[key] || "")) {
+      featureIcons[key] = iconDataUri;
     }
   }
   report.featureIcons = featureIcons;
@@ -327,8 +328,7 @@ function buildGeneratedRuleDetailKey(rule) {
 }
 
 function resolveBuildFeatureIconDataUri(key, iconMap) {
-  const svg = BUILD_FEATURE_ICON_SVGS[key];
-  return svg ? resolveIconDataUri(`feature:${key}`, svg) : resolveSdkIconDataUri(BUILD_FEATURE_ICON_NAMES[key], iconMap);
+  return resolveSdkIconDataUri(BUILD_FEATURE_ICON_NAMES[key], iconMap);
 }
 
 function resolveSdkIconDataUri(iconName, iconMap) {

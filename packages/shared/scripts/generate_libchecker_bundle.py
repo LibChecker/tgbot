@@ -22,6 +22,7 @@ ICONS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-sdk-icons.js"
 
 DEFAULT_RULES_REF = "main"
 DEFAULT_RULE_DETAILS_REF = "v4"
+DEFAULT_LIBCHECKER_REF = "master"
 MIN_EXPECTED_SDK_ICON_COUNT = 50
 
 RELEVANT_RULE_TYPES = {0, 1, 2, 3, 4, 9}
@@ -60,8 +61,9 @@ LINE_JOIN_MAP = {
     "round": "round",
 }
 
-MANUAL_SVGS = {
-    "ic_lib_kotlin": """<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 1024 1024" fill="none"><defs><radialGradient id="kotlin-gradient" cx="876.9" cy="154.001" r="895.405" gradientUnits="userSpaceOnUse"><stop offset="0.003" stop-color="#E44857" /><stop offset="0.469" stop-color="#C711E1" /><stop offset="1" stop-color="#7F52FF" /></radialGradient></defs><path d="M903 903.58H121V122h782L503.93 506.99 903 903.58Z" fill="url(#kotlin-gradient)" /></svg>""",
+REQUIRED_RULES_BUNDLE_ICON_NAMES = {"ic_lib_kotlin"}
+LIBCHECKER_FEATURE_ICON_PATHS = {
+    "ic_gradle": "app/src/main/res/drawable/ic_gradle.xml",
 }
 
 
@@ -86,6 +88,12 @@ def main() -> int:
                 "library/src/main/java/com/absinthe/rulesbundle/IconResMap.kt",
             )
             icon_index_map, single_color_indexes = parse_icon_res_map(icon_map_text)
+            missing_required_icons = REQUIRED_RULES_BUNDLE_ICON_NAMES - set(icon_index_map.values())
+            if missing_required_icons:
+                raise ValueError(
+                    "required SDK icons are missing from IconResMap: "
+                    f"{', '.join(sorted(missing_required_icons))}"
+                )
             rules = load_rules(temp_rule_db_path, icon_index_map, single_color_indexes)
             detail_count = attach_rule_details(rules, DEFAULT_RULE_DETAILS_REF)
             icon_names = sorted(
@@ -94,18 +102,17 @@ def main() -> int:
                     for rule in rules
                     if rule.get("iconName")
                 }
+                | REQUIRED_RULES_BUNDLE_ICON_NAMES
             )
             icon_svgs = {}
             placeholder_svg = None
 
             for icon_name in icon_names:
-                svg = MANUAL_SVGS.get(icon_name)
-                if svg is None:
-                    xml_text = read_archive_text(
-                        rules_archive,
-                        f"library/src/main/res/drawable/{icon_name}.xml",
-                    )
-                    svg = convert_vector_xml_to_svg(xml_text, icon_name)
+                xml_text = read_archive_text(
+                    rules_archive,
+                    f"library/src/main/res/drawable/{icon_name}.xml",
+                )
+                svg = convert_vector_xml_to_svg(xml_text, icon_name)
                 if icon_name == "ic_sdk_placeholder":
                     placeholder_svg = svg
                 icon_svgs[icon_name] = svg
@@ -120,6 +127,15 @@ def main() -> int:
                     f"parsed only {len(icon_svgs)} SDK icons from IconResMap; "
                     "update parse_icon_res_map for the upstream format"
                 )
+
+        libchecker_archive_bytes = fetch_bytes(build_libchecker_archive_url(DEFAULT_LIBCHECKER_REF))
+        with zipfile.ZipFile(BytesIO(libchecker_archive_bytes)) as libchecker_archive:
+            for icon_name, icon_path in LIBCHECKER_FEATURE_ICON_PATHS.items():
+                xml_text = read_archive_text(libchecker_archive, icon_path)
+                svg = convert_vector_xml_to_svg(xml_text, icon_name)
+                if not svg:
+                    raise ValueError(f"failed to convert required feature icon: {icon_name}")
+                icon_svgs[icon_name] = svg
     except Exception as exc:
         print(f"Failed to sync rules bundle from GitHub: {exc}", file=sys.stderr)
         return 1
@@ -161,6 +177,13 @@ def build_rules_bundle_archive_url(rules_ref: str) -> str:
     return (
         "https://github.com/LibChecker/LibChecker-Rules-Bundle/archive/"
         f"{quote(rules_ref, safe='/')}.zip"
+    )
+
+
+def build_libchecker_archive_url(libchecker_ref: str) -> str:
+    return (
+        "https://codeload.github.com/LibChecker/LibChecker/zip/refs/heads/"
+        f"{quote(libchecker_ref, safe='')}"
     )
 
 
@@ -471,7 +494,7 @@ def convert_vector_xml_to_svg(xml_text: str, icon_name: str) -> str | None:
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError:
-        return MANUAL_SVGS.get(icon_name)
+        return None
 
     if not root.tag.endswith("vector"):
         return None
@@ -824,7 +847,7 @@ def write_icons_module(icon_svgs: dict[str, str | None], output_path: Path) -> N
     safe_svgs = {name: (svg or "") for name, svg in icon_svgs.items()}
     body = json.dumps(safe_svgs, ensure_ascii=False, separators=(",", ":"))
     output_path.write_text(
-        "// Generated from LibChecker-Rules-Bundle drawables.\n"
+        "// Generated from LibChecker icon drawables.\n"
         f"export const LIBCHECKER_SDK_ICON_SVGS = {body};\n",
         encoding="utf-8",
     )
