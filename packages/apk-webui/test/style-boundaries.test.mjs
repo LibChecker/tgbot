@@ -13,9 +13,19 @@ test("report and compare styles stay behind lazy module boundaries", async () =>
     readSource("src/app/compare-controller.js"),
   ]);
 
-  assert.doesNotMatch(appCss, /^\.report-hero\s*\{/mu);
+  const reportOnlySelectors = [
+    /^\.report-hero\s*\{/mu,
+    /^\.report-share-button__spinner\s*\{/mu,
+    /^\.app-title-mask__base(?:,|\s*\{)/mu,
+    /^\.native-abi-count\s*\{/mu,
+    /^\.component-row-header\s*\{/mu,
+    /^\.sdk-row-header\s*\{/mu,
+  ];
+  for (const selector of reportOnlySelectors) {
+    assert.doesNotMatch(appCss, selector);
+    assert.match(reportCss, selector);
+  }
   assert.doesNotMatch(appCss, /^\.compare-slot\s*\{/mu);
-  assert.match(reportCss, /^\.report-hero\s*\{/mu);
   assert.match(compareCss, /^\.compare-slot\s*\{/mu);
   assert.match(reportRenderer, /^import "\.\.\/report\.css";/mu);
   assert.match(compareController, /^import "\.\.\/report\.css";/mu);

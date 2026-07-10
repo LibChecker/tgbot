@@ -2182,63 +2182,6 @@ svg {
   line-height: 1.55;
 }
 
-.report-share-button__spinner {
-  opacity: 0;
-}
-
-.app-title-mask__base,
-.app-title-mask__color {
-  grid-area: 1 / 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.app-title-mask__color {
-  --app-title-mask-x: 50%;
-  --app-title-mask-y: 50%;
-  color: transparent;
-  background:
-    radial-gradient(circle closest-side at center, var(--app-title-glow), transparent 58%),
-    linear-gradient(105deg, var(--app-title-color-one), var(--app-title-color-two), var(--app-title-color-three));
-  background-position:
-    calc(var(--app-title-mask-x) - var(--app-title-mask-radius))
-    calc(var(--app-title-mask-y) - var(--app-title-mask-radius)),
-    0 0;
-  background-repeat: no-repeat;
-  background-size:
-    var(--app-title-mask-diameter) var(--app-title-mask-diameter),
-    100% 100%;
-  background-clip: text;
-  opacity: 0;
-  pointer-events: none;
-  -webkit-background-clip: text;
-  -webkit-mask-image: radial-gradient(circle closest-side at center, #000 0%, #000 58%, rgb(0 0 0 / 0.46) 78%, transparent 100%);
-  mask-image: radial-gradient(circle closest-side at center, #000 0%, #000 58%, rgb(0 0 0 / 0.46) 78%, transparent 100%);
-  -webkit-mask-size: var(--app-title-mask-diameter) var(--app-title-mask-diameter);
-  mask-size: var(--app-title-mask-diameter) var(--app-title-mask-diameter);
-  -webkit-mask-position:
-    calc(var(--app-title-mask-x) - var(--app-title-mask-radius))
-    calc(var(--app-title-mask-y) - var(--app-title-mask-radius));
-  mask-position:
-    calc(var(--app-title-mask-x) - var(--app-title-mask-radius))
-    calc(var(--app-title-mask-y) - var(--app-title-mask-radius));
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  transition: opacity 140ms ease;
-  will-change: opacity, background-position, -webkit-mask-position, mask-position;
-}
-
-.native-abi-count {
-  min-width: 28px;
-  padding: 0.12rem 0.46rem;
-  border-radius: 999px;
-  background: var(--count-bg);
-  color: var(--count-text);
-  font-size: 0.8rem;
-  font-weight: 650;
-  text-align: center;
-}
-
 .history-row {
   min-width: 0;
   border: 1px solid var(--line);
@@ -2397,25 +2340,6 @@ svg {
 
 .component-list-stack {
   gap: 12px;
-}
-
-.component-row-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  min-width: 0;
-}
-
-.component-row-main {
-  min-width: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.component-row-title {
-  font-size: 1rem;
-  line-height: 1.35;
 }
 
 .inline-code-value {
@@ -3051,13 +2975,6 @@ svg {
   overflow-wrap: anywhere;
 }
 
-.sdk-row-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 .muted {
   color: var(--muted);
 }
@@ -3253,10 +3170,6 @@ svg {
   .history-delete {
     justify-self: end;
     margin: 0 10px 10px;
-  }
-
-  .component-row-header {
-    display: grid;
   }
 
   .lcapps-picker {

@@ -64,7 +64,6 @@ export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrai
     dpr: 1,
   };
   let dots = [];
-  let frameCount = 0;
   let resizeTimer = 0;
   let speedTimer = 0;
   let animationFrame = 0;
@@ -280,7 +279,6 @@ export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrai
 
   function tick() {
     animationFrame = 0;
-    frameCount += 1;
     drawFrame();
     startAnimation();
   }
