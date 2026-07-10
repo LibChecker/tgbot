@@ -20,7 +20,10 @@ test("report and compare styles stay behind lazy module boundaries", async () =>
     /^\.report-share-button__spinner\s*\{/mu,
     /^\.app-title-mask__base(?:,|\s*\{)/mu,
     /^\.native-abi-count\s*\{/mu,
+    /^\.component-group-block\s*\{/mu,
+    /^\.component-group-grid\s*\{/mu,
     /^\.component-row-header\s*\{/mu,
+    /^\.permission-table-row\s*\{/mu,
     /^\.sdk-row-header\s*\{/mu,
     /^:root\[data-power-mode="constrained"\] \.app-title-mask__color\s*\{/mu,
   ];
@@ -34,6 +37,8 @@ test("report and compare styles stay behind lazy module boundaries", async () =>
   assert.match(compareController, /^import "\.\.\/report\.css";/mu);
   assert.match(compareController, /^import "\.\.\/compare\.css";/mu);
   assert.match(reportCss, /^\.group-block\s*\{[^}]*\bpadding:\s*14px;/msu);
+  assert.match(reportCss, /^\.component-group-grid\s*\{[^}]*\bgrid-template-columns:\s*1fr;/msu);
+  assert.match(reportCss, /^\.permission-table-row\s*\{[^}]*\bgrid-template-columns:\s*minmax\(0,\s*1fr\);/msu);
   assert.doesNotMatch(compareCss, /^\.compare-diff-block\s*\{[^}]*\bpadding:/msu);
 });
 

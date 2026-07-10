@@ -603,6 +603,15 @@
   background: var(--table-row-alt);
 }
 
+.permission-table-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.permission-table-value {
+  text-align: left;
+}
+
 .divider-kv-table .kv-label {
   border-right: 1px solid var(--line);
   padding-right: 14px;
@@ -651,8 +660,19 @@
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 
+.component-group-grid {
+  gap: 18px;
+  grid-template-columns: 1fr;
+}
+
 .group-block {
   padding: 14px;
+}
+
+.component-group-block {
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .group-block h4 {
