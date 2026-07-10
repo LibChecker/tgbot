@@ -1,7 +1,21 @@
+@property --app-title-mask-x {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 50%;
+}
 
+@property --app-title-mask-y {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 50%;
+}
 
 :root[data-power-mode="constrained"] .sdk-rule-preview {
   transition-duration: 1ms;
+}
+
+:root[data-power-mode="constrained"] .app-title-mask__color {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
