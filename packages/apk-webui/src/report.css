@@ -263,6 +263,74 @@
   border-left: 1px solid var(--line);
 }
 
+.archive-chart-copy h3 {
+  margin: 0;
+  color: var(--heading-text);
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.archive-chart-copy p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.archive-chart-body {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+
+.archive-chart-pie {
+  width: min(100%, clamp(220px, 22vw, 320px));
+  aspect-ratio: 1;
+  overflow: visible;
+  filter: drop-shadow(0 10px 20px rgb(0 0 0 / 0.14));
+}
+
+.archive-chart-segment {
+  cursor: help;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+
+.archive-chart-segment.is-active,
+.archive-chart-segment:focus-visible {
+  transform: translate(var(--archive-lift-x, 0px), var(--archive-lift-y, -4px));
+}
+
+.archive-chart-segment:focus-visible {
+  outline: none;
+}
+
+.archive-chart-slice {
+  stroke: var(--panel-bg);
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  transition: filter 140ms ease, stroke 140ms ease, stroke-width 140ms ease;
+}
+
+.archive-chart-segment.is-active .archive-chart-slice {
+  filter: brightness(1.08);
+}
+
+.archive-chart-segment:focus-visible .archive-chart-slice {
+  stroke: var(--accent-border);
+  stroke-width: 2.2;
+}
+
+.archive-chart-label {
+  fill: #ffffff;
+  font-weight: 900;
+  pointer-events: none;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
 .chip,
 .feature-pill,
 .code-chip {
@@ -918,23 +986,6 @@
   line-height: 1.55;
 }
 
-.archive-chart-segment:hover {
-  transform: none;
-}
-
-.archive-chart-segment:hover .archive-chart-slice {
-  filter: none;
-}
-
-.archive-chart-segment.is-active,
-.archive-chart-segment:focus-visible {
-  transform: translate(var(--archive-lift-x, 0px), var(--archive-lift-y, -4px));
-}
-
-.archive-chart-segment.is-active .archive-chart-slice {
-  filter: brightness(1.08);
-}
-
 @media (hover: hover) and (pointer: fine) {
   .tab:hover,
   .native-abi-tab:hover {
@@ -1002,6 +1053,11 @@
 }
 
 @media (max-width: 480px) {
+
+  .archive-chart-body {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
 
   .report-hero {
     grid-template-columns: 1fr;
