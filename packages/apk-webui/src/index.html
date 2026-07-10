@@ -78,7 +78,7 @@
           </div>
           <label class="select-control">
             <span class="sr-only" data-i18n="languageLabel">Language</span>
-            <svg class="select-control__icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); pointer-events: none;" aria-hidden="true">
+            <svg class="select-control__icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="8.5"></circle>
               <path d="M3.75 12h16.5"></path>
               <path d="M12 3.5c2.1 2.35 3.15 5.18 3.15 8.5s-1.05 6.15-3.15 8.5"></path>
@@ -203,13 +203,13 @@
 
         <section class="result-view" id="result-view" hidden>
           <div class="result-main">
-            <div class="report-hero-shell metric-card" style="position:relative">
+            <div class="report-hero-shell metric-card">
               <div class="report-hero" id="report-hero"></div>
-              <button class="icon-button report-share-button" id="report-share-button" type="button" disabled aria-label="Share report" data-title-i18n="reportShare" style="width:34px;height:34px;border:0;border-radius:50%;background:transparent;box-shadow:none">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="grid-area:1/1">
+              <button class="icon-button report-share-button" id="report-share-button" type="button" disabled aria-label="Share report" data-title-i18n="reportShare">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path vector-effect="non-scaling-stroke" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"></path>
                 </svg>
-                <svg class="report-share-button__spinner" viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="grid-area:1/1;width:18px;height:18px;color:var(--accent);fill:currentColor;transform-origin:center">
+                <svg class="report-share-button__spinner" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <path d="M12 2v4a6 6 0 1 1-6 6H2A10 10 0 1 0 12 2Z"></path>
                 </svg>
               </button>
@@ -297,11 +297,11 @@
           <div class="compare-result" id="compare-result"></div>
         </section>
       </main>
-      <footer class="site-footer" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:9px;margin:clamp(18px,3vw,28px) 0 2px;padding:0 8px;color:var(--muted);font-size:.78rem">
+      <footer class="site-footer">
         <div class="mobile-bottom-controls" id="mobile-bottom-controls" hidden></div>
-        <button class="footer-log-link" id="runtime-log-open" type="button" data-i18n="runtimeLogOpen" style="border:0;background:none;color:inherit;padding:0;font:inherit;cursor:pointer">Show logs</button>
+        <button class="footer-log-link" id="runtime-log-open" type="button" data-i18n="runtimeLogOpen">Show logs</button>
         <span aria-hidden="true">·</span>
-        <span class="footer-version" id="app-version" aria-label="Version" style="white-space:nowrap">vdev</span>
+        <span class="footer-version" id="app-version" aria-label="Version">vdev</span>
       </footer>
     </div>
     <div class="lcapps-picker" id="lcapps-picker" hidden>
