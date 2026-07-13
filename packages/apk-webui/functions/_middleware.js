@@ -43,6 +43,7 @@ function getDiscoveryLinkHeader(env = {}) {
   return [
     `<${siteOrigin}/sitemap.xml>; rel="sitemap"; type="application/xml"`,
     `<${siteOrigin}/index.md>; rel="alternate"; type="text/markdown"`,
+    `<${siteOrigin}/.well-known/api-catalog>; rel="api-catalog"; type="application/linkset+json"`,
   ].join(", ");
 }
 

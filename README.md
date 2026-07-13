@@ -129,6 +129,22 @@ npm run pages:deploy:production
 
 The root Cloudflare deploy commands are preferred because they always run `check`, WebUI build, WebUI performance budgets, and Worker dry-run size budgets before deployment. Pages preview deploys use the current branch name, while production deploys use the `main` branch.
 
+The Web UI build publishes machine-readable discovery resources for its real public URL-analysis API:
+
+- `/.well-known/api-catalog`
+- `/openapi.json` and `/api-docs.md`
+- `/.well-known/agent-skills/index.json`
+- `/auth.md`, which documents that the public API needs no registration or credentials
+- `/health`
+
+DNS-AID is an external DNS-zone operation and is not changed by the Pages deploy. After resolving `WEBUI_SITE_URL` to its hostname, publish an organization-index record like the following, using a Private Use numeric SvcParamKey for the unregistered well-known path parameter, and enable DNSSEC for the public zone:
+
+```dns
+_index._agents.<webui-host>. 3600 IN SVCB 1 <webui-host>. mandatory=alpn,port alpn="h2" port=443 key65400="/.well-known/agent-skills/index.json"
+```
+
+Do not advertise `mcp` or `a2a` in DNS and do not publish OAuth or MCP discovery documents unless those real protocol endpoints are deployed.
+
 The CI performance budget is intentionally lightweight and does not need a browser. It checks the built WebUI `dist/` output for:
 
 - initial JS gzip size

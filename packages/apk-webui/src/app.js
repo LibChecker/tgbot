@@ -1206,6 +1206,7 @@ renderHistoryList();
 updateHistoryCollapse();
 updateAppMode();
 bindEvents();
+initWebMcpWhenAvailable();
 syncMobileBottomControls();
 scheduleColorOrbBackground();
 initWebAnalytics(() => ({
@@ -1222,6 +1223,38 @@ appendRuntimeLog("info", "WebUI ready", {
   locale: state.locale,
 });
 void loadBotReportFromUrlIfPresent();
+
+function initWebMcpWhenAvailable() {
+  if (typeof navigator.modelContext?.registerTool !== "function" &&
+      typeof document.modelContext?.registerTool !== "function") {
+    return;
+  }
+
+  void import("./app/webmcp.js")
+    .then(({ initWebMcp }) => initWebMcp({
+      analyzeUrl: async (url) => {
+        if (state.analyzeBusy) {
+          throw new Error("An Android package analysis is already running");
+        }
+        const downloadUrl = normalizeDownloadUrl(url);
+        setDownloadUrl(downloadUrl, { syncInput: true });
+        await analyzeDownloadUrl();
+        if (!state.report) {
+          throw new Error("The Android package URL could not be analyzed");
+        }
+        return state.report;
+      },
+      getCurrentReport: () => state.report,
+    }))
+    .then((registration) => {
+      if (registration) {
+        appendRuntimeLog("debug", "WebMCP tools registered");
+      }
+    })
+    .catch((error) => {
+      appendRuntimeLog("warn", "WebMCP registration failed", getClientErrorTelemetryFields(error));
+    });
+}
 
 function bindEvents() {
   elements.modeChipGroup.addEventListener("click", handleModeChipGroupClick);

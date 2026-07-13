@@ -12,6 +12,7 @@ const sourceRoots = [
   resolve(projectDir, "src"),
 ];
 const extraSyntaxFiles = [
+  resolve(projectDir, "discovery.mjs"),
   resolve(projectDir, "vite.config.mjs"),
 ];
 
