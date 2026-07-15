@@ -5,6 +5,7 @@ const DOT_FIELD_DPR_LIMIT = 2;
 const DOT_FIELD_REST_COORDINATE = -9999;
 const DOT_FIELD_RESIZE_DELAY_MS = 100;
 const DOT_FIELD_SPEED_SAMPLE_MS = 20;
+const DOT_FIELD_SETTLE_EPSILON = 0.05;
 const DOT_FIELD_CONFIG = Object.freeze({
   dotRadius: 1.5,
   dotSpacing: 14,
@@ -34,6 +35,20 @@ export function shouldAnimateDotField({
   canvasVisible = true,
 }) {
   return !powerConstrained && visibilityState !== "hidden" && fineHover && canvasVisible;
+}
+
+export function shouldContinueDotFieldAnimation({
+  pointerSpeed,
+  engagement,
+  glowOpacity,
+  hasUnsettledDots,
+}) {
+  return (
+    pointerSpeed > 0 ||
+    engagement > 0 ||
+    glowOpacity > 0 ||
+    hasUnsettledDots
+  );
 }
 
 export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrained }) {
@@ -169,6 +184,8 @@ export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrai
 
     pointer.x = x;
     pointer.y = y;
+    updatePointerSpeed();
+    startAnimation();
   }
 
   function clearPointer() {
@@ -178,6 +195,7 @@ export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrai
     pointer.prevY = DOT_FIELD_REST_COORDINATE;
     pointer.speed = 0;
     pointer.active = false;
+    startAnimation();
   }
 
   function updatePointerSpeed() {
@@ -200,7 +218,7 @@ export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrai
   function drawFrame() {
     const { width, height } = metrics;
     if (!width || !height) {
-      return;
+      return false;
     }
 
     const animated = canAnimate();
@@ -226,6 +244,7 @@ export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrai
     const cursorRadiusSquared = cursorRadius * cursorRadius;
 
     context.beginPath();
+    let hasUnsettledDots = false;
     for (const dot of dots) {
       if (animated) {
         moveDotForPointer(dot, cursorRadius, cursorRadiusSquared);
@@ -234,11 +253,19 @@ export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrai
         dot.sy = dot.ay;
       }
 
+      if (
+        Math.abs(dot.sx - dot.ax) > DOT_FIELD_SETTLE_EPSILON ||
+        Math.abs(dot.sy - dot.ay) > DOT_FIELD_SETTLE_EPSILON
+      ) {
+        hasUnsettledDots = true;
+      }
+
       context.moveTo(dot.sx + radius, dot.sy);
       context.arc(dot.sx, dot.sy, radius, 0, DOT_FIELD_TWO_PI);
     }
     context.fill();
     drawPointerGlow(width, height);
+    return hasUnsettledDots;
   }
 
   function moveDotForPointer(dot, cursorRadius, cursorRadiusSquared) {
@@ -279,8 +306,17 @@ export function initColorOrbBackground({ canvas, fineHoverMedia, isPowerConstrai
 
   function tick() {
     animationFrame = 0;
-    drawFrame();
-    startAnimation();
+    const hasUnsettledDots = drawFrame();
+    if (!canAnimate() || !shouldContinueDotFieldAnimation({
+      pointerSpeed: pointer.speed,
+      engagement,
+      glowOpacity,
+      hasUnsettledDots,
+    })) {
+      stopAnimation();
+      return;
+    }
+    animationFrame = window.requestAnimationFrame(tick);
   }
 
   function startAnimation() {

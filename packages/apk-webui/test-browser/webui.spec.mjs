@@ -19,6 +19,23 @@ test("renders the first screen without starting analysis", async ({ page }) => {
   await expect(page.locator("#result-view")).toBeHidden();
 });
 
+test("history accordion hides inert content after collapsing and restores it", async ({ page }) => {
+  const toggle = page.locator("#history-toggle-button");
+  const content = page.locator("#history-content");
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(content).toHaveAttribute("aria-hidden", "true");
+  await expect(content).toHaveAttribute("inert", "");
+  await expect(content).toBeHidden();
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(content).not.toHaveAttribute("aria-hidden");
+  await expect(content).not.toHaveAttribute("inert");
+  await expect(content).toBeVisible();
+});
+
 test("runs damaged input through the analyzer Worker and reports the failure", async ({ page }) => {
   const workerStarted = page.waitForEvent("worker");
   await page.locator("#file-input").setInputFiles({

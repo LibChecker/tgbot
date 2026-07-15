@@ -18,13 +18,6 @@
   display: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .tabs::before,
-  .tabs.is-dragging::before {
-    transition: none;
-  }
-}
-
 .tabs {
   position: relative;
   display: flex;
@@ -54,10 +47,10 @@
   box-shadow: var(--topbar-segment-shadow);
   will-change: transform, width;
   transition:
-    transform 420ms var(--topbar-segment-spring),
-    width 300ms var(--topbar-segment-settle),
-    height 300ms var(--topbar-segment-settle),
-    box-shadow 220ms ease;
+    transform var(--tabs-dur) var(--tabs-ease),
+    width var(--tabs-dur) var(--tabs-ease),
+    height var(--tabs-dur) var(--tabs-ease),
+    box-shadow var(--duration-quick) ease;
 }
 
 .tabs.is-dragging {
@@ -742,18 +735,33 @@
   color: var(--control-text);
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-4px) scale(0.98);
+  --rule-preview-enter-y: calc(0px - var(--distance-micro));
+  transform: translateY(var(--rule-preview-enter-y)) scale(var(--tt-scale));
   transform-origin: top center;
-  transition: opacity 140ms ease, transform 140ms ease;
+  transition:
+    opacity var(--tt-out-dur) var(--tt-out-ease),
+    transform var(--tt-out-dur) var(--tt-out-ease);
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   -webkit-overflow-scrolling: touch;
+}
+
+.sdk-rule-preview[data-preview-origin="bottom"] {
+  --rule-preview-enter-y: var(--distance-micro);
+  transform-origin: bottom center;
 }
 
 .sdk-rule-preview.is-visible {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0) scale(1);
+  transition-duration: var(--tt-in-dur);
+  transition-delay: var(--tt-delay);
+  transition-timing-function: var(--tt-in-ease);
+}
+
+.sdk-rule-preview.is-visible:is(.is-immediate, .is-pinned) {
+  transition-delay: 0ms;
 }
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -1187,4 +1195,27 @@
     height: 68px;
   }
 
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs::before,
+  .tabs.is-dragging::before,
+  .sdk-rule-preview,
+  .archive-chart-segment,
+  .archive-chart-slice {
+    transition: none;
+  }
+
+  .sdk-rule-preview,
+  .sdk-rule-preview.is-visible,
+  .archive-chart-segment,
+  .archive-chart-segment.is-active,
+  .archive-chart-segment:hover,
+  .archive-chart-segment:focus-visible {
+    transform: none;
+  }
+
+  .archive-chart-segment {
+    will-change: auto;
+  }
 }

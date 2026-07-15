@@ -67,7 +67,6 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
   report_build: "progressReportBuild",
 });
 const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
-const REPORT_SHARE_MODAL_CLOSE_ANIMATION_MS = 180;
 const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
 const MAX_RUNTIME_LOGS = 200;
@@ -3194,17 +3193,20 @@ function closeReportShareModal(options = {}) {
       && !modal.hidden
       && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (shouldAnimate) {
+      modal.classList.remove("is-open");
       modal.classList.add("is-closing");
+      const closeDurationMs = runtime.reportShareModalModule
+        ?.getReportShareModalCloseDurationMs(modal) || 150;
       elements.reportShareCloseTimer = window.setTimeout(() => {
         if (!state.reportShareModalOpen) {
           modal.hidden = true;
         }
         modal.classList.remove("is-closing");
         elements.reportShareCloseTimer = 0;
-      }, REPORT_SHARE_MODAL_CLOSE_ANIMATION_MS);
+      }, closeDurationMs);
     } else {
       modal.hidden = true;
-      modal.classList.remove("is-closing");
+      modal.classList.remove("is-closing", "is-open");
     }
   }
   if (options.restoreFocus !== false) {
@@ -4373,9 +4375,44 @@ function clearHistory() {
 }
 
 function setHistoryCollapsed(isCollapsed, options = {}) {
-  state.historyCollapsed = Boolean(isCollapsed);
-  elements.historyPanel.classList.toggle("is-collapsed", state.historyCollapsed);
-  elements.historyContent.hidden = state.historyCollapsed;
+  const nextCollapsed = Boolean(isCollapsed);
+  const shouldAnimate = options.animate !== false
+    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (runtime.historyCollapseTimer) {
+    window.clearTimeout(runtime.historyCollapseTimer);
+    runtime.historyCollapseTimer = 0;
+  }
+
+  state.historyCollapsed = nextCollapsed;
+  if (nextCollapsed) {
+    elements.historyContent.inert = true;
+    elements.historyContent.setAttribute("aria-hidden", "true");
+    elements.historyPanel.classList.add("is-collapsed");
+    if (shouldAnimate && !elements.historyContent.hidden) {
+      const collapseDurationMs = readCssTimeMs(
+        elements.historyContent,
+        "--acc-collapse",
+        250,
+      );
+      runtime.historyCollapseTimer = window.setTimeout(() => {
+        if (state.historyCollapsed) {
+          elements.historyContent.hidden = true;
+        }
+        runtime.historyCollapseTimer = 0;
+      }, collapseDurationMs);
+    } else {
+      elements.historyContent.hidden = true;
+    }
+  } else {
+    const wasHidden = elements.historyContent.hidden;
+    elements.historyContent.hidden = false;
+    elements.historyContent.inert = false;
+    elements.historyContent.removeAttribute("aria-hidden");
+    if (shouldAnimate && wasHidden) {
+      elements.historyContent.getBoundingClientRect();
+    }
+    elements.historyPanel.classList.remove("is-collapsed");
+  }
   elements.historyToggleButton.setAttribute("aria-expanded", state.historyCollapsed ? "false" : "true");
 
   const label = t(state.historyCollapsed ? "historyExpand" : "historyCollapse");
@@ -4394,7 +4431,20 @@ function setHistoryCollapsed(isCollapsed, options = {}) {
 }
 
 function updateHistoryCollapse() {
-  setHistoryCollapsed(state.historyCollapsed, { persist: false });
+  setHistoryCollapsed(state.historyCollapsed, { animate: false, persist: false });
+}
+
+function readCssTimeMs(node, propertyName, fallbackMs) {
+  const value = window.getComputedStyle(node).getPropertyValue(propertyName).trim();
+  if (value.endsWith("ms")) {
+    const milliseconds = Number.parseFloat(value);
+    return Number.isFinite(milliseconds) ? milliseconds : fallbackMs;
+  }
+  if (value.endsWith("s")) {
+    const seconds = Number.parseFloat(value);
+    return Number.isFinite(seconds) ? seconds * 1000 : fallbackMs;
+  }
+  return fallbackMs;
 }
 
 function setHistoryViewMode(viewMode, options = {}) {

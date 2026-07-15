@@ -6,6 +6,8 @@ const supportsPointerEvents = typeof window.PointerEvent === "function";
 const CONTRIBUTOR_GITHUB_ALIASES = new Map([
   ["absinthe", "zhaobozhen"],
 ]);
+const TOOLTIP_EXIT_FALLBACK_MS = 50;
+const TOOLTIP_DELAY_FALLBACK_MS = 80;
 
 let state = null;
 /** @type {(key: string, variables?: Record<string, unknown>) => string} */
@@ -49,6 +51,19 @@ function addPreviewPointerListeners({ onPointerStart, onHover, onLeave, trackMov
     document.addEventListener("mousemove", onHover);
   }
   document.addEventListener("mouseout", onLeave);
+}
+
+function getPreviewTimingMs(propertyName, fallbackMs) {
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(propertyName).trim();
+  if (value.endsWith("ms")) {
+    const milliseconds = Number.parseFloat(value);
+    return Number.isFinite(milliseconds) ? milliseconds : fallbackMs;
+  }
+  if (value.endsWith("s")) {
+    const seconds = Number.parseFloat(value);
+    return Number.isFinite(seconds) ? seconds * 1000 : fallbackMs;
+  }
+  return fallbackMs;
 }
 
 function initSdkIconPreview() {
@@ -103,6 +118,7 @@ function initSdkIconPreview() {
     }
     top = clamp(top, margin, window.innerHeight - popupHeight - margin);
 
+    popup.dataset.previewOrigin = top < iconRect.top ? "bottom" : "top";
     popup.style.setProperty("--preview-x", `${left}px`);
     popup.style.setProperty("--preview-y", `${top}px`);
     setLiquidGlassHighlightFromClientPoint(popup, iconRect.left + iconRect.width / 2, iconRect.top + iconRect.height / 2);
@@ -113,7 +129,7 @@ function initSdkIconPreview() {
       return;
     }
 
-    preview.classList.remove("is-visible", "is-mono", "is-pinned");
+    preview.classList.remove("is-visible", "is-mono", "is-pinned", "is-immediate");
     activeIcon = null;
     activePinned = false;
     if (immediate) {
@@ -125,14 +141,16 @@ function initSdkIconPreview() {
       if (!activeIcon && preview) {
         preview.hidden = true;
       }
-    }, 120);
+    }, getPreviewTimingMs("--tt-out-dur", TOOLTIP_EXIT_FALLBACK_MS));
   };
 
   const showPreview = (icon, options = {}) => {
     const pinned = Boolean(options.pinned);
+    const immediate = pinned || Boolean(options.immediate);
     if (activeIcon === icon) {
       activePinned = activePinned || pinned;
       ensurePreview().classList.toggle("is-pinned", activePinned);
+      ensurePreview().classList.toggle("is-immediate", immediate || activePinned);
       positionPreview(icon);
       updateLiquidGlassFilterForPreview(ensurePreview());
       return;
@@ -146,9 +164,10 @@ function initSdkIconPreview() {
 
     const popup = ensurePreview();
     popup.hidden = false;
-    popup.classList.remove("is-visible", "is-mono");
+    popup.classList.remove("is-visible", "is-mono", "is-immediate");
     popup.classList.toggle("is-mono", icon.classList.contains("sdk-icon--mono"));
     popup.classList.toggle("is-pinned", pinned);
+    popup.classList.toggle("is-immediate", immediate);
     popup.replaceChildren(graphic);
     activeIcon = icon;
     activePinned = pinned;
@@ -287,6 +306,7 @@ function initSdkRulePreview() {
     const maxTop = window.innerHeight - popupHeight - margin;
     top = maxTop < margin ? margin : clamp(top, margin, maxTop);
 
+    popup.dataset.previewOrigin = top < labelRect.top ? "bottom" : "top";
     popup.style.setProperty("--rule-preview-x", `${left}px`);
     popup.style.setProperty("--rule-preview-y", `${top}px`);
     setLiquidGlassHighlightFromClientPoint(popup, labelRect.left + labelRect.width / 2, labelRect.top + labelRect.height / 2);
@@ -306,7 +326,7 @@ function initSdkRulePreview() {
     }
 
     cancelScheduledHide();
-    preview.classList.remove("is-visible", "is-pinned");
+    preview.classList.remove("is-visible", "is-pinned", "is-immediate");
     preview.setAttribute("aria-hidden", "true");
     activeLabel = null;
     activePinned = false;
@@ -319,7 +339,7 @@ function initSdkRulePreview() {
       if (!activeLabel && preview) {
         preview.hidden = true;
       }
-    }, 140);
+    }, getPreviewTimingMs("--tt-out-dur", TOOLTIP_EXIT_FALLBACK_MS));
   };
 
   const scheduleHidePreview = () => {
@@ -341,7 +361,7 @@ function initSdkRulePreview() {
       }
 
       hidePreview();
-    }, 90);
+    }, getPreviewTimingMs("--tt-delay", TOOLTIP_DELAY_FALLBACK_MS));
   };
 
   const cancelScheduledHide = () => {
@@ -354,10 +374,12 @@ function initSdkRulePreview() {
   const showPreview = (label, options = {}) => {
     cancelScheduledHide();
     const pinned = Boolean(options.pinned);
+    const immediate = pinned || Boolean(options.immediate);
     if (activeLabel === label) {
       const popup = ensurePreview();
       activePinned = activePinned || pinned;
       popup.classList.toggle("is-pinned", activePinned);
+      popup.classList.toggle("is-immediate", immediate || activePinned);
       positionPreview(label);
       return;
     }
@@ -371,8 +393,9 @@ function initSdkRulePreview() {
 
     const popup = ensurePreview();
     popup.hidden = false;
-    popup.classList.remove("is-visible", "is-pinned");
+    popup.classList.remove("is-visible", "is-pinned", "is-immediate");
     popup.classList.toggle("is-pinned", pinned);
+    popup.classList.toggle("is-immediate", immediate);
     popup.setAttribute("aria-hidden", "false");
     popup.replaceChildren(content);
     activeLabel = label;
@@ -458,7 +481,7 @@ function initSdkRulePreview() {
   document.addEventListener("focusin", (event) => {
     const label = event.target.closest?.(".sdk-rule-label.has-rule-detail");
     if (label) {
-      showPreview(label);
+      showPreview(label, { immediate: true });
     }
   });
   document.addEventListener("focusout", (event) => {
@@ -528,6 +551,10 @@ function initArchiveChartPreview() {
     }
     top = clamp(top, margin, window.innerHeight - popupHeight - margin);
 
+    const horizontalOrigin = left >= x ? "left" : "right";
+    const verticalOrigin = top >= y ? "top" : "bottom";
+    popup.dataset.previewOrigin = verticalOrigin;
+    popup.style.transformOrigin = `${verticalOrigin} ${horizontalOrigin}`;
     popup.style.setProperty("--rule-preview-x", `${left}px`);
     popup.style.setProperty("--rule-preview-y", `${top}px`);
     setLiquidGlassHighlightFromClientPoint(popup, x, y);
@@ -539,7 +566,7 @@ function initArchiveChartPreview() {
     }
 
     cancelScheduledHide();
-    preview.classList.remove("is-visible", "is-pinned");
+    preview.classList.remove("is-visible", "is-pinned", "is-immediate");
     preview.setAttribute("aria-hidden", "true");
     activeSegment?.classList.remove("is-active");
     activeSegment = null;
@@ -549,7 +576,7 @@ function initArchiveChartPreview() {
       if (!activeSegment && preview) {
         preview.hidden = true;
       }
-    }, 140);
+    }, getPreviewTimingMs("--tt-out-dur", TOOLTIP_EXIT_FALLBACK_MS));
   };
 
   const scheduleHidePreview = () => {
@@ -568,7 +595,7 @@ function initArchiveChartPreview() {
       }
 
       hidePreview();
-    }, 80);
+    }, getPreviewTimingMs("--tt-delay", TOOLTIP_DELAY_FALLBACK_MS));
   };
 
   const cancelScheduledHide = () => {
@@ -586,9 +613,11 @@ function initArchiveChartPreview() {
 
     const popup = ensurePreview();
     const pinned = Boolean(options.pinned);
+    const immediate = pinned || Boolean(options.immediate);
     if (activeSegment === segment) {
       activePinned = activePinned || pinned;
       popup.classList.toggle("is-pinned", activePinned);
+      popup.classList.toggle("is-immediate", immediate || activePinned);
       segment.classList.add("is-active");
       positionPreview(segment, event);
       updateLiquidGlassFilterForPreview(popup);
@@ -604,8 +633,9 @@ function initArchiveChartPreview() {
     popup.style.setProperty("--archive-segment-color", segment.dataset.archiveColor || "var(--accent)");
     activeSegment?.classList.remove("is-active");
     popup.hidden = false;
-    popup.classList.remove("is-visible", "is-pinned");
+    popup.classList.remove("is-visible", "is-pinned", "is-immediate");
     popup.classList.toggle("is-pinned", pinned);
+    popup.classList.toggle("is-immediate", immediate);
     popup.setAttribute("aria-hidden", "false");
     popup.replaceChildren(content);
     activeSegment = segment;
@@ -675,7 +705,7 @@ function initArchiveChartPreview() {
   document.addEventListener("focusin", (event) => {
     const segment = event.target.closest?.(".archive-chart-segment");
     if (segment) {
-      showPreview(segment);
+      showPreview(segment, null, { immediate: true });
     }
   });
   document.addEventListener("focusout", (event) => {

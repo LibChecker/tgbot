@@ -7,8 +7,11 @@
   padding: clamp(14px, 4vw, 32px);
   background: rgb(12 8 18 / 0.18);
   color: var(--text);
+  opacity: 0;
+  pointer-events: none;
   -webkit-backdrop-filter: blur(16px) saturate(1.08);
   backdrop-filter: blur(16px) saturate(1.08);
+  transition: opacity var(--modal-open-dur) var(--modal-ease);
 }
 
 .report-share-modal[hidden] {
@@ -25,8 +28,36 @@
   border-radius: 18px;
   background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
   box-shadow: 0 28px 70px rgb(22 12 38 / 0.3);
+  opacity: 0;
+  transform: scale(var(--modal-scale));
+  transform-origin: center;
   -webkit-backdrop-filter: blur(18px) saturate(1.12);
   backdrop-filter: blur(18px) saturate(1.12);
+  transition:
+    opacity var(--modal-open-dur) var(--modal-ease),
+    transform var(--modal-open-dur) var(--modal-ease);
+}
+
+.report-share-modal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.report-share-modal.is-open .report-share-panel {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.report-share-modal.is-closing {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: var(--modal-close-dur);
+}
+
+.report-share-modal.is-closing .report-share-panel {
+  opacity: 0;
+  transform: scale(var(--modal-scale));
+  transition-duration: var(--modal-close-dur);
 }
 
 .report-share-panel:focus {
@@ -206,6 +237,16 @@
   .report-share-panel {
     width: min(100%, calc(100vw - 16px));
     border-radius: 18px;
+    transform: translateY(8px) scale(var(--modal-scale));
+    transform-origin: bottom center;
+  }
+
+  .report-share-modal.is-open .report-share-panel {
+    transform: translateY(0) scale(1);
+  }
+
+  .report-share-modal.is-closing .report-share-panel {
+    transform: translateY(8px) scale(var(--modal-scale));
   }
 
   .report-share-header {
@@ -230,53 +271,9 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .report-share-modal:not([hidden]) {
-    animation: report-share-fade 140ms ease-out;
-  }
-
-  .report-share-modal:not([hidden]) .report-share-panel {
-    animation: report-share-sheet 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .report-share-modal.is-closing {
-    pointer-events: none;
-    animation: report-share-fade-out 140ms ease-in forwards;
-  }
-
-  .report-share-modal.is-closing .report-share-panel {
-    animation: report-share-sheet-out 180ms cubic-bezier(0.64, 0, 0.78, 0) forwards;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
+  .report-share-modal,
   .report-share-panel {
     transition: none;
-  }
-}
-
-@keyframes report-share-fade {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes report-share-sheet {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.985);
-  }
-}
-
-@keyframes report-share-fade-out {
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes report-share-sheet-out {
-  to {
-    opacity: 0;
-    transform: translateY(8px) scale(0.985);
   }
 }

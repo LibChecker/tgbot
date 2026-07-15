@@ -19,5 +19,8 @@ __pycache__/
 .cloudflare-secrets.json
 packages/bot-worker/wrangler.generated.*.toml
 
+# Foglamp scan metadata (lock file contains a secret edit token).
+.foglamp/
+
 # Generated runtime bundles.
 /packages/shared/src/generated/

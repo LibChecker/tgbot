@@ -117,6 +117,7 @@ export function createRuntimeState() {
     historyOpenToken: 0,
     historySaveHandle: 0,
     historySaveHandleType: "",
+    historyCollapseTimer: 0,
     pendingHistoryReports: [],
     runtimeLogId: 0,
     runtimeLogStylesPromise: null,

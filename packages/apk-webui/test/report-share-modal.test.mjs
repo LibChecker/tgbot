@@ -37,3 +37,9 @@ test("report share backdrop closes only when the pointer starts on the backdrop"
     false,
   );
 });
+
+test("report share CSS durations are converted to milliseconds", () => {
+  assert.equal(reportShareModal.parseCssTimeMs("150ms", 1), 150);
+  assert.equal(reportShareModal.parseCssTimeMs("0.25s", 1), 250);
+  assert.equal(reportShareModal.parseCssTimeMs("invalid", 150), 150);
+});

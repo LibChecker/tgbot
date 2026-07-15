@@ -68,8 +68,29 @@
   --topbar-segment-inset: 4px;
   --topbar-segment-radius: 999px;
   --topbar-segment-thumb-radius: 999px;
-  --topbar-segment-spring: cubic-bezier(0.34, 1.38, 0.64, 1);
-  --topbar-segment-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-micro: 80ms;
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --distance-micro: 4px;
+  --scale-large: 0.96;
+  --scale-small: 0.98;
+  --tabs-dur: var(--duration-fast);
+  --tabs-ease: var(--ease-smooth-out);
+  --modal-open-dur: var(--duration-fast);
+  --modal-close-dur: var(--duration-quick);
+  --modal-scale: var(--scale-large);
+  --modal-ease: var(--ease-smooth-out);
+  --tt-in-dur: var(--duration-quick);
+  --tt-out-dur: 50ms;
+  --tt-delay: var(--duration-micro);
+  --tt-scale: var(--scale-small);
+  --tt-in-ease: ease-out;
+  --tt-out-ease: ease-out;
+  --acc-expand: var(--duration-fast);
+  --acc-collapse: var(--duration-fast);
+  --acc-chevron: var(--duration-fast);
+  --acc-ease: var(--ease-smooth-out);
   --topbar-selected-text: #1d1d1f;
   --topbar-focus: rgba(0, 113, 227, 0.34);
   --topbar-height: 52px;
@@ -694,7 +715,9 @@ svg {
   background: var(--topbar-segment-selected-bg);
   box-shadow: var(--topbar-segment-shadow);
   will-change: transform, width;
-  transition: transform 420ms var(--topbar-segment-spring), width 300ms var(--topbar-segment-settle);
+  transition:
+    transform var(--tabs-dur) var(--tabs-ease),
+    width var(--tabs-dur) var(--tabs-ease);
 }
 
 .mode-chip-group::before {
@@ -989,10 +1012,10 @@ svg {
   box-shadow: var(--topbar-segment-shadow);
   will-change: transform, width;
   transition:
-    transform 420ms var(--topbar-segment-spring),
-    width 300ms var(--topbar-segment-settle),
-    height 300ms var(--topbar-segment-settle),
-    box-shadow 220ms ease;
+    transform var(--tabs-dur) var(--tabs-ease),
+    width var(--tabs-dur) var(--tabs-ease),
+    height var(--tabs-dur) var(--tabs-ease),
+    box-shadow var(--duration-quick) ease;
 }
 
 .history-view-switch.is-dragging {
@@ -1086,15 +1109,27 @@ svg {
 .history-toggle svg {
   width: 17px;
   height: 17px;
-  transition: transform 180ms ease;
+  transition: transform var(--acc-chevron) var(--acc-ease);
 }
 
 .history-panel.is-collapsed .history-toggle svg {
   transform: rotate(-90deg);
 }
 
-.history-content[hidden] {
-  display: none;
+.history-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--acc-expand) var(--acc-ease);
+}
+
+.history-content-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.history-panel.is-collapsed .history-content {
+  grid-template-rows: 0fr;
+  transition-duration: var(--acc-collapse);
 }
 
 .history-panel-header h2 {
@@ -2251,7 +2286,7 @@ svg {
   border-right: 2px solid color-mix(in srgb, currentColor 58%, transparent);
   border-bottom: 2px solid color-mix(in srgb, currentColor 58%, transparent);
   transform: rotate(-45deg);
-  transition: transform 180ms var(--topbar-segment-settle), border-color 160ms ease;
+  transition: transform var(--duration-quick) var(--tabs-ease), border-color var(--duration-quick) ease;
 }
 
 .component-group-block[open] > .component-group-summary::before {
@@ -2449,14 +2484,27 @@ svg {
   color: var(--sdk-mono-icon);
   opacity: 0;
   pointer-events: none;
-  transform: scale(0.94);
-  transform-origin: top left;
-  transition: opacity 120ms ease, transform 120ms ease;
+  transform: scale(var(--tt-scale));
+  transform-origin: top center;
+  transition:
+    opacity var(--tt-out-dur) var(--tt-out-ease),
+    transform var(--tt-out-dur) var(--tt-out-ease);
+}
+
+.sdk-icon-preview[data-preview-origin="bottom"] {
+  transform-origin: bottom center;
 }
 
 .sdk-icon-preview.is-visible {
   opacity: 1;
   transform: scale(1);
+  transition-duration: var(--tt-in-dur);
+  transition-delay: var(--tt-delay);
+  transition-timing-function: var(--tt-in-ease);
+}
+
+.sdk-icon-preview.is-visible:is(.is-immediate, .is-pinned) {
+  transition-delay: 0ms;
 }
 
 .sdk-icon-preview .sdk-icon__image,
@@ -2788,13 +2836,20 @@ svg {
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
-.lcapps-app-card:hover,
 .lcapps-app-card:focus-visible {
   border-color: var(--accent-border);
   background: color-mix(in srgb, var(--surface-soft) 72%, var(--accent-soft));
   box-shadow: 0 14px 34px rgb(0 0 0 / 0.12);
-  transform: translateY(-1px);
   outline: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lcapps-app-card:hover {
+    border-color: var(--accent-border);
+    background: color-mix(in srgb, var(--surface-soft) 72%, var(--accent-soft));
+    box-shadow: 0 14px 34px rgb(0 0 0 / 0.12);
+    transform: translateY(-1px);
+  }
 }
 
 .lcapps-app-icon,
@@ -3183,6 +3238,11 @@ svg {
     will-change: auto;
     transform: none;
   }
+
+  .mode-chip-group::before,
+  .theme-chip-group::before {
+    will-change: auto;
+  }
 }
 
 @keyframes progress-shiny-text {
@@ -3221,6 +3281,19 @@ svg {
   .lcapps-picker,
   .lcapps-picker__panel,
   .lcapps-app-card {
+    transition: none;
+  }
+
+  .sdk-icon-preview,
+  .sdk-icon-preview.is-visible,
+  .lcapps-app-card,
+  .lcapps-app-card:hover,
+  .lcapps-app-card:focus-visible {
+    transform: none;
+  }
+
+  .history-content,
+  .history-toggle svg {
     transition: none;
   }
 }

@@ -4,6 +4,7 @@ import { escapeAttr, escapeHtml } from "./html.js";
 import { prepareReportShareUrl, shareReportUrl } from "./report-share.js";
 
 const BOT_REPORT_DATA_ORIGIN = typeof __BOT_REPORT_DATA_ORIGIN__ === "string" ? __BOT_REPORT_DATA_ORIGIN__ : "";
+const REPORT_SHARE_MODAL_CLOSE_FALLBACK_MS = 150;
 
 export async function prepareAndOpenReportShare({
   state,
@@ -52,12 +53,44 @@ export function openReportShareModal({ state, elements, t, onClose, onControlsCh
     window.clearTimeout(elements.reportShareCloseTimer);
     elements.reportShareCloseTimer = 0;
   }
+  const wasVisible = !elements.reportShareModal.hidden;
   elements.reportShareModal.classList.remove("is-closing");
+  if (!wasVisible) {
+    elements.reportShareModal.classList.remove("is-open");
+  }
   elements.reportShareModal.hidden = false;
   renderReportShareModal({ state, elements, t });
+  if (!wasVisible) {
+    elements.reportShareModal.getBoundingClientRect();
+  }
+  elements.reportShareModal.classList.add("is-open");
   window.setTimeout(() => {
     elements.reportSharePanel?.focus();
   }, 0);
+}
+
+export function getReportShareModalCloseDurationMs(modal) {
+  if (!modal || typeof window.getComputedStyle !== "function") {
+    return REPORT_SHARE_MODAL_CLOSE_FALLBACK_MS;
+  }
+
+  return parseCssTimeMs(
+    window.getComputedStyle(modal).getPropertyValue("--modal-close-dur"),
+    REPORT_SHARE_MODAL_CLOSE_FALLBACK_MS,
+  );
+}
+
+export function parseCssTimeMs(value, fallbackMs = 0) {
+  const normalized = String(value || "").trim();
+  if (normalized.endsWith("ms")) {
+    const milliseconds = Number.parseFloat(normalized);
+    return Number.isFinite(milliseconds) ? milliseconds : fallbackMs;
+  }
+  if (normalized.endsWith("s")) {
+    const seconds = Number.parseFloat(normalized);
+    return Number.isFinite(seconds) ? seconds * 1000 : fallbackMs;
+  }
+  return fallbackMs;
 }
 
 export function renderReportShareModal({ state, elements, t }) {
