@@ -1,8 +1,4 @@
 {
-  "locale": {
-    "nativeName": "English",
-    "englishName": "English"
-  },
   "commands": {
     "start_description": "Show usage instructions",
     "apkinfo_description": "Analyze the current or replied APK download link",

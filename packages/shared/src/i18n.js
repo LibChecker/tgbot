@@ -13,6 +13,8 @@ const LOCALE_ALIASES = new Map([
   ["zh-hans-my", "zh-Hans"],
 ]);
 
+const LANGUAGE_DISPLAY_NAME_FORMATTERS = new Map();
+
 export function createI18n(localeInput, options = {}) {
   const locale = normalizeLocale(localeInput);
   const dictionary = I18N_CATALOGS[locale] || I18N_CATALOGS[DEFAULT_LOCALE];
@@ -74,15 +76,31 @@ function resolveSupportedLocale(value) {
 }
 
 export function getSupportedLocales() {
-  return SUPPORTED_LOCALES.map((locale) => {
-    const catalog = I18N_CATALOGS[locale] || {};
-    return {
-      locale,
-      languageTag: locale,
-      nativeName: catalog.locale?.nativeName || locale,
-      englishName: catalog.locale?.englishName || locale,
-    };
-  });
+  return SUPPORTED_LOCALES.map((locale) => ({
+    locale,
+    languageTag: locale,
+    nativeName: getLanguageDisplayName(locale, locale),
+    englishName: getLanguageDisplayName(locale, "en"),
+  }));
+}
+
+function getLanguageDisplayName(locale, displayLocale) {
+  const languageTag = String(locale).replace(/_/gu, "-");
+  const displayLanguageTag = String(displayLocale).replace(/_/gu, "-");
+
+  try {
+    let formatter = LANGUAGE_DISPLAY_NAME_FORMATTERS.get(displayLanguageTag);
+    if (!formatter) {
+      formatter = new Intl.DisplayNames([displayLanguageTag], {
+        type: "language",
+        fallback: "code",
+      });
+      LANGUAGE_DISPLAY_NAME_FORMATTERS.set(displayLanguageTag, formatter);
+    }
+    return formatter.of(languageTag) || locale;
+  } catch {
+    return locale;
+  }
 }
 
 export function resolveTelegramLocale(message) {
