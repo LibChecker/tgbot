@@ -23,7 +23,7 @@
     "@playwright/test": "^1.61.1",
     "vite": "^8.1.4",
     "vitest": "^4.1.10",
-    "wrangler": "4.110.0"
+    "wrangler": "4.111.0"
   },
   "dependencies": {
     "fflate": "^0.8.3"
