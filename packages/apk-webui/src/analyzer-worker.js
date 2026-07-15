@@ -1,6 +1,6 @@
 import { readAndroidPackageInfo } from "@shared/apk.js";
 import { assertAnalyzerWorkerRequest, assertApkReport } from "@shared/contracts.js";
-import { createI18n, normalizeLocale } from "@shared/i18n.js";
+import { normalizeLocale } from "@shared/i18n-locales.js";
 import { detectTerminalSystemFromNavigator as detectTerminalSystemFromNavigatorValue } from "@shared/terminal-system.js";
 import libcheckerRulesCoreUrl from "@shared/generated/libchecker-rules-core.js?url";
 import libcheckerSdkIconsUrl from "@shared/generated/libchecker-sdk-icons.js?url";
@@ -17,33 +17,36 @@ self.addEventListener("message", (event) => {
     return;
   }
 
-  Promise.resolve()
-    .then(() => analyze(assertAnalyzerWorkerRequest(rawMessage)))
-    .catch((error) => {
-      const { t } = createWorkerI18n(rawMessage.locale);
-      self.postMessage({
-        type: "error",
-        jobId: Number(rawMessage.jobId) || 0,
-        error: getErrorMessage(error, t),
-      });
-    });
+  void handleAnalyzeMessage(rawMessage);
 });
+
+async function handleAnalyzeMessage(rawMessage) {
+  try {
+    await analyze(assertAnalyzerWorkerRequest(rawMessage));
+  } catch (error) {
+    const workerError = getWorkerError(error);
+    self.postMessage({
+      type: "error",
+      jobId: Number(rawMessage.jobId) || 0,
+      ...workerError,
+    });
+  }
+}
 
 async function analyze(message) {
   const startedAt = performance.now();
   const file = message.file;
-  const { t } = createWorkerI18n(message.locale);
 
   if (!file || (typeof file.arrayBuffer !== "function" && !isArrayBuffer(message.fileBuffer))) {
-    throw new Error(t("noFile"));
+    throw createWorkerError("noFile");
   }
 
   if (!isLikelyApk(file)) {
-    throw new Error(t("invalidFile"));
+    throw createWorkerError("invalidFile");
   }
 
   if (typeof DecompressionStream !== "function") {
-    throw new Error(t("unsupportedDecompression"));
+    throw createWorkerError("unsupportedDecompression");
   }
 
   self.postMessage({
@@ -310,14 +313,18 @@ function addSdkEntryKeys(keys, entries = []) {
   }
 }
 
-function createWorkerI18n(locale) {
-  return createI18n(locale, { scope: "webui" });
+function createWorkerError(errorKey) {
+  const error = new Error(errorKey);
+  error.errorKey = errorKey;
+  return error;
 }
 
-function getErrorMessage(error, t) {
-  if (error instanceof Error) {
-    return error.message;
+function getWorkerError(error) {
+  if (typeof error?.errorKey === "string") {
+    return { errorKey: error.errorKey };
   }
-
-  return t("unknownError");
+  if (error instanceof Error) {
+    return { error: error.message };
+  }
+  return { errorKey: "unknownError" };
 }

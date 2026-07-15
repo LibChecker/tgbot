@@ -15,6 +15,7 @@ before(async () => {
     server: { middlewareMode: true },
   }));
   i18n = await viteServer.ssrLoadModule("/app/i18n.js");
+  await Promise.all(["en", "ja", "ko", "zh-Hans", "zh-Hant"].map((locale) => i18n.loadLocale(locale)));
   reportRenderer = await viteServer.ssrLoadModule("/app/report-renderer.js");
 });
 
@@ -25,8 +26,14 @@ after(async () => {
 test("report version labels use semantic localized names", () => {
   assert.equal(i18n.translate("en", "versionName"), "Version Name");
   assert.equal(i18n.translate("en", "versionCode"), "Version Code");
+  assert.equal(i18n.translate("ja", "versionName"), "バージョン名");
+  assert.equal(i18n.translate("ja", "versionCode"), "バージョンコード");
+  assert.equal(i18n.translate("ko", "versionName"), "버전 이름");
+  assert.equal(i18n.translate("ko", "versionCode"), "버전 코드");
   assert.equal(i18n.translate("zh-Hans", "versionName"), "版本名称");
   assert.equal(i18n.translate("zh-Hans", "versionCode"), "版本号");
+  assert.equal(i18n.translate("zh-Hant", "versionName"), "版本名稱");
+  assert.equal(i18n.translate("zh-Hant", "versionCode"), "版本代碼");
 });
 
 test("native SDK summary details follow the active locale", () => {

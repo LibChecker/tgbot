@@ -189,8 +189,11 @@ The repository root is the npm workspace root. Root scripts are compatibility sh
 User-facing copy lives in `locales/*.json`. These files are the translation source of truth for both the Telegram bot and the Web UI.
 
 - `locales/en.json` is the default runtime catalog.
-- `locales/zh-Hans.json` is the Simplified Chinese catalog.
-- `crowdin.yml` maps Crowdin translations to `locales/%locale%.json`.
+- Every other `locales/*.json` file is a translated catalog and automatically
+  becomes a supported runtime locale.
+- `crowdin.yml` maps Crowdin translations to canonical locale filenames and
+  may override Crowdin language codes when the repository uses a different
+  canonical locale tag.
 - Runtime modules import ignored files under `packages/shared/src/generated/`; do not edit generated files by hand.
 
 When contributing through GitHub PRs or Crowdin, edit or add locale JSON files only. Keep the same key tree as `locales/en.json`, and keep placeholders such as `{count}` or `{appName}` unchanged.

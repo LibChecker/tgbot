@@ -30,7 +30,10 @@ const TELEGRAM_ALLOWED_UPDATES = [
   "channel_post",
   "edited_channel_post",
 ];
-const MANAGED_COMMAND_LANGUAGE_CODES = [null, ...SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE)];
+const MANAGED_COMMAND_LANGUAGE_CODES = [
+  null,
+  ...getManagedCommandLanguageCodes(SUPPORTED_LOCALES, DEFAULT_LOCALE),
+];
 
 let cachedBotIdentity = null;
 let apkUrlPreviewModulePromise = null;
@@ -1410,6 +1413,21 @@ function getManagedCommandScopes() {
   ];
 }
 
+function getManagedCommandLanguageCodes(locales, defaultLocale) {
+  const defaultLanguageCode = getTelegramCommandLanguageCode(defaultLocale);
+  return [...new Set(locales.map(getTelegramCommandLanguageCode))]
+    .filter((languageCode) => languageCode && languageCode !== defaultLanguageCode);
+}
+
+function getTelegramCommandLanguageCode(locale) {
+  const language = String(locale || "")
+    .trim()
+    .replace(/_/gu, "-")
+    .split("-")[0]
+    .toLowerCase();
+  return /^[a-z]{2}$/u.test(language) ? language : null;
+}
+
 function getManagedCommandTargets() {
   const targets = [];
 
@@ -2389,6 +2407,7 @@ export const __botWorkerTestInternals = {
   buildWebUiReportUrl,
   formatApkSummary,
   formatSdkMarkerSummary,
+  getManagedCommandLanguageCodes,
   stripTelegramCustomEmojiTags,
   buildMessageTelemetryFields,
   selectTargetDocument,

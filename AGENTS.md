@@ -155,14 +155,17 @@ and recurring pitfalls only.
 
 ## Localization And Generated Files
 
-- Edit `locales/en.json` and `locales/zh-Hans.json` for user-facing copy. Keep
-  key trees and placeholders aligned.
-- Runtime fallback locale is English. `zh-Hans` is Simplified Chinese; keep
-  `zh-CN` only as a compatibility input that normalizes to `zh-Hans`.
-- Static HTML fallback text stays English because Web UI runtime i18n applies
-  after load.
-- Keep Simplified Chinese strings concise and avoid Chinese sentence-ending `。`
-  unless the existing context needs it.
+- Edit the matching `locales/*.json` catalog for user-facing copy. Keep every
+  translated catalog's key tree and placeholders aligned with `locales/en.json`.
+- Runtime fallback uses the default `locales/en.json` catalog. Every
+  `locales/*.json` file becomes a supported locale; keep region or legacy tags
+  only as compatibility aliases that normalize to a canonical catalog filename.
+- Telegram command registration accepts only two-letter language codes; derive
+  and deduplicate them from catalog locale tags instead of passing full tags.
+- Static HTML fallback text matches the default catalog because Web UI runtime
+  i18n applies after load.
+- Keep translated strings concise and follow the punctuation style already
+  established by the surrounding catalog.
 - `packages/shared/src/generated/` is ignored generated output. Do not hand-edit
   it.
 - Scripts usually run `generated:generate` before checks/builds.

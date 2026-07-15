@@ -1,4 +1,6 @@
-import { createI18n, getSupportedLocales, normalizeLocale, resolvePreferredLocale } from "@shared/i18n.js";
+import { getSupportedLocales, normalizeLocale, resolvePreferredLocale } from "@shared/i18n-locales.js";
+import { createCatalogI18n } from "@shared/i18n-runtime.js";
+import { loadLocaleCatalog } from "./locale-catalog-loader.js";
 
 export { getSupportedLocales, normalizeLocale, resolvePreferredLocale };
 
@@ -34,18 +36,28 @@ const NON_TRANSLATABLE_MESSAGES = Object.freeze({
 
 let cachedLocale = "";
 let cachedI18n = null;
+const localeI18n = new Map();
+
+export async function loadLocale(localeInput) {
+  const { locale, catalog } = await loadLocaleCatalog(localeInput);
+  if (!localeI18n.has(locale)) {
+    localeI18n.set(locale, createCatalogI18n(locale, catalog, catalog, { scope: "webui" }));
+  }
+  return locale;
+}
 
 export function translate(locale, key, variables = {}) {
   if (Object.prototype.hasOwnProperty.call(NON_TRANSLATABLE_MESSAGES, key)) {
     return formatMessage(NON_TRANSLATABLE_MESSAGES[key], variables);
   }
 
-  if (locale !== cachedLocale || !cachedI18n) {
-    cachedLocale = locale;
-    cachedI18n = createI18n(locale, { scope: "webui" });
+  const normalizedLocale = normalizeLocale(locale);
+  if (normalizedLocale !== cachedLocale || !cachedI18n) {
+    cachedLocale = normalizedLocale;
+    cachedI18n = localeI18n.get(normalizedLocale) || null;
   }
 
-  return cachedI18n.t(key, variables);
+  return cachedI18n?.t(key, variables) || key;
 }
 
 function formatMessage(template, variables) {

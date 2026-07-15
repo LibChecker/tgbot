@@ -22,7 +22,7 @@ Content-Type: application/json
 }
 ```
 
-The `url` must use HTTP or HTTPS. Supported package containers are APK, APKS, APKM, and XAPK. Use `zh-Hans` for Simplified Chinese output; otherwise use `en`.
+The `url` must use HTTP or HTTPS. Supported package containers are APK, APKS, APKM, and XAPK. When setting `locale`, use one of the values published by the OpenAPI request schema; omit it to use the default locale.
 
 For progress events, request `application/x-ndjson`. The final event contains the same report returned by the JSON response.
 

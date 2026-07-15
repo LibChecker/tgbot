@@ -7,12 +7,20 @@ const {
   buildLinkReplyMarkup,
   buildWebUiReportUrl,
   formatSdkMarkerSummary,
+  getManagedCommandLanguageCodes,
   stripTelegramCustomEmojiTags,
   buildMessageTelemetryFields,
   selectTargetDocument,
   selectTargetUrl,
   shouldUseWebUiUploadGuide,
 } = __botWorkerTestInternals;
+
+test("managed bot commands use unique two-letter Telegram language codes", () => {
+  assert.deepEqual(
+    getManagedCommandLanguageCodes(["en", "ja", "ko", "zh-Hans", "zh-Hant", "fil"], "en"),
+    ["ja", "ko", "zh"],
+  );
+});
 
 const apkDocument = {
   file_id: "apk-file",

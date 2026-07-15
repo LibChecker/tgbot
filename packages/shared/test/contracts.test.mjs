@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assertAnalyzerWorkerRequest } from "../src/contracts.js";
+import { assertAnalyzerWorkerRequest, isAnalyzerWorkerMessage } from "../src/contracts.js";
 
 const terminalSystem = {
   name: "macOS",
@@ -57,4 +57,12 @@ test("rejects analyzer requests without a file payload", () => {
     }),
     /Invalid analyzer worker request contract/u,
   );
+});
+
+test("accepts analyzer worker errors with a localizable error key", () => {
+  assert.equal(isAnalyzerWorkerMessage({
+    type: "error",
+    jobId: 1,
+    errorKey: "invalidFile",
+  }), true);
 });

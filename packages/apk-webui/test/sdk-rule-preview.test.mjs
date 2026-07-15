@@ -18,3 +18,12 @@ test("SDK rule previews resolve compare labels from the shared detail registry",
   );
   assert.doesNotMatch(interactionSource, /runtime\.sdkIconRendererModule/u);
 });
+
+test("non-Chinese locales prefer English SDK rule details", () => {
+  const chineseFallback = interactionSource.indexOf("chineseFallback ||");
+  const englishFallback = interactionSource.indexOf("locales.en ||", chineseFallback);
+
+  assert.ok(chineseFallback >= 0);
+  assert.ok(englishFallback > chineseFallback);
+  assert.match(interactionSource, /state\.locale\.startsWith\("zh"\)/u);
+});

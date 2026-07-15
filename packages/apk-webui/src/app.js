@@ -1,5 +1,5 @@
 import { escapeAttr, escapeHtml } from "./app/html.js";
-import { getSupportedLocales, normalizeLocale, resolvePreferredLocale, translate } from "./app/i18n.js";
+import { getSupportedLocales, loadLocale, normalizeLocale, resolvePreferredLocale, translate } from "./app/i18n.js";
 import { clamp } from "./app/math.js";
 import { formatBytes, getInitial, sanitizeImageSrc } from "./app/format.js";
 import { getStats } from "./app/report-model.js";
@@ -1196,33 +1196,38 @@ function applyFilePickerAcceptCompatibilityWhenReady() {
   window.setTimeout(apply, 3200);
 }
 
-applyThemeChoice(state.themeChoice, { persist: false });
-initPowerModeAdaptation();
-applyFilePickerAcceptCompatibilityWhenReady();
-renderLanguageOptions();
-applyLocale();
-renderTopbarDefaultIdentity({ force: true });
-renderHistoryList();
-updateHistoryCollapse();
-updateAppMode();
-bindEvents();
-initWebMcpWhenAvailable();
-syncMobileBottomControls();
-scheduleColorOrbBackground();
-initWebAnalytics(() => ({
-  locale: state.locale,
-  ui_mode: state.appMode,
-  theme_choice: state.themeChoice,
-  color_scheme: document.documentElement.dataset.colorScheme || "",
-  history_count: state.history.length,
-  viewport_width: window.innerWidth || 0,
-  viewport_height: window.innerHeight || 0,
-}));
-appendRuntimeLog("info", "WebUI ready", {
-  version: APP_VERSION,
-  locale: state.locale,
-});
-void loadBotReportFromUrlIfPresent();
+void initializeApp();
+
+async function initializeApp() {
+  state.locale = await loadLocale(state.locale);
+  applyThemeChoice(state.themeChoice, { persist: false });
+  initPowerModeAdaptation();
+  applyFilePickerAcceptCompatibilityWhenReady();
+  renderLanguageOptions();
+  applyLocale();
+  renderTopbarDefaultIdentity({ force: true });
+  renderHistoryList();
+  updateHistoryCollapse();
+  updateAppMode();
+  bindEvents();
+  initWebMcpWhenAvailable();
+  syncMobileBottomControls();
+  scheduleColorOrbBackground();
+  initWebAnalytics(() => ({
+    locale: state.locale,
+    ui_mode: state.appMode,
+    theme_choice: state.themeChoice,
+    color_scheme: document.documentElement.dataset.colorScheme || "",
+    history_count: state.history.length,
+    viewport_width: window.innerWidth || 0,
+    viewport_height: window.innerHeight || 0,
+  }));
+  appendRuntimeLog("info", "WebUI ready", {
+    version: APP_VERSION,
+    locale: state.locale,
+  });
+  void loadBotReportFromUrlIfPresent();
+}
 
 function initWebMcpWhenAvailable() {
   if (typeof navigator.modelContext?.registerTool !== "function" &&
@@ -1299,9 +1304,14 @@ function bindEvents() {
   window.addEventListener("scroll", scheduleTopbarReportIdentityCheck, { passive: true });
   window.addEventListener("pagehide", flushScheduledHistoryReports);
 
-  elements.languageSelect.addEventListener("change", () => {
+  elements.languageSelect.addEventListener("change", async () => {
+    const requestedLocale = normalizeLocale(elements.languageSelect.value);
+    const loadedLocale = await loadLocale(requestedLocale);
+    if (normalizeLocale(elements.languageSelect.value) !== requestedLocale) {
+      return;
+    }
     const previousLocale = state.locale;
-    state.locale = normalizeLocale(elements.languageSelect.value);
+    state.locale = loadedLocale;
     renderLanguageOptions();
     applyLocale();
     updateModeIndicator();
@@ -3589,13 +3599,14 @@ function handleWorkerMessage(event) {
   if (message.type === "error") {
     state.jobs.delete(message.jobId);
     scheduleWorkerIdleTermination();
+    const errorMessage = message.errorKey ? t(message.errorKey) : message.error || t("workerFailed");
     if (job.type === "compare") {
-      runtime.compareController?.finishJob(job.slotKey, null, message.error || t("workerFailed"));
+      runtime.compareController?.finishJob(job.slotKey, null, errorMessage);
     } else {
       finishAnalysis();
       state.activeAnalyzeJobId = null;
       showProgress("progressFailed");
-      showError(message.error || t("workerFailed"));
+      showError(errorMessage);
       trackWebEvent("webui.analysis.failed", {
         result: "error",
         error_name: "AnalyzerWorkerError",

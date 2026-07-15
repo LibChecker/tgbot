@@ -852,10 +852,13 @@ function selectRuleDetailLocale(detail) {
     return null;
   }
 
+  const chineseFallback = state.locale.startsWith("zh")
+    ? locales["zh-Hant"] || locales["zh-Hans"] || locales["zh-CN"]
+    : null;
+
   return (
     locales[state.locale] ||
-    locales["zh-Hans"] ||
-    locales["zh-CN"] ||
+    chineseFallback ||
     locales.en ||
     Object.values(locales).find((item) => item && typeof item === "object") ||
     null

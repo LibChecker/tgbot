@@ -1,155 +1,26 @@
-import { DEFAULT_LOCALE, I18N_CATALOGS, SUPPORTED_LOCALES } from "./generated/i18n-catalogs.js";
+import { I18N_CATALOGS } from "./generated/i18n-catalogs.js";
+import {
+  DEFAULT_LOCALE,
+  SUPPORTED_LOCALES,
+  getSupportedLocales,
+  normalizeLocale,
+  resolvePreferredLocale,
+  resolveTelegramLocale,
+} from "./i18n-locales.js";
+import { createCatalogI18n } from "./i18n-runtime.js";
 
-export { DEFAULT_LOCALE, SUPPORTED_LOCALES };
-
-const LOCALE_ALIASES = new Map([
-  ["zh", "zh-Hans"],
-  ["zh-cn", "zh-Hans"],
-  ["zh-sg", "zh-Hans"],
-  ["zh-my", "zh-Hans"],
-  ["zh-hans", "zh-Hans"],
-  ["zh-hans-cn", "zh-Hans"],
-  ["zh-hans-sg", "zh-Hans"],
-  ["zh-hans-my", "zh-Hans"],
-]);
-
-const LANGUAGE_DISPLAY_NAME_FORMATTERS = new Map();
+export {
+  DEFAULT_LOCALE,
+  SUPPORTED_LOCALES,
+  getSupportedLocales,
+  normalizeLocale,
+  resolvePreferredLocale,
+  resolveTelegramLocale,
+};
 
 export function createI18n(localeInput, options = {}) {
   const locale = normalizeLocale(localeInput);
   const dictionary = I18N_CATALOGS[locale] || I18N_CATALOGS[DEFAULT_LOCALE];
   const defaultDictionary = I18N_CATALOGS[DEFAULT_LOCALE];
-  const scope = normalizeScope(options.scope);
-
-  return {
-    locale,
-    languageTag: locale,
-    t(key, variables = {}) {
-      const template =
-        resolveScopedMessage(dictionary, key, scope) ??
-        resolveScopedMessage(defaultDictionary, key, scope) ??
-        key;
-      return formatMessage(template, variables);
-    },
-  };
-}
-
-export function normalizeLocale(value) {
-  return resolveSupportedLocale(value) || DEFAULT_LOCALE;
-}
-
-export function resolvePreferredLocale(values, fallbackLocale = DEFAULT_LOCALE) {
-  const candidates = Array.isArray(values) ? values : [values];
-  for (const candidate of candidates) {
-    const locale = resolveSupportedLocale(candidate);
-    if (locale) {
-      return locale;
-    }
-  }
-
-  return resolveSupportedLocale(fallbackLocale) || DEFAULT_LOCALE;
-}
-
-function resolveSupportedLocale(value) {
-  const normalized = normalizeLocaleText(value);
-  if (!normalized) {
-    return null;
-  }
-
-  const alias = LOCALE_ALIASES.get(normalized);
-  if (alias && SUPPORTED_LOCALES.includes(alias)) {
-    return alias;
-  }
-
-  const exact = SUPPORTED_LOCALES.find((locale) => normalizeLocaleText(locale) === normalized);
-  if (exact) {
-    return exact;
-  }
-
-  const language = normalized.split("-")[0];
-  const languageMatch = SUPPORTED_LOCALES.find((locale) => normalizeLocaleText(locale).split("-")[0] === language);
-  if (languageMatch) {
-    return languageMatch;
-  }
-
-  return null;
-}
-
-export function getSupportedLocales() {
-  return SUPPORTED_LOCALES.map((locale) => ({
-    locale,
-    languageTag: locale,
-    nativeName: getLanguageDisplayName(locale, locale),
-    englishName: getLanguageDisplayName(locale, "en"),
-  }));
-}
-
-function getLanguageDisplayName(locale, displayLocale) {
-  const languageTag = String(locale).replace(/_/gu, "-");
-  const displayLanguageTag = String(displayLocale).replace(/_/gu, "-");
-
-  try {
-    let formatter = LANGUAGE_DISPLAY_NAME_FORMATTERS.get(displayLanguageTag);
-    if (!formatter) {
-      formatter = new Intl.DisplayNames([displayLanguageTag], {
-        type: "language",
-        fallback: "code",
-      });
-      LANGUAGE_DISPLAY_NAME_FORMATTERS.set(displayLanguageTag, formatter);
-    }
-    return formatter.of(languageTag) || locale;
-  } catch {
-    return locale;
-  }
-}
-
-export function resolveTelegramLocale(message) {
-  const candidates = [
-    message?.from?.language_code,
-    message?.reply_to_message?.from?.language_code,
-    message?.external_reply?.origin?.sender_user?.language_code,
-  ];
-
-  for (const candidate of candidates) {
-    const locale = resolveSupportedLocale(candidate);
-    if (locale) {
-      return locale;
-    }
-  }
-
-  return DEFAULT_LOCALE;
-}
-
-function normalizeScope(value) {
-  const scope = String(value || "").trim();
-  return scope.length > 0 ? scope : null;
-}
-
-function normalizeLocaleText(value) {
-  return String(value || "").trim().replace(/_/gu, "-").toLowerCase();
-}
-
-function resolveScopedMessage(dictionary, key, scope) {
-  if (scope) {
-    return resolveMessage(dictionary?.[scope], key);
-  }
-
-  return resolveMessage(dictionary, key);
-}
-
-function resolveMessage(dictionary, key) {
-  return key.split(".").reduce((current, part) => {
-    if (!current || typeof current !== "object") {
-      return undefined;
-    }
-
-    return current[part];
-  }, dictionary);
-}
-
-function formatMessage(template, variables) {
-  return String(template).replace(/\{(\w+)\}/gu, (_, key) => {
-    const value = variables[key];
-    return value == null ? "" : String(value);
-  });
+  return createCatalogI18n(locale, dictionary, defaultDictionary, options);
 }

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { SUPPORTED_LOCALES } from "../shared/src/generated/i18n-locales.js";
+
 export const API_CATALOG_MEDIA_TYPE = "application/linkset+json";
 export const API_CATALOG_PROFILE = "https://www.rfc-editor.org/info/rfc9727";
 export const AGENT_SKILLS_SCHEMA = "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
@@ -73,7 +75,7 @@ export function createOpenApiDocument(siteOrigin) {
                     },
                     locale: {
                       type: "string",
-                      enum: ["en", "zh-Hans"],
+                      enum: [...SUPPORTED_LOCALES],
                       default: "en",
                     },
                   },

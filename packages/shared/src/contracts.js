@@ -264,7 +264,8 @@
  * @typedef {object} AnalyzerWorkerErrorMessage
  * @property {"error"} type
  * @property {number} jobId
- * @property {string} error
+ * @property {string=} error
+ * @property {string=} errorKey
  */
 
 /** @typedef {AnalyzerWorkerProgressMessage | AnalyzerWorkerResultMessage | AnalyzerWorkerErrorMessage} AnalyzerWorkerResponse */
@@ -436,7 +437,11 @@ export function isAnalyzerWorkerMessage(value) {
   }
 
   if (value.type === "error") {
-    return typeof value.error === "string";
+    return (
+      (value.error == null || typeof value.error === "string") &&
+      (value.errorKey == null || typeof value.errorKey === "string") &&
+      (typeof value.error === "string" || typeof value.errorKey === "string")
+    );
   }
 
   if (value.type === "result") {

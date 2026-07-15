@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { SUPPORTED_LOCALES } from "../../shared/src/generated/i18n-locales.js";
 import {
   AGENT_SKILLS_SCHEMA,
   ANALYZE_ANDROID_PACKAGE_SKILL,
@@ -41,6 +42,10 @@ test("OpenAPI documents only the real public URL analysis and health endpoints",
   assert.deepEqual(
     openapi.paths["/url-report"].post.requestBody.content["application/json"].schema.required,
     ["url"],
+  );
+  assert.deepEqual(
+    openapi.paths["/url-report"].post.requestBody.content["application/json"].schema.properties.locale.enum,
+    SUPPORTED_LOCALES,
   );
 });
 
