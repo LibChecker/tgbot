@@ -19,7 +19,7 @@
     "size:check": "npm run perf:check"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.18.4",
+    "@cloudflare/vitest-pool-workers": "0.18.5",
     "@playwright/test": "^1.61.1",
     "vite": "^8.1.4",
     "vitest": "^4.1.10",
