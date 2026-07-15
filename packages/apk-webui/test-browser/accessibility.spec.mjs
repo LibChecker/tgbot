@@ -24,6 +24,15 @@ test("analyzed report has no automatically detectable WCAG A or AA violations", 
   await expectNoWcagViolations(page, testInfo, "#result-view");
 });
 
+test("ELF detail dialog has no automatically detectable WCAG A or AA violations", async ({ page }, testInfo) => {
+  await analyzeSmokeApk(page);
+  await page.locator('[data-tab="native"]').click();
+  await page.locator("[data-elf-details]").first().click();
+  await expect(page.locator("#elf-detail-dialog")).toBeVisible();
+  await expect(page.locator("#elf-detail-body")).toHaveAttribute("aria-busy", "false");
+  await expectNoWcagViolations(page, testInfo, "#elf-detail-dialog");
+});
+
 test("populated compare view has no automatically detectable WCAG A or AA violations", async ({ page }, testInfo) => {
   await analyzeSmokeApk(page);
   await page.locator('[data-app-mode="compare"]').click();

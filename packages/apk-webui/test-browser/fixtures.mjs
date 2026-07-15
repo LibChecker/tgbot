@@ -5,7 +5,33 @@ export function createSmokeApk() {
   const manifest = createBinaryManifest();
   return Buffer.from(createStoredZip([
     ["AndroidManifest.xml", manifest],
+    ["lib/arm64-v8a/libsmoke.so", createSmokeElf()],
   ]));
+}
+
+function createSmokeElf() {
+  const bytes = new Uint8Array(120);
+  const view = new DataView(bytes.buffer);
+  bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1, 3], 0);
+  view.setUint16(16, 3, true);
+  view.setUint16(18, 183, true);
+  view.setUint32(20, 1, true);
+  view.setBigUint64(24, 0x1000n, true);
+  view.setBigUint64(32, 64n, true);
+  view.setUint16(52, 64, true);
+  view.setUint16(54, 56, true);
+  view.setUint16(56, 1, true);
+  view.setUint16(58, 64, true);
+
+  view.setUint32(64, 1, true);
+  view.setUint32(68, 5, true);
+  view.setBigUint64(72, 0n, true);
+  view.setBigUint64(80, 0x1000n, true);
+  view.setBigUint64(88, 0x1000n, true);
+  view.setBigUint64(96, BigInt(bytes.byteLength), true);
+  view.setBigUint64(104, BigInt(bytes.byteLength), true);
+  view.setBigUint64(112, 0x4000n, true);
+  return bytes;
 }
 
 function createBinaryManifest() {

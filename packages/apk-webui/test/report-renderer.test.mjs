@@ -7,6 +7,7 @@ import viteConfig from "../vite.config.mjs";
 let viteServer;
 let i18n;
 let reportRenderer;
+let elfDetailModal;
 
 before(async () => {
   viteServer = await createServer(mergeConfig(viteConfig, {
@@ -17,6 +18,7 @@ before(async () => {
   i18n = await viteServer.ssrLoadModule("/app/i18n.js");
   await Promise.all(["en", "ja", "ko", "zh-Hans", "zh-Hant"].map((locale) => i18n.loadLocale(locale)));
   reportRenderer = await viteServer.ssrLoadModule("/app/report-renderer.js");
+  elfDetailModal = await viteServer.ssrLoadModule("/app/elf-detail-modal.js");
 });
 
 after(async () => {
@@ -132,6 +134,89 @@ test("report renderer caps long native library groups", () => {
   assert.doesNotMatch(html, /libsample123\.so/);
 });
 
+test("native library rows expose accessible ELF detail controls", () => {
+  setupRenderer("native");
+  const html = reportRenderer.renderTabPanelHtml(createReport({
+    nativeLibraries: [{
+      abi: "arm64-v8a",
+      name: "libsample.so",
+      path: "lib/arm64-v8a/libsample.so",
+      sourceEntry: "base.apk",
+      size: 4096,
+    }],
+  }));
+
+  assert.equal(count(html, "data-elf-details"), 1);
+  assert.match(html, /data-library-path="lib\/arm64-v8a\/libsample\.so"/u);
+  assert.match(html, /data-library-source-entry="base\.apk"/u);
+  assert.match(html, /aria-label="View ELF details for libsample\.so"/u);
+  assert.match(html, /<circle cx="12" cy="12" r="2\.7"><\/circle>/u);
+});
+
+test("ELF detail content renders all inspection groups and escapes parsed data", () => {
+  const translate = (key, variables) => i18n.translate("en", key, variables);
+  const html = elfDetailModal.renderElfDetailContent({
+    library: {
+      abi: "arm64-v8a",
+      name: "libsample.so",
+      size: 4096,
+      elfPageSize: 16384,
+      zipAlignment: 4096,
+    },
+    details: {
+      byteLength: 4096,
+      header: { class: "ELF64", type: "ET_DYN", machine: "AArch64" },
+      programHeaders: [{
+        index: 0,
+        type: "PT_LOAD",
+        flags: "R-E",
+        offset: "0x0",
+        virtualAddress: "0x1000",
+        physicalAddress: "0x1000",
+        fileSize: "0x1000",
+        memorySize: "0x1000",
+        alignment: "0x4000",
+      }],
+      sectionHeaders: [{
+        index: 1,
+        name: "<img src=x onerror=alert(1)>",
+        type: "SHT_DYNSYM",
+      }],
+      dynamic: {
+        needed: ["libc.so"],
+        entries: [{ index: 0, section: ".dynamic", tag: "DT_NEEDED", value: "0x1", text: "libc.so" }],
+      },
+      symbols: [{
+        table: ".dynsym",
+        index: 1,
+        name: "smoke_symbol",
+        type: "FUNC",
+      }],
+      notes: [{
+        section: ".note.gnu.build-id",
+        owner: "GNU",
+        type: "NT_GNU_BUILD_ID",
+        description: "0102",
+        descriptionSize: 2,
+      }],
+      counts: { programHeaders: 1, sectionHeaders: 1, dynamicEntries: 1, symbols: 1, notes: 1 },
+      truncated: {},
+    },
+    t: translate,
+  });
+
+  for (const heading of ["ELF Header", "Program Headers", "Section Headers", "Dynamic Linking", "Symbols", "Notes"]) {
+    assert.match(html, new RegExp(heading, "u"));
+  }
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/u);
+  assert.doesNotMatch(html, /<img/u);
+  assert.match(html, />16 KB</u);
+  assert.doesNotMatch(html, /16\.00 KB/u);
+  const dialog = {};
+  assert.equal(elfDetailModal.shouldCloseElfDetailModalOnBackdropClick({ target: dialog }, dialog, true), true);
+  assert.equal(elfDetailModal.shouldCloseElfDetailModalOnBackdropClick({ target: {} }, dialog, true), false);
+});
+
 test("report renderer adds build feature icons and hides app metadata", () => {
   setupRenderer("summary", {
     renderSdkIcon: (src, label, singleColorIcon = false) => src
@@ -242,6 +327,9 @@ function createReport(apkInfo = {}) {
 function t(key, variables = {}) {
   if (key === "compareMoreItems") {
     return `${variables.count} more items hidden`;
+  }
+  if (key === "elfDetailsButton") {
+    return `View ELF details for ${variables.name}`;
   }
   return LABELS[key] || key;
 }

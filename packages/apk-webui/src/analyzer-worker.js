@@ -1,5 +1,9 @@
-import { readAndroidPackageInfo } from "@shared/apk.js";
-import { assertAnalyzerWorkerRequest, assertApkReport } from "@shared/contracts.js";
+import { readAndroidPackageInfo, readNativeLibraryElfDetails } from "@shared/apk.js";
+import {
+  assertAnalyzerWorkerRequest,
+  assertApkReport,
+  assertElfDetailsWorkerRequest,
+} from "@shared/contracts.js";
 import { normalizeLocale } from "@shared/i18n-locales.js";
 import { detectTerminalSystemFromNavigator as detectTerminalSystemFromNavigatorValue } from "@shared/terminal-system.js";
 import libcheckerRulesCoreUrl from "@shared/generated/libchecker-rules-core.js?url";
@@ -16,11 +20,14 @@ self.addEventListener("message", handleWorkerRequestMessage);
 /** @param {MessageEvent} event */
 function handleWorkerRequestMessage(event) {
   const rawMessage = event.data || {};
-  if (rawMessage.type !== "analyze") {
+  if (rawMessage.type === "analyze") {
+    void handleAnalyzeMessage(rawMessage);
     return;
   }
 
-  void handleAnalyzeMessage(rawMessage);
+  if (rawMessage.type === "elf-details") {
+    void handleElfDetailsMessage(rawMessage);
+  }
 }
 
 async function handleAnalyzeMessage(rawMessage) {
@@ -32,6 +39,26 @@ async function handleAnalyzeMessage(rawMessage) {
       type: "error",
       jobId: Number(rawMessage.jobId) || 0,
       ...workerError,
+    });
+  }
+}
+
+
+async function handleElfDetailsMessage(rawMessage) {
+  try {
+    const message = assertElfDetailsWorkerRequest(rawMessage);
+    const buffer = await message.file.arrayBuffer();
+    const details = await readNativeLibraryElfDetails(buffer, message.library);
+    self.postMessage({
+      type: "elf-details-result",
+      jobId: message.jobId,
+      details,
+    });
+  } catch {
+    self.postMessage({
+      type: "error",
+      jobId: Number(rawMessage.jobId) || 0,
+      errorKey: "elfDetailsUnavailable",
     });
   }
 }

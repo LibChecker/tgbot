@@ -209,6 +209,7 @@
   border: 2px solid var(--line-strong);
   border-top-color: var(--accent);
   border-radius: 50%;
+  corner-shape: round;
   animation: compare-spin 760ms linear infinite;
 }
 
@@ -479,18 +480,6 @@
   font-size: inherit;
 }
 
-.compare-diff-status {
-  flex: 0 0 auto;
-  max-width: 7em;
-  padding: 0.1rem 0.48rem;
-  border: 1px solid color-mix(in srgb, var(--compare-item-border) 72%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--compare-item-bg) 68%, var(--surface));
-  color: var(--compare-item-text);
-  font-size: 0.74rem;
-  font-weight: 650;
-  line-height: 1.35;
-}
 
 .compare-diff-item > span,
 .compare-overflow-note {

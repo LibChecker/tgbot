@@ -2806,6 +2806,7 @@ svg {
   border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
+  corner-shape: round;
   animation: compare-spin 780ms linear infinite;
 }
 

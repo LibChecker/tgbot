@@ -268,7 +268,23 @@
  * @property {string=} errorKey
  */
 
-/** @typedef {AnalyzerWorkerProgressMessage | AnalyzerWorkerResultMessage | AnalyzerWorkerErrorMessage} AnalyzerWorkerResponse */
+
+/**
+ * @typedef {object} ElfDetailsWorkerRequest
+ * @property {"elf-details"} type
+ * @property {number} jobId
+ * @property {{ name?: string, type?: string, size?: number, arrayBuffer?: () => Promise<ArrayBuffer> }} file
+ * @property {{ path: string, sourceEntry?: string }} library
+ */
+
+/**
+ * @typedef {object} ElfDetailsWorkerResultMessage
+ * @property {"elf-details-result"} type
+ * @property {number} jobId
+ * @property {object} details
+ */
+
+/** @typedef {AnalyzerWorkerProgressMessage | AnalyzerWorkerResultMessage | ElfDetailsWorkerResultMessage | AnalyzerWorkerErrorMessage} AnalyzerWorkerResponse */
 
 export const CONTRACT_VERSION = 1;
 
@@ -427,6 +443,29 @@ export function assertAnalyzerWorkerRequest(value) {
   return value;
 }
 
+
+export function isElfDetailsWorkerRequest(value) {
+  const library = value?.library;
+  return (
+    isObject(value) &&
+    value.type === "elf-details" &&
+    Number.isFinite(value.jobId) &&
+    isFileLike(value.file) &&
+    isObject(library) &&
+    typeof library.path === "string" &&
+    library.path.startsWith("lib/") &&
+    library.path.endsWith(".so") &&
+    (library.sourceEntry == null || typeof library.sourceEntry === "string")
+  );
+}
+
+export function assertElfDetailsWorkerRequest(value) {
+  if (!isElfDetailsWorkerRequest(value)) {
+    throw new TypeError("Invalid ELF details worker request contract");
+  }
+  return value;
+}
+
 /**
  * @param {unknown} value
  * @returns {value is AnalyzerWorkerResponse}
@@ -458,7 +497,27 @@ export function isAnalyzerWorkerMessage(value) {
     return isApkReport(value.report);
   }
 
+  if (value.type === "elf-details-result") {
+    return isElfDetails(value.details);
+  }
+
   return false;
+}
+
+
+function isElfDetails(value) {
+  return (
+    isObject(value) &&
+    Number.isFinite(value.byteLength) &&
+    isObject(value.header) &&
+    Array.isArray(value.programHeaders) &&
+    Array.isArray(value.sectionHeaders) &&
+    isObject(value.dynamic) &&
+    Array.isArray(value.symbols) &&
+    Array.isArray(value.notes) &&
+    isObject(value.counts) &&
+    isObject(value.truncated)
+  );
 }
 
 function isFileLike(value) {

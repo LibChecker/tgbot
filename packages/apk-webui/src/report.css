@@ -513,6 +513,49 @@
   gap: 12px;
 }
 
+.native-library-row-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.native-library-detail-button {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  margin: -4px -4px -4px 0;
+  border-color: var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+  color: color-mix(in srgb, var(--control-text) 78%, var(--muted));
+  touch-action: manipulation;
+}
+
+.native-library-detail-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+}
+
+.native-library-detail-button:active {
+  transform: scale(0.96);
+}
+
+.compare-diff-status {
+  flex: 0 0 auto;
+  max-width: 7em;
+  padding: 0.1rem 0.48rem;
+  border: 1px solid color-mix(in srgb, var(--compare-item-border) 72%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--compare-item-bg) 68%, var(--surface));
+  color: var(--compare-item-text);
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 .section-stack {
   display: grid;
   gap: 18px;
@@ -1112,6 +1155,12 @@
   .tab:hover,
   .native-abi-tab:hover {
     color: var(--topbar-text);
+  }
+
+  .native-library-detail-button:hover {
+    border-color: color-mix(in srgb, var(--accent-border) 70%, var(--line));
+    background: var(--accent-soft);
+    color: var(--accent-strong);
   }
 
   .sdk-rule-preview a:hover {

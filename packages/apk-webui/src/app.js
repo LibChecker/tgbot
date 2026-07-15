@@ -119,6 +119,9 @@ const TOPBAR_SEGMENT_SCROLL_START_THRESHOLD_PX = 12;
 const TOPBAR_SCROLL_EPSILON_PX = 1;
 const TOPBAR_REPORT_IDENTITY_EPSILON_PX = 1;
 let brandTitleRendererPromise = null;
+let currentReportSourceFile = null;
+let elfDetailModalModule = null;
+let elfDetailModalModulePromise = null;
 const LIQUID_GLASS_CONTROLS = Object.freeze({
   edgeIntensity: 0.01,
   rimIntensity: 0.05,
@@ -1510,6 +1513,12 @@ function bindEvents() {
       return;
     }
 
+    const elfDetailButton = event.target.closest("[data-elf-details]");
+    if (elfDetailButton && state.activeTab === "native") {
+      void openNativeLibraryElfDetails(elfDetailButton);
+      return;
+    }
+
     const button = event.target.closest("[data-native-abi]");
     if (!button || state.activeTab !== "native") {
       return;
@@ -1522,6 +1531,97 @@ function bindEvents() {
       operation: state.activeNativeAbi,
     });
   });
+}
+
+
+async function openNativeLibraryElfDetails(button) {
+  const library = findNativeLibraryForDetailButton(button);
+  if (!library) {
+    return;
+  }
+
+  const sourceFile = currentReportSourceFile;
+  try {
+    const modal = await loadElfDetailModalModule();
+    modal.openElfDetailModal({
+      library,
+      sourceAvailable: Boolean(sourceFile),
+      trigger: button,
+      t,
+      loadDetails: () => requestNativeLibraryElfDetails(sourceFile, library),
+      onLoaded: (result) => {
+        trackWebEvent("webui.elf_details.viewed", {
+          result,
+          input_source: sourceFile ? "upload" : "report",
+          operation: library.abi || "",
+        });
+      },
+    });
+  } catch {
+    showError(t("elfDetailsUnavailable"));
+    trackWebEvent("webui.elf_details.failed", {
+      result: "error",
+      error_name: "ElfDetailModalError",
+    });
+  }
+}
+
+function findNativeLibraryForDetailButton(button) {
+  const path = button.dataset.libraryPath || "";
+  const sourceEntry = button.dataset.librarySourceEntry || "";
+  return (state.report?.apkInfo?.nativeLibraries || []).find((library) => (
+    library.path === path &&
+    String(library.sourceEntry || "") === sourceEntry
+  )) || null;
+}
+
+function loadElfDetailModalModule() {
+  if (!elfDetailModalModulePromise) {
+    elfDetailModalModulePromise = import("./app/elf-detail-modal.js")
+      .then((module) => {
+        elfDetailModalModule = module;
+        return module;
+      })
+      .catch((error) => {
+        elfDetailModalModulePromise = null;
+        throw error;
+      });
+  }
+  return elfDetailModalModulePromise;
+}
+
+function requestNativeLibraryElfDetails(file, library) {
+  if (!file) {
+    return Promise.reject(new Error("ELF source file is unavailable"));
+  }
+  const worker = ensureWorker();
+  if (!worker) {
+    return Promise.reject(new Error(t("workerFailed")));
+  }
+
+  state.jobId += 1;
+  const jobId = state.jobId;
+  return new Promise((resolve, reject) => {
+    state.jobs.set(jobId, {
+      type: "elf-details",
+      resolve,
+      reject,
+    });
+    worker.postMessage({
+      type: "elf-details",
+      jobId,
+      file,
+      library: {
+        path: library.path || "",
+        sourceEntry: library.sourceEntry || "",
+      },
+    });
+  });
+}
+
+function clearCurrentReportSource() {
+  currentReportSourceFile = null;
+  elfDetailModalModule?.closeElfDetailModal();
 }
 
 function syncMobileBottomControls() {
@@ -3256,6 +3356,7 @@ async function analyzeSelectedFile() {
   state.jobId += 1;
   const jobId = state.jobId;
   state.startedAt = performance.now();
+  clearCurrentReportSource();
   state.report = null;
   clearReportShareState();
   state.activeTab = "summary";
@@ -3263,6 +3364,7 @@ async function analyzeSelectedFile() {
   state.activeAnalyzeJobId = jobId;
   state.jobs.set(jobId, {
     type: "analyze",
+    sourceFile: file,
   });
 
   void loadSdkIconRendererModule().catch(() => {});
@@ -3349,6 +3451,7 @@ async function analyzeDownloadUrl() {
   const jobId = state.jobId;
   const abortController = new AbortController();
   state.startedAt = performance.now();
+  clearCurrentReportSource();
   state.report = null;
   clearReportShareState();
   state.activeTab = "summary";
@@ -3483,6 +3586,7 @@ function loadBotReportFromUrlIfPresent() {
     return;
   }
 
+  clearCurrentReportSource();
   void import("./app/bot-report-loader.js")
     .then(({ loadBotReportFromUrl, resolveCurrentBotReportUrl }) => {
       const reportUrl = resolveCurrentBotReportUrl(window.location.search, state.locale);
@@ -3556,7 +3660,9 @@ function failActiveWorkerJobs(message) {
   state.worker = null;
 
   for (const [, job] of jobs) {
-    if (job.type === "compare") {
+    if (job.type === "elf-details") {
+      job.reject(new Error(message));
+    } else if (job.type === "compare") {
       runtime.compareController?.finishJob(job.slotKey, null, message);
     } else {
       finishAnalysis();
@@ -3584,6 +3690,9 @@ function handleWorkerMessage(event) {
   }
 
   if (message.type === "progress") {
+    if (job.type === "elf-details") {
+      return;
+    }
     if (job.type === "compare") {
       runtime.compareController?.handleProgress(
         job.slotKey,
@@ -3602,7 +3711,9 @@ function handleWorkerMessage(event) {
     state.jobs.delete(message.jobId);
     scheduleWorkerIdleTermination();
     const errorMessage = message.errorKey ? t(message.errorKey) : message.error || t("workerFailed");
-    if (job.type === "compare") {
+    if (job.type === "elf-details") {
+      job.reject(new Error(errorMessage));
+    } else if (job.type === "compare") {
       runtime.compareController?.finishJob(job.slotKey, null, errorMessage);
     } else {
       finishAnalysis();
@@ -3617,6 +3728,13 @@ function handleWorkerMessage(event) {
     return;
   }
 
+  if (message.type === "elf-details-result") {
+    state.jobs.delete(message.jobId);
+    job.resolve(message.details);
+    scheduleWorkerIdleTermination();
+    return;
+  }
+
   if (message.type === "result") {
     state.jobs.delete(message.jobId);
     if (job.type === "compare") {
@@ -3628,6 +3746,7 @@ function handleWorkerMessage(event) {
 
     finishAnalysis();
     state.activeAnalyzeJobId = null;
+    currentReportSourceFile = job.sourceFile || null;
     state.report = message.report;
     clearReportShareState();
     state.activeNativeAbi = "";
@@ -3965,6 +4084,7 @@ function resetState() {
   scheduleWorkerIdleTermination();
   stopTimer();
   hideError();
+  clearCurrentReportSource();
   state.selectedFile = null;
   state.downloadUrl = "";
   state.linkStatusKey = "linkIdle";
@@ -4306,6 +4426,7 @@ async function openHistoryItem(id) {
       return;
     }
 
+    clearCurrentReportSource();
     state.report = report;
     clearReportShareState();
     state.activeTab = "summary";
@@ -5121,6 +5242,7 @@ function activateLcappsReport(report) {
   scheduleWorkerIdleTermination();
   finishAnalysis();
   hideError();
+  clearCurrentReportSource();
   state.report = report;
   clearReportShareState();
   state.activeTab = "summary";

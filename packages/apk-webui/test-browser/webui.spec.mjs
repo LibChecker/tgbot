@@ -80,3 +80,59 @@ test("analyzes a small APK, saves history, reopens the report, and compares it",
   await expect(page.locator('[data-compare-slot-report="right"]')).toContainText("Smoke APK");
   await expect(page.locator("#compare-result")).toContainText(/No differences|无差异/u);
 });
+
+test("opens ELF details on demand and degrades safely for history reports", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const workerStarted = page.waitForEvent("worker");
+  await page.locator("#file-input").setInputFiles(validApk);
+  await page.locator("#analyze-button").click();
+  await workerStarted;
+  await expect(page.locator("#result-view")).toBeVisible();
+
+  await page.locator('[data-tab="native"]').click();
+  const detailButton = page.locator("[data-elf-details]").first();
+  const alignmentLabel = page.locator(".native-library-meta .compare-diff-status", { hasText: "16 KB" });
+  await expect(alignmentLabel).toBeVisible();
+  await expect(alignmentLabel).toHaveCSS("border-top-style", "solid");
+  await expect(alignmentLabel).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(detailButton).toHaveAttribute("aria-label", /libsmoke\.so/u);
+  await detailButton.click();
+
+  const dialog = page.locator("#elf-detail-dialog");
+  const body = page.locator("#elf-detail-body");
+  await expect(dialog).toBeVisible();
+  await expect(body).toHaveAttribute("aria-busy", "false");
+  await expect(body).toContainText("ELF64");
+  await expect(body).toContainText("PT_LOAD");
+
+  const spinnerShape = await body.evaluate((element) => {
+    const spinner = document.createElement("span");
+    spinner.className = "elf-detail-spinner";
+    element.append(spinner);
+    const style = getComputedStyle(spinner);
+    const result = { cornerShape: style.cornerShape, width: spinner.offsetWidth, height: spinner.offsetHeight };
+    spinner.remove();
+    return result;
+  });
+  expect(spinnerShape).toEqual({ cornerShape: "round", width: 22, height: 22 });
+  await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await body.evaluate((element) => {
+    element.scrollTop = 120;
+  });
+  await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(detailButton).toBeFocused();
+
+  const historyEntry = page.locator('[data-history-action="open"]').first();
+  await expect(historyEntry).toContainText("Smoke APK");
+  await historyEntry.click();
+  await page.locator('[data-tab="native"]').click();
+  await page.locator("[data-elf-details]").first().click();
+
+  await expect(dialog).toBeVisible();
+  await expect(page.locator(".elf-detail-status.is-empty")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});

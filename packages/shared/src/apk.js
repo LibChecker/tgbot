@@ -15,6 +15,13 @@ const ELF_DATA_BIG_ENDIAN = 2;
 const ELF_PROGRAM_HEADER_LOAD = 1;
 const ELF_MAX_HEADER_SIZE = 0x40;
 const MAX_ELF_PREFIX_BYTES = 2 * 1024 * 1024;
+const MAX_ELF_DETAIL_BYTES = 256 * 1024 * 1024;
+const MAX_ELF_PROGRAM_HEADERS = 256;
+const MAX_ELF_SECTION_HEADERS = 1024;
+const MAX_ELF_SYMBOLS = 2000;
+const MAX_ELF_NOTES = 256;
+const MAX_ELF_DYNAMIC_ENTRIES = 4096;
+const MAX_ELF_STRING_BYTES = 4096;
 const NATIVE_PAGE_SIZE_16_KB = 0x4000;
 const ZIP_INFLATE_CHUNK_BYTES = 64 * 1024;
 
@@ -124,6 +131,47 @@ export async function readAndroidPackageInfo(packageBuffer, options = {}) {
     const apkEntries = collectContainedApkEntries(zipEntries);
     return readPackageContainerInfo(packageBytes, apkEntries, options);
   });
+}
+
+/**
+ * Reads detailed ELF metadata for one native library without adding the data to
+ * the persisted APK report.
+ *
+ * @param {ArrayBuffer | Uint8Array} packageBuffer
+ * @param {{ path: string, sourceEntry?: string }} locator
+ */
+export async function readNativeLibraryElfDetails(packageBuffer, locator) {
+  const path = String(locator?.path || "");
+  const sourceEntry = String(locator?.sourceEntry || "");
+  if (!path.startsWith("lib/") || !path.endsWith(".so")) {
+    throw new Error("Invalid native library path");
+  }
+
+  let apkBytes = toUint8Array(packageBuffer);
+  let zipEntries = parseZipEntries(apkBytes);
+  if (!isDirectApkZip(zipEntries)) {
+    if (!sourceEntry) {
+      throw new Error("Missing contained APK source entry");
+    }
+    const apkEntry = collectContainedApkEntries(zipEntries)
+      .find((item) => item.path === sourceEntry)?.entry;
+    if (!apkEntry) {
+      throw new Error("Contained APK source entry not found");
+    }
+    apkBytes = await extractZipEntry(apkBytes, apkEntry);
+    zipEntries = parseZipEntries(apkBytes);
+  }
+
+  const entry = zipEntries.get(path);
+  if (!entry) {
+    throw new Error("Native library entry not found");
+  }
+  const byteLength = entry.uncompressedSize || entry.compressedSize || 0;
+  if (byteLength > MAX_ELF_DETAIL_BYTES) {
+    throw new Error("Native library is too large for detailed ELF analysis");
+  }
+
+  return parseElfDetails(await extractZipEntry(apkBytes, entry));
 }
 
 /**
@@ -1520,6 +1568,7 @@ function renderShapeDrawableIcon(xmlBytes, resources, candidate) {
 
 export const __apkTestInternals = {
   collectNativeLibraries,
+  parseElfDetails,
   parseElfInfo,
   parseZipEntries,
   readBestIconCandidate,
@@ -2744,6 +2793,592 @@ function parseElfInfoOrThrow(bytes) {
     type,
     pageSize: Number.isFinite(minAlignment) ? minAlignment : null,
   };
+}
+
+
+function parseElfDetails(input) {
+  const bytes = toUint8Array(input);
+  ensureReadable(bytes, 0, 0x10);
+  if (readUint32(bytes, 0) !== ELF_MAGIC) {
+    throw new Error("Not an ELF file");
+  }
+
+  const elfClass = bytes[4];
+  const is64Bit = elfClass === ELF_CLASS_64;
+  if (!is64Bit && elfClass !== ELF_CLASS_32) {
+    throw new Error("Unsupported ELF class");
+  }
+
+  const bigEndian = bytes[5] === ELF_DATA_BIG_ENDIAN;
+  const headerSize = is64Bit ? 0x40 : 0x34;
+  ensureReadable(bytes, 0, headerSize);
+
+  const typeCode = readElfUint16(bytes, 0x10, bigEndian);
+  const machineCode = readElfUint16(bytes, 0x12, bigEndian);
+  const programHeaderOffset = readElfSafeInteger(bytes, is64Bit ? 0x20 : 0x1c, is64Bit ? 8 : 4, bigEndian);
+  const sectionHeaderOffset = readElfSafeInteger(bytes, is64Bit ? 0x28 : 0x20, is64Bit ? 8 : 4, bigEndian);
+  const programHeaderEntrySize = readElfUint16(bytes, is64Bit ? 0x36 : 0x2a, bigEndian);
+  const programHeaderCount = readElfUint16(bytes, is64Bit ? 0x38 : 0x2c, bigEndian);
+  const sectionHeaderEntrySize = readElfUint16(bytes, is64Bit ? 0x3a : 0x2e, bigEndian);
+  const sectionHeaderCount = readElfUint16(bytes, is64Bit ? 0x3c : 0x30, bigEndian);
+  const sectionNameIndex = readElfUint16(bytes, is64Bit ? 0x3e : 0x32, bigEndian);
+  const entryPoint = readElfUnsigned(bytes, is64Bit ? 0x18 : 0x18, is64Bit ? 8 : 4, bigEndian);
+  const flags = readElfUint32(bytes, is64Bit ? 0x30 : 0x24, bigEndian);
+
+  const layout = {
+    bigEndian,
+    is64Bit,
+    programHeaderOffset,
+    programHeaderEntrySize,
+    programHeaderCount,
+    sectionHeaderOffset,
+    sectionHeaderEntrySize,
+    sectionHeaderCount,
+    sectionNameIndex,
+  };
+  const programHeaders = parseElfProgramHeaders(bytes, layout);
+  const rawSections = parseElfSectionHeaders(bytes, layout);
+  resolveElfSectionNames(bytes, rawSections, sectionNameIndex);
+  const sectionHeaders = rawSections.map(formatElfSectionHeader);
+  const dynamic = parseElfDynamicEntries(bytes, rawSections, layout);
+  const symbolResult = parseElfSymbols(bytes, rawSections, layout);
+  const noteResult = parseElfNotes(bytes, rawSections, layout);
+
+  return {
+    byteLength: bytes.byteLength,
+    header: {
+      class: is64Bit ? "ELF64" : "ELF32",
+      byteOrder: bigEndian ? "Big endian" : "Little endian",
+      osAbi: getElfOsAbiName(bytes[7]),
+      abiVersion: bytes[8],
+      type: getElfTypeName(typeCode),
+      machine: getElfMachineName(machineCode),
+      version: readElfUint32(bytes, 0x14, bigEndian),
+      entryPoint: formatElfHex(entryPoint),
+      flags: formatElfHex(BigInt(flags)),
+      headerSize: readElfUint16(bytes, is64Bit ? 0x34 : 0x28, bigEndian),
+      programHeaderOffset: formatElfHex(BigInt(programHeaderOffset)),
+      programHeaderEntrySize,
+      programHeaderCount,
+      sectionHeaderOffset: formatElfHex(BigInt(sectionHeaderOffset)),
+      sectionHeaderEntrySize,
+      sectionHeaderCount,
+      sectionNameIndex,
+    },
+    programHeaders,
+    sectionHeaders,
+    dynamic: dynamic.value,
+    symbols: symbolResult.value,
+    notes: noteResult.value,
+    counts: {
+      programHeaders: programHeaderCount,
+      sectionHeaders: sectionHeaderCount,
+      dynamicEntries: dynamic.total,
+      symbols: symbolResult.total,
+      notes: noteResult.total,
+    },
+    truncated: {
+      programHeaders: programHeaderCount > programHeaders.length,
+      sectionHeaders: sectionHeaderCount > sectionHeaders.length,
+      dynamicEntries: dynamic.truncated,
+      symbols: symbolResult.truncated,
+      notes: noteResult.truncated,
+    },
+  };
+}
+
+function parseElfProgramHeaders(bytes, layout) {
+  const expectedSize = layout.is64Bit ? 56 : 32;
+  if (!layout.programHeaderOffset || !layout.programHeaderCount) {
+    return [];
+  }
+  if (layout.programHeaderEntrySize < expectedSize) {
+    throw new Error("Invalid ELF program header entry size");
+  }
+
+  const count = Math.min(layout.programHeaderCount, MAX_ELF_PROGRAM_HEADERS);
+  const headers = [];
+  for (let index = 0; index < count; index += 1) {
+    const offset = layout.programHeaderOffset + index * layout.programHeaderEntrySize;
+    ensureReadable(bytes, offset, expectedSize);
+    const typeCode = readElfUint32(bytes, offset, layout.bigEndian);
+    const flags = readElfUint32(bytes, offset + (layout.is64Bit ? 4 : 24), layout.bigEndian);
+    const valueSize = layout.is64Bit ? 8 : 4;
+    const valueOffset = layout.is64Bit ? 8 : 4;
+    headers.push({
+      index,
+      type: getElfProgramHeaderTypeName(typeCode),
+      flags: formatElfProgramFlags(flags),
+      offset: formatElfHex(readElfUnsigned(bytes, offset + valueOffset, valueSize, layout.bigEndian)),
+      virtualAddress: formatElfHex(readElfUnsigned(bytes, offset + valueOffset + valueSize, valueSize, layout.bigEndian)),
+      physicalAddress: formatElfHex(readElfUnsigned(bytes, offset + valueOffset + valueSize * 2, valueSize, layout.bigEndian)),
+      fileSize: formatElfHex(readElfUnsigned(bytes, offset + valueOffset + valueSize * 3, valueSize, layout.bigEndian)),
+      memorySize: formatElfHex(readElfUnsigned(bytes, offset + valueOffset + valueSize * 4, valueSize, layout.bigEndian)),
+      alignment: formatElfHex(readElfUnsigned(bytes, offset + (layout.is64Bit ? 48 : 28), valueSize, layout.bigEndian)),
+    });
+  }
+  return headers;
+}
+
+function parseElfSectionHeaders(bytes, layout) {
+  const expectedSize = layout.is64Bit ? 64 : 40;
+  if (!layout.sectionHeaderOffset || !layout.sectionHeaderCount) {
+    return [];
+  }
+  if (layout.sectionHeaderEntrySize < expectedSize) {
+    throw new Error("Invalid ELF section header entry size");
+  }
+
+  const count = Math.min(layout.sectionHeaderCount, MAX_ELF_SECTION_HEADERS);
+  const sections = [];
+  for (let index = 0; index < count; index += 1) {
+    const base = layout.sectionHeaderOffset + index * layout.sectionHeaderEntrySize;
+    ensureReadable(bytes, base, expectedSize);
+    const valueSize = layout.is64Bit ? 8 : 4;
+    const flagsOffset = base + 8;
+    const addressOffset = flagsOffset + valueSize;
+    const fileOffsetOffset = addressOffset + valueSize;
+    const sizeOffset = fileOffsetOffset + valueSize;
+    const linkOffset = sizeOffset + valueSize;
+    const alignmentOffset = linkOffset + 8;
+    const entrySizeOffset = alignmentOffset + valueSize;
+    const fileOffsetValue = readElfUnsigned(bytes, fileOffsetOffset, valueSize, layout.bigEndian);
+    const sizeValue = readElfUnsigned(bytes, sizeOffset, valueSize, layout.bigEndian);
+    const entrySizeValue = readElfUnsigned(bytes, entrySizeOffset, valueSize, layout.bigEndian);
+    sections.push({
+      index,
+      name: "",
+      nameOffset: readElfUint32(bytes, base, layout.bigEndian),
+      typeCode: readElfUint32(bytes, base + 4, layout.bigEndian),
+      flagsValue: readElfUnsigned(bytes, flagsOffset, valueSize, layout.bigEndian),
+      addressValue: readElfUnsigned(bytes, addressOffset, valueSize, layout.bigEndian),
+      fileOffsetValue,
+      sizeValue,
+      fileOffset: elfBigIntToSafeNumber(fileOffsetValue),
+      size: elfBigIntToSafeNumber(sizeValue),
+      link: readElfUint32(bytes, linkOffset, layout.bigEndian),
+      info: readElfUint32(bytes, linkOffset + 4, layout.bigEndian),
+      alignmentValue: readElfUnsigned(bytes, alignmentOffset, valueSize, layout.bigEndian),
+      entrySizeValue,
+      entrySize: elfBigIntToSafeNumber(entrySizeValue),
+    });
+  }
+  return sections;
+}
+
+function resolveElfSectionNames(bytes, sections, sectionNameIndex) {
+  const stringTable = sections[sectionNameIndex];
+  if (!stringTable) {
+    return;
+  }
+  for (const section of sections) {
+    section.name = readElfSectionString(bytes, stringTable, section.nameOffset);
+  }
+}
+
+function formatElfSectionHeader(section) {
+  return {
+    index: section.index,
+    name: section.name,
+    type: getElfSectionTypeName(section.typeCode),
+    flags: formatElfSectionFlags(section.flagsValue),
+    address: formatElfHex(section.addressValue),
+    offset: formatElfHex(section.fileOffsetValue),
+    size: formatElfHex(section.sizeValue),
+    link: section.link,
+    info: section.info,
+    alignment: formatElfHex(section.alignmentValue),
+    entrySize: formatElfHex(section.entrySizeValue),
+  };
+}
+
+function parseElfDynamicEntries(bytes, sections, layout) {
+  const needed = [];
+  const entries = [];
+  let soname = "";
+  let rpath = "";
+  let runpath = "";
+  let total = 0;
+  let truncated = false;
+  const valueSize = layout.is64Bit ? 8 : 4;
+  const defaultEntrySize = valueSize * 2;
+
+  for (const section of sections) {
+    if (section.typeCode !== 6) {
+      continue;
+    }
+    const stringTable = sections[section.link];
+    const entrySize = section.entrySize || defaultEntrySize;
+    if (entrySize < defaultEntrySize) {
+      throw new Error("Invalid ELF dynamic entry size");
+    }
+    ensureElfSectionReadable(bytes, section);
+    const entryCount = Math.floor(section.size / entrySize);
+    for (let index = 0; index < entryCount; index += 1) {
+      total += 1;
+      if (entries.length >= MAX_ELF_DYNAMIC_ENTRIES) {
+        truncated = true;
+        continue;
+      }
+      const base = section.fileOffset + index * entrySize;
+      const tagValue = readElfUnsigned(bytes, base, valueSize, layout.bigEndian);
+      const value = readElfUnsigned(bytes, base + valueSize, valueSize, layout.bigEndian);
+      const tag = tagValue <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(tagValue) : -1;
+      const stringValue = [1, 14, 15, 29].includes(tag)
+        ? readElfSectionString(bytes, stringTable, elfBigIntToSafeNumber(value))
+        : "";
+      entries.push({
+        index,
+        section: section.name,
+        tag: getElfDynamicTagName(tag),
+        value: formatElfHex(value),
+        text: stringValue,
+      });
+      if (tag === 1 && stringValue) {
+        needed.push(stringValue);
+      } else if (tag === 14) {
+        soname = stringValue;
+      } else if (tag === 15) {
+        rpath = stringValue;
+      } else if (tag === 29) {
+        runpath = stringValue;
+      }
+      if (tag === 0) {
+        break;
+      }
+    }
+  }
+
+  return {
+    total,
+    truncated,
+    value: { needed, soname, rpath, runpath, entries },
+  };
+}
+
+function parseElfSymbols(bytes, sections, layout) {
+  const symbols = [];
+  let total = 0;
+  let truncated = false;
+  const defaultEntrySize = layout.is64Bit ? 24 : 16;
+
+  for (const section of sections) {
+    if (section.typeCode !== 2 && section.typeCode !== 11) {
+      continue;
+    }
+    const stringTable = sections[section.link];
+    const entrySize = section.entrySize || defaultEntrySize;
+    if (entrySize < defaultEntrySize) {
+      throw new Error("Invalid ELF symbol entry size");
+    }
+    ensureElfSectionReadable(bytes, section);
+    const entryCount = Math.floor(section.size / entrySize);
+    total += entryCount;
+    for (let index = 0; index < entryCount; index += 1) {
+      if (symbols.length >= MAX_ELF_SYMBOLS) {
+        truncated = true;
+        break;
+      }
+      const base = section.fileOffset + index * entrySize;
+      const nameOffset = readElfUint32(bytes, base, layout.bigEndian);
+      const infoOffset = base + (layout.is64Bit ? 4 : 12);
+      const sectionIndex = readElfUint16(bytes, infoOffset + 2, layout.bigEndian);
+      const info = bytes[infoOffset];
+      const valueOffset = base + (layout.is64Bit ? 8 : 4);
+      const valueSize = layout.is64Bit ? 8 : 4;
+      symbols.push({
+        table: section.name,
+        index,
+        name: readElfSectionString(bytes, stringTable, nameOffset),
+        value: formatElfHex(readElfUnsigned(bytes, valueOffset, valueSize, layout.bigEndian)),
+        size: formatElfHex(readElfUnsigned(bytes, valueOffset + valueSize, valueSize, layout.bigEndian)),
+        binding: getElfSymbolBindingName(info >> 4),
+        type: getElfSymbolTypeName(info & 0x0f),
+        visibility: getElfSymbolVisibilityName(bytes[infoOffset + 1] & 0x03),
+        section: getElfSymbolSectionName(sectionIndex, sections),
+      });
+    }
+  }
+
+  return { total, truncated, value: symbols };
+}
+
+function parseElfNotes(bytes, sections, layout) {
+  const notes = [];
+  let total = 0;
+  let truncated = false;
+
+  for (const section of sections) {
+    if (section.typeCode !== 7) {
+      continue;
+    }
+    ensureElfSectionReadable(bytes, section);
+    let offset = section.fileOffset;
+    const end = section.fileOffset + section.size;
+    while (offset + 12 <= end) {
+      const nameSize = readElfUint32(bytes, offset, layout.bigEndian);
+      const descriptionSize = readElfUint32(bytes, offset + 4, layout.bigEndian);
+      const type = readElfUint32(bytes, offset + 8, layout.bigEndian);
+      const nameOffset = offset + 12;
+      const descriptionOffset = alignElf4(nameOffset + nameSize);
+      const nextOffset = alignElf4(descriptionOffset + descriptionSize);
+      if (nextOffset > end) {
+        throw new Error("Invalid ELF note entry");
+      }
+      total += 1;
+      if (notes.length < MAX_ELF_NOTES) {
+        const rawNameBytes = bytes.subarray(nameOffset, nameOffset + nameSize);
+        const nameLength = rawNameBytes.at(-1) === 0 ? rawNameBytes.length - 1 : rawNameBytes.length;
+        const owner = utf8Decoder.decode(rawNameBytes.subarray(0, nameLength));
+        const descriptionBytes = bytes.subarray(
+          descriptionOffset,
+          descriptionOffset + Math.min(descriptionSize, 64),
+        );
+        notes.push({
+          section: section.name,
+          owner,
+          type: formatElfNoteType(type, owner),
+          description: formatElfBytesHex(descriptionBytes),
+          descriptionSize,
+        });
+      } else {
+        truncated = true;
+      }
+      if (nextOffset <= offset) {
+        break;
+      }
+      offset = nextOffset;
+    }
+  }
+
+  return { total, truncated, value: notes };
+}
+
+function ensureElfSectionReadable(bytes, section) {
+  ensureReadable(bytes, section.fileOffset, section.size);
+}
+
+function readElfSectionString(bytes, stringTable, stringOffset) {
+  if (!stringTable || stringOffset < 0 || stringOffset >= stringTable.size) {
+    return "";
+  }
+  ensureElfSectionReadable(bytes, stringTable);
+  const start = stringTable.fileOffset + stringOffset;
+  const end = Math.min(
+    stringTable.fileOffset + stringTable.size,
+    start + MAX_ELF_STRING_BYTES,
+  );
+  let terminator = start;
+  while (terminator < end && bytes[terminator] !== 0) {
+    terminator += 1;
+  }
+  return utf8Decoder.decode(bytes.subarray(start, terminator));
+}
+
+function readElfUnsigned(bytes, offset, size, bigEndian) {
+  if (size === 8) {
+    return readElfUint64BigInt(bytes, offset, bigEndian);
+  }
+  return BigInt(readElfUint32(bytes, offset, bigEndian));
+}
+
+function readElfSafeInteger(bytes, offset, size, bigEndian) {
+  return elfBigIntToSafeNumber(readElfUnsigned(bytes, offset, size, bigEndian));
+}
+
+function elfBigIntToSafeNumber(value) {
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("ELF value exceeds safe integer range");
+  }
+  return Number(value);
+}
+
+function formatElfHex(value) {
+  return "0x" + value.toString(16);
+}
+
+function formatElfProgramFlags(flags) {
+  return [
+    flags & 4 ? "R" : "-",
+    flags & 2 ? "W" : "-",
+    flags & 1 ? "E" : "-",
+  ].join("");
+}
+
+function formatElfSectionFlags(flags) {
+  const names = [];
+  /** @type {Array<[bigint, string]>} */
+  const values = [
+    [0x1n, "W"],
+    [0x2n, "A"],
+    [0x4n, "X"],
+    [0x10n, "M"],
+    [0x20n, "S"],
+    [0x40n, "I"],
+    [0x80n, "L"],
+    [0x100n, "O"],
+    [0x200n, "G"],
+    [0x400n, "T"],
+  ];
+  for (const [mask, name] of values) {
+    if ((flags & mask) !== 0n) {
+      names.push(name);
+    }
+  }
+  return names.length > 0 ? names.join("") + " (" + formatElfHex(flags) + ")" : formatElfHex(flags);
+}
+
+function formatElfBytesHex(bytes) {
+  return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function alignElf4(value) {
+  return (value + 3) & ~3;
+}
+
+function getElfTypeName(value) {
+  return {
+    0: "ET_NONE",
+    1: "ET_REL",
+    2: "ET_EXEC",
+    3: "ET_DYN",
+    4: "ET_CORE",
+  }[value] || "0x" + value.toString(16);
+}
+
+function getElfMachineName(value) {
+  return {
+    3: "Intel 80386",
+    8: "MIPS",
+    40: "ARM",
+    62: "AMD x86-64",
+    183: "AArch64",
+    243: "RISC-V",
+  }[value] || "Machine " + value;
+}
+
+function getElfOsAbiName(value) {
+  return {
+    0: "UNIX - System V",
+    3: "Linux",
+    9: "FreeBSD",
+    64: "ARM EABI",
+    255: "Standalone",
+  }[value] || "OS/ABI " + value;
+}
+
+function getElfProgramHeaderTypeName(value) {
+  return {
+    0: "PT_NULL",
+    1: "PT_LOAD",
+    2: "PT_DYNAMIC",
+    3: "PT_INTERP",
+    4: "PT_NOTE",
+    5: "PT_SHLIB",
+    6: "PT_PHDR",
+    7: "PT_TLS",
+    0x6474e550: "PT_GNU_EH_FRAME",
+    0x6474e551: "PT_GNU_STACK",
+    0x6474e552: "PT_GNU_RELRO",
+    0x6474e553: "PT_GNU_PROPERTY",
+    0x70000001: "PT_ARM_EXIDX",
+  }[value] || "0x" + value.toString(16);
+}
+
+function getElfSectionTypeName(value) {
+  return {
+    0: "SHT_NULL",
+    1: "SHT_PROGBITS",
+    2: "SHT_SYMTAB",
+    3: "SHT_STRTAB",
+    4: "SHT_RELA",
+    5: "SHT_HASH",
+    6: "SHT_DYNAMIC",
+    7: "SHT_NOTE",
+    8: "SHT_NOBITS",
+    9: "SHT_REL",
+    10: "SHT_SHLIB",
+    11: "SHT_DYNSYM",
+    14: "SHT_INIT_ARRAY",
+    15: "SHT_FINI_ARRAY",
+    16: "SHT_PREINIT_ARRAY",
+    17: "SHT_GROUP",
+    18: "SHT_SYMTAB_SHNDX",
+    0x6ffffff6: "SHT_GNU_HASH",
+    0x6ffffffe: "SHT_GNU_VERNEED",
+    0x6fffffff: "SHT_GNU_VERSYM",
+  }[value] || "0x" + value.toString(16);
+}
+
+function getElfDynamicTagName(value) {
+  return {
+    0: "DT_NULL",
+    1: "DT_NEEDED",
+    2: "DT_PLTRELSZ",
+    3: "DT_PLTGOT",
+    4: "DT_HASH",
+    5: "DT_STRTAB",
+    6: "DT_SYMTAB",
+    7: "DT_RELA",
+    8: "DT_RELASZ",
+    9: "DT_RELAENT",
+    10: "DT_STRSZ",
+    11: "DT_SYMENT",
+    12: "DT_INIT",
+    13: "DT_FINI",
+    14: "DT_SONAME",
+    15: "DT_RPATH",
+    16: "DT_SYMBOLIC",
+    17: "DT_REL",
+    18: "DT_RELSZ",
+    19: "DT_RELENT",
+    20: "DT_PLTREL",
+    21: "DT_DEBUG",
+    22: "DT_TEXTREL",
+    23: "DT_JMPREL",
+    24: "DT_BIND_NOW",
+    25: "DT_INIT_ARRAY",
+    26: "DT_FINI_ARRAY",
+    27: "DT_INIT_ARRAYSZ",
+    28: "DT_FINI_ARRAYSZ",
+    29: "DT_RUNPATH",
+    30: "DT_FLAGS",
+  }[value] || "0x" + Math.max(0, value).toString(16);
+}
+
+function getElfSymbolBindingName(value) {
+  return ["LOCAL", "GLOBAL", "WEAK"][value] || "BIND_" + value;
+}
+
+function getElfSymbolTypeName(value) {
+  return ["NOTYPE", "OBJECT", "FUNC", "SECTION", "FILE", "COMMON", "TLS"][value] || "TYPE_" + value;
+}
+
+function getElfSymbolVisibilityName(value) {
+  return ["DEFAULT", "INTERNAL", "HIDDEN", "PROTECTED"][value] || "VIS_" + value;
+}
+
+function getElfSymbolSectionName(index, sections) {
+  if (index === 0) {
+    return "UND";
+  }
+  if (index === 0xfff1) {
+    return "ABS";
+  }
+  if (index === 0xfff2) {
+    return "COMMON";
+  }
+  return sections[index]?.name || String(index);
+}
+
+function formatElfNoteType(type, owner) {
+  if (owner === "GNU" && type === 3) {
+    return "NT_GNU_BUILD_ID";
+  }
+  if (owner === "GNU" && type === 1) {
+    return "NT_GNU_ABI_TAG";
+  }
+  return "0x" + type.toString(16);
 }
 
 function compareNativeLibraries(left, right) {
@@ -4395,15 +5030,19 @@ function readUint64(bytes, offset) {
 }
 
 function readElfUint64(bytes, offset, bigEndian) {
-  ensureReadable(bytes, offset, 8);
-  const high = BigInt(readElfUint32(bytes, bigEndian ? offset : offset + 4, bigEndian));
-  const low = BigInt(readElfUint32(bytes, bigEndian ? offset + 4 : offset, bigEndian));
-  const value = (high << 32n) | low;
+  const value = readElfUint64BigInt(bytes, offset, bigEndian);
   if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error("64-bit value exceeds safe integer range");
   }
 
   return Number(value);
+}
+
+function readElfUint64BigInt(bytes, offset, bigEndian) {
+  ensureReadable(bytes, offset, 8);
+  const high = BigInt(readElfUint32(bytes, bigEndian ? offset : offset + 4, bigEndian));
+  const low = BigInt(readElfUint32(bytes, bigEndian ? offset + 4 : offset, bigEndian));
+  return (high << 32n) | low;
 }
 
 function getLowestOneBit(value) {

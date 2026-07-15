@@ -364,9 +364,19 @@ function renderNativeTab(report) {
 
 function renderNativeLibraryRow(library) {
   const sdk = library.sdk ? renderSdkChip(library.sdk) : "";
+  const name = library.name || t("unknown");
+  const detailsLabel = t("elfDetailsButton", { name });
   return [
     `<article class="list-row native-library-row">`,
-    `<div class="row-title"><span class="app-data-text">${escapeHtml(library.name || t("unknown"))}</span></div>`,
+    `<div class="native-library-row-header">`,
+    `<div class="row-title"><span class="app-data-text">${escapeHtml(name)}</span></div>`,
+    `<button class="icon-button native-library-detail-button" type="button" data-elf-details data-library-path="${escapeAttr(library.path || "")}" data-library-source-entry="${escapeAttr(library.sourceEntry || "")}" aria-label="${escapeAttr(detailsLabel)}" title="${escapeAttr(detailsLabel)}">`,
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">`,
+    `<path d="M3.4 12c2.05-3.2 4.9-4.8 8.6-4.8s6.55 1.6 8.6 4.8c-2.05 3.2-4.9 4.8-8.6 4.8S5.45 15.2 3.4 12Z"></path>`,
+    `<circle cx="12" cy="12" r="2.7"></circle>`,
+    `</svg>`,
+    `</button>`,
+    `</div>`,
     `<div class="row-meta native-library-meta app-data-text"><span>${escapeHtml(t("size"))}: ${escapeHtml(formatBytes(library.size || 0))}</span>${renderNativeLibraryLabels(library)}</div>`,
     sdk ? `<div class="row-meta native-library-sdk app-data-text">${sdk}</div>` : "",
     `</article>`,
