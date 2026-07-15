@@ -1473,7 +1473,7 @@ function bindEvents() {
   elements.historyList.addEventListener("pointermove", handleHistoryPointerEvent);
   elements.historyList.addEventListener("pointerout", (event) => {
     const row = event.target.closest(".history-row");
-    if (!row || row.contains(event.relatedTarget)) {
+    if (!row || (event.relatedTarget instanceof Node && row.contains(event.relatedTarget))) {
       return;
     }
 
@@ -1495,7 +1495,7 @@ function bindEvents() {
 
   document.addEventListener("pointerover", (event) => {
     const row = event.target.closest?.(".history-row");
-    if (elements.historyList.contains(event.target) || (row && elements.historyList.contains(row))) {
+    if ((event.target instanceof Node && elements.historyList.contains(event.target)) || (row && elements.historyList.contains(row))) {
       return;
     }
 
@@ -4034,6 +4034,7 @@ function updateUrlReportProgress(progressEvent) {
   });
 }
 
+/** @param {(event: Record<string, unknown>) => void} [onProgress] */
 async function parseUrlReportResponse(response, timings = null, onProgress = () => {}) {
   const contentType = response.headers.get("content-type") || "";
   if (response.body && contentType.includes("application/x-ndjson")) {
@@ -4043,6 +4044,7 @@ async function parseUrlReportResponse(response, timings = null, onProgress = () 
   return parseJsonResponse(response, timings);
 }
 
+/** @param {(event: Record<string, unknown>) => void} [onProgress] */
 async function parseStreamingUrlReportResponse(response, timings = null, onProgress = () => {}) {
   const textStartedAt = performance.now();
   const reader = response.body.getReader();
@@ -4156,6 +4158,7 @@ function getResponseErrorMessage(payload, response) {
 
 function createUrlReportError(payload, response) {
   const errorPayload = payload?.error || {};
+  /** @type {Error & { code?: string, details?: Record<string, unknown>, httpStatus?: number, logMessage?: string }} */
   const error = new Error(getResponseErrorMessage(payload, response));
   error.name = String(errorPayload.name || "UrlReportError");
   error.code = typeof errorPayload.code === "string" ? errorPayload.code : "";

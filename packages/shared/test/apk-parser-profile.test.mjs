@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { __apkTestInternals, readApkInfoFromZipSource } from "../src/apk.js";
+import {
+  __apkTestInternals,
+  readAndroidPackageInfo,
+  readApkInfoFromZipSource,
+} from "../src/apk.js";
 
 const textEncoder = new TextEncoder();
 
@@ -124,6 +128,22 @@ test("rejects damaged or missing ZIP directory records in the JS fallback", () =
     () => __apkTestInternals.parseZipEntries(zipBytes.subarray(0, zipBytes.byteLength - 22)),
     /APK ZIP 结束记录不存在/u,
   );
+});
+
+test("records parser profile failures without masking the original error", async () => {
+  const parserProfile = { stages: [] };
+
+  await assert.rejects(
+    () => readAndroidPackageInfo(new Uint8Array([1, 2, 3]), { parserProfile }),
+    /APK ZIP 结束记录不存在/u,
+  );
+  assert.deepEqual(
+    parserProfile.stages.map((entry) => entry.stage),
+    ["parse-zip-entries", "read-android-package-info"],
+  );
+  for (const stage of parserProfile.stages) {
+    assert.match(stage.error, /APK ZIP 结束记录不存在/u);
+  }
 });
 
 function createSource(files) {

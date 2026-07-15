@@ -39,14 +39,14 @@ export function trackWebEvent(event, fields = {}) {
   }
 
   const context = readSafeContext();
-  const payload = compactObject({
+  const payload = /** @type {AnalyticsEventPayload} */ (compactObject({
     ...context,
     ...fields,
     event,
     surface: "webui",
     path: window.location.pathname || "/",
     session_id: getSessionId(),
-  });
+  }));
 
   sendAnalyticsPayload(sanitizePayload(payload));
 }
@@ -86,7 +86,7 @@ function sendAnalyticsPayload(payload) {
 }
 
 /**
- * @param {AnalyticsEventPayload}
+ * @param {AnalyticsEventPayload} payload
  * @returns {AnalyticsEventPayload}
  */
 function sanitizePayload(payload) {

@@ -21,7 +21,8 @@
     "rules:update": "python scripts/generate_libchecker_bundle.py",
     "benchmark:parser": "node scripts/benchmark_apk_parser.mjs",
     "syntax:check": "node scripts/check.mjs",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs",
-    "check": "npm run generated:generate && npm run i18n:check && npm run syntax:check && npm test"
+    "check": "npm run generated:generate && npm run i18n:check && npm run syntax:check && npm run typecheck && npm test"
   }
 }

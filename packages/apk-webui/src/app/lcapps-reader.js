@@ -533,8 +533,9 @@ function getImageMimeType(name) {
 }
 
 function bytesToDataUri(bytes, mimeType) {
-  if (typeof FileReader !== "function" && typeof Buffer !== "undefined") {
-    return Promise.resolve(`data:${mimeType};base64,${Buffer.from(bytes).toString("base64")}`);
+  const buffer = Reflect.get(globalThis, "Buffer");
+  if (typeof FileReader !== "function" && buffer?.from) {
+    return Promise.resolve(`data:${mimeType};base64,${buffer.from(bytes).toString("base64")}`);
   }
 
   return new Promise((resolve, reject) => {
@@ -585,6 +586,7 @@ function isImageDataUri(value) {
 }
 
 function createLcappsError(code, options = {}) {
+  /** @type {Error & { code?: string }} */
   const error = new Error(code, options);
   error.code = code;
   return error;

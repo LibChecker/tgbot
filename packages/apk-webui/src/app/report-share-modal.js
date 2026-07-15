@@ -118,10 +118,10 @@ async function runReportShareAction(action, { state, elements, t, onControlsChan
 }
 
 export function ensureReportShareModalElements({ root = document.body, t, onClose, onActionClick }) {
-  let modal = root.querySelector("#report-share-modal");
+  let modal = /** @type {HTMLElement | null} */ (root.querySelector("#report-share-modal"));
   if (!modal) {
     root.insertAdjacentHTML("beforeend", renderReportShareModalShell());
-    modal = root.querySelector("#report-share-modal");
+    modal = /** @type {HTMLElement | null} */ (root.querySelector("#report-share-modal"));
   }
 
   const refs = {

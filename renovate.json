@@ -2,5 +2,18 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "Keep the Cloudflare Vitest pool on a compatible Vitest release",
+      "groupName": "Cloudflare runtime test stack",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "@cloudflare/vitest-pool-workers",
+        "vitest"
+      ]
+    }
   ]
 }

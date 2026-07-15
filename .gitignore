@@ -4,6 +4,7 @@ node_modules/
 dist/
 build/
 coverage/
+/output/
 .cache/
 *.log
 *.tmp

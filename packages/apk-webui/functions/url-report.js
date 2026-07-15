@@ -50,13 +50,14 @@ async function handlePost({ request, env }) {
   try {
     payload = await readJsonBody(request);
   } catch (error) {
+    const status = getErrorCode(error) === "request_body_too_large" ? 413 : 400;
     logUrlReportEvent("warn", "url_report.bad_request", {
       request_id: requestId,
       result: "invalid_body",
-      http_status: 400,
+      http_status: status,
       ...getErrorTelemetryFields(error),
     });
-    return jsonResponse({ error: buildErrorResponse(error, activeLocale) }, 400);
+    return jsonResponse({ error: buildErrorResponse(error, activeLocale) }, status);
   }
 
   activeLocale = resolveRequestLocale(request, payload);
@@ -117,6 +118,9 @@ async function handlePost({ request, env }) {
   }
 }
 
+/**
+ * @param {{ env: Env, url: string, locale: string, requestId: string, startedAt: number, onProgress?: (event: Record<string, unknown>) => void }} options
+ */
 async function createUrlReportPayload({ env, url, locale, requestId, startedAt, onProgress = () => {} }) {
   const terminalSystem = resolveAnalysisTerminalSystem();
   let stageStartedAt = Date.now();
@@ -320,7 +324,7 @@ async function readJsonBody(request) {
   }
 
   const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) {
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
     throw createCodedError("Request body is too large", "request_body_too_large");
   }
 
@@ -569,6 +573,7 @@ function getErrorDetails(error) {
 }
 
 function createCodedError(message, code, diagnostics = {}) {
+  /** @type {Error & { code?: string, diagnostics?: Record<string, unknown> }} */
   const error = new Error(message);
   error.code = code;
   error.diagnostics = getPrimitiveFields({

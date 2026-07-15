@@ -42,8 +42,8 @@ export function createHistoryEntry(report) {
  * @returns {HistorySummary}
  */
 export function buildHistorySummary(report) {
-  const info = report.apkInfo || {};
-  const sdkSummary = info.sdkSummary || {};
+  const info = report.apkInfo;
+  const sdkSummary = info.sdkSummary;
   const iconDataUri = sanitizeImageSrc(info.icon?.dataUri || "");
 
   return {
@@ -62,7 +62,7 @@ export function buildHistorySummary(report) {
 }
 
 function buildHistoryKey(report) {
-  const info = report.apkInfo || {};
+  const info = report.apkInfo;
   return [
     info.packageName || "",
     info.versionCode || "",

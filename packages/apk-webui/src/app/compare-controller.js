@@ -51,14 +51,14 @@ export class CompareController {
       left: createCompareSlotState(),
       right: createCompareSlotState(),
     };
-    this.slotElements = Object.fromEntries(COMPARE_SLOT_KEYS.map((slotKey) => [
+    this.slotElements = /** @type {Record<string, { clearButton: HTMLButtonElement | null, meta: HTMLElement | null, report: HTMLElement | null }>} */ (Object.fromEntries(COMPARE_SLOT_KEYS.map((slotKey) => [
       slotKey,
       {
         meta: this.elements.view.querySelector(`[data-compare-file-meta="${slotKey}"]`),
         report: this.elements.view.querySelector(`[data-compare-slot-report="${slotKey}"]`),
         clearButton: this.elements.clearButtons.find((button) => button.dataset.compareClear === slotKey) || null,
       },
-    ]));
+    ])));
   }
 
   t(key, variables = {}) {
@@ -534,7 +534,7 @@ export class CompareController {
 
   renderSlot(slotKey) {
     const slot = this.slots[slotKey];
-    const slotElements = this.slotElements[slotKey] || {};
+    const slotElements = this.slotElements[slotKey];
 
     if (slotElements.meta) {
       slotElements.meta.textContent = this.getSlotMeta(slot);

@@ -275,6 +275,10 @@ export const CONTRACT_VERSION = 1;
 const WORKER_PROGRESS_STAGES = new Set(["reading", "parsing"]);
 const SDK_MARKER_MATCH_SOURCES = new Set(["exact", "regex", "action"]);
 
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
 export function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -333,6 +337,7 @@ export function isSdkMarker(value) {
     typeof value.iconName === "string" &&
     typeof value.iconUrl === "string" &&
     typeof value.singleColorIcon === "boolean" &&
+    typeof value.matchSource === "string" &&
     SDK_MARKER_MATCH_SOURCES.has(value.matchSource) &&
     (value.regexName == null || typeof value.regexName === "string") &&
     Number.isFinite(value.type)
@@ -422,6 +427,10 @@ export function assertAnalyzerWorkerRequest(value) {
   return value;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {value is AnalyzerWorkerResponse}
+ */
 export function isAnalyzerWorkerMessage(value) {
   if (!isObject(value) || !Number.isFinite(value.jobId)) {
     return false;
@@ -429,6 +438,7 @@ export function isAnalyzerWorkerMessage(value) {
 
   if (value.type === "progress") {
     return (
+      typeof value.stage === "string" &&
       WORKER_PROGRESS_STAGES.has(value.stage) &&
       (value.progress == null || Number.isFinite(value.progress)) &&
       (value.loadedBytes == null || Number.isFinite(value.loadedBytes)) &&

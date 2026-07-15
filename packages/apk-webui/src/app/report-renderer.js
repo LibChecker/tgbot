@@ -25,9 +25,13 @@ const ARCHIVE_CHART_COLORS = [
 export const REPORT_LIST_RENDER_LIMIT = 120;
 let runtime = null;
 let state = null;
+/** @type {(key: string, variables?: Record<string, unknown>) => string} */
 let t = () => "";
+/** @type {(value: unknown) => string} */
 let formatDate = () => "";
+/** @type {(event: string, fields?: Record<string, unknown>) => void} */
 let trackWebEvent = () => {};
+/** @type {(report: object) => Record<string, unknown>} */
 let getReportAnalyticsFields = () => ({});
 const exportJsonCache = new WeakMap();
 

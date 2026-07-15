@@ -42,6 +42,7 @@ let apkUrlPreviewModulePromise = null;
 let sdkRuleAnnotatorPromise = null;
 let reportStoreModulePromise = null;
 
+/** @type {Hono<{ Bindings: Env, Variables: { url: URL, telemetry: Record<string, unknown> } }>} */
 const app = new Hono();
 const reportDataPublishOriginGuard = async (context, next) => {
   if (isAllowedReportPublishOrigin(context.env, context.req.header("origin") || "")) {
@@ -1511,6 +1512,11 @@ async function readJsonBodyStrict(request) {
   }
 }
 
+/**
+ * @param {unknown} error
+ * @param {import("hono/utils/http-status").ContentfulStatusCode} [fallbackStatus]
+ * @returns {import("hono/utils/http-status").ContentfulStatusCode}
+ */
 function getReportDataErrorStatus(error, fallbackStatus = 500) {
   switch (getErrorCode(error)) {
     case "invalid_json_request_body":
@@ -2000,6 +2006,7 @@ async function telegramApi(env, method, payload, locale = undefined) {
       result: "error",
     });
     const { t } = createI18n(locale);
+    /** @type {Error & { method?: string, status?: number }} */
     const error = new Error(description || t("errors.telegram_api_request_failed", { method, status: response.status }));
     error.status = response.status;
     error.method = method;
@@ -2018,6 +2025,7 @@ async function telegramApi(env, method, payload, locale = undefined) {
       result: "error",
     });
     const { t } = createI18n(locale);
+    /** @type {Error & { method?: string, status?: number }} */
     const error = new Error(data?.description || t("errors.telegram_api_result_failed", { method }));
     error.status = response.status;
     error.method = method;
@@ -2417,6 +2425,7 @@ function getErrorStack(error) {
 }
 
 function createErrorWithCode(code, message) {
+  /** @type {Error & { code?: string }} */
   const error = new Error(message);
   error.code = code;
   return error;

@@ -11,14 +11,17 @@ const READ_PROGRESS_WEIGHT = 0.35;
 const sdkIconDataUriCache = new Map();
 let sdkModulesPromise = null;
 
-self.addEventListener("message", (event) => {
+self.addEventListener("message", handleWorkerRequestMessage);
+
+/** @param {MessageEvent} event */
+function handleWorkerRequestMessage(event) {
   const rawMessage = event.data || {};
   if (rawMessage.type !== "analyze") {
     return;
   }
 
   void handleAnalyzeMessage(rawMessage);
-});
+}
 
 async function handleAnalyzeMessage(rawMessage) {
   try {
@@ -314,6 +317,7 @@ function addSdkEntryKeys(keys, entries = []) {
 }
 
 function createWorkerError(errorKey) {
+  /** @type {Error & { errorKey?: string }} */
   const error = new Error(errorKey);
   error.errorKey = errorKey;
   return error;

@@ -508,8 +508,8 @@ function isLikelySplitApkFileName(fileName) {
 }
 
 /**
- * @param {{ zipEntries: Map<string, object>, extractEntry: (entry: object) => Promise<Uint8Array>, apkBytes?: Uint8Array, path?: string }} source
- * @param {{ scanDex?: boolean, nativeLibraries?: import("./contracts.js").ApkNativeLibrary[], iconSource?: object, iconResources?: object, maxSignatureEntryBytes?: number, maxResourceBytes?: number, parserProfile?: object }} [options]
+ * @param {{ zipEntries: Map<string, { compressedSize?: number, uncompressedSize?: number }>, extractEntry: (entry: object) => Promise<Uint8Array>, apkBytes?: Uint8Array, path?: string }} source
+ * @param {{ scanDex?: boolean, nativeLibraries?: import("./contracts.js").ApkNativeLibrary[], iconSource?: object, iconResources?: object, maxSignatureEntryBytes?: number, maxResourceBytes?: number, parseNativeElf?: boolean, parserProfile?: object }} [options]
  * @returns {Promise<ApkInfo>}
  */
 export async function readApkInfoFromZipSource(source, options = {}) {
@@ -2285,7 +2285,11 @@ function getImageMimeType(path) {
 
 function bytesToBase64(bytes) {
   if (typeof btoa !== "function") {
-    return Buffer.from(bytes).toString("base64");
+    const buffer = Reflect.get(globalThis, "Buffer");
+    if (!buffer?.from) {
+      throw new Error("Base64 encoder is unavailable");
+    }
+    return buffer.from(bytes).toString("base64");
   }
 
   let binary = "";
@@ -2879,6 +2883,10 @@ function callParserProfileHook(parserProfile, hookName, args) {
   }
 }
 
+function getErrorText(error) {
+  return error instanceof Error ? error.message : String(error || "Unknown error");
+}
+
 async function callAsyncParserProfileHook(parserProfile, hookName, args) {
   const hook = parserProfile?.[hookName];
   if (typeof hook !== "function") {
@@ -2956,7 +2964,8 @@ function normalizeParserProfileDetails(details) {
 }
 
 function getNowMs() {
-  return typeof globalThis.performance?.now === "function" ? globalThis.performance.now() : Date.now();
+  const performanceApi = Reflect.get(globalThis, "performance");
+  return typeof performanceApi?.now === "function" ? performanceApi.now() : Date.now();
 }
 
 function isPotentialResourceEntryName(bytes, start, length) {

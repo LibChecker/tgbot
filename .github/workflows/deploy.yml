@@ -52,6 +52,14 @@ jobs:
       - name: Run check, build, and performance budgets
         run: npm run deploy:preflight -- --target="${DEPLOY_TARGET}"
 
+      - name: Install Playwright Chromium
+        if: github.event_name == 'pull_request'
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Run WebUI Chromium smoke tests
+        if: github.event_name == 'pull_request'
+        run: npm run test:browser --workspace @tgbot/apk-webui
+
   deploy_preview:
     name: Deploy preview
     needs: preflight

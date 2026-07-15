@@ -398,6 +398,7 @@ function createMissingRemoteManifestError(diagnostics) {
 }
 
 function createUrlAnalysisError(message, code, diagnostics = {}) {
+  /** @type {Error & { code?: string, diagnostics?: Record<string, unknown> }} */
   const error = new Error(message);
   error.name = APK_URL_ANALYSIS_ERROR_NAME;
   error.code = code;
@@ -406,6 +407,7 @@ function createUrlAnalysisError(message, code, diagnostics = {}) {
 }
 
 function annotateUrlAnalysisError(error, diagnostics, stats) {
+  /** @type {Error & { code?: string, diagnostics?: Record<string, unknown> }} */
   const output = error instanceof Error ? error : new Error("Failed to parse the remote APK link");
   if (!output.name || output.name === "Error") {
     output.name = APK_URL_ANALYSIS_ERROR_NAME;

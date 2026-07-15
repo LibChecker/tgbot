@@ -17,7 +17,9 @@ packages/apk-webui/
     index.html          Static entry HTML
   scripts/
     build.mjs           Vite Pages build wrapper
-    benchmark.mjs       Local Chrome/CDP performance benchmark
+    benchmark.mjs       Local Playwright performance benchmark
+  test-browser/         Chromium/WebKit smoke tests and generated APK fixture
+  playwright.config.mjs Browser smoke-test configuration
   vite.config.mjs       Vite build config and shared-module aliases
   dist/                 Generated build output
 ```
@@ -61,11 +63,24 @@ Run WebUI syntax checks:
 npm run pages:check
 ```
 
-Run a local Chrome/CDP performance benchmark against the built `dist/` output:
+Run a local Playwright benchmark against the built `dist/` output. The runner
+uses an installed Chrome-compatible system browser and writes the same JSON
+result contract used by the previous Chrome/CDP runner:
 
 ```bash
 node packages/apk-webui/scripts/benchmark.mjs --label vite --sample /path/to/app.apk
 ```
+
+Run the Chromium smoke suite used by pull requests, or opt into the separate
+WebKit suite:
+
+```bash
+npm run test:browser --workspace @tgbot/apk-webui
+npm run test:browser:webkit --workspace @tgbot/apk-webui
+```
+
+The smoke commands build and serve `dist`. The regular `npm run perf:check`
+budget remains browserless and does not install Playwright browsers.
 
 ## Deployment
 

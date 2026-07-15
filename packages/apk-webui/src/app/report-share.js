@@ -50,6 +50,7 @@ export async function prepareReportShareUrl({
 export async function publishReport({ endpoint, report, locale }) {
   const payloadText = JSON.stringify({ report, locale }, stripReportPublishJson);
   if (new TextEncoder().encode(payloadText).byteLength > REPORT_SHARE_MAX_BODY_BYTES) {
+    /** @type {Error & { code?: string }} */
     const error = new Error("Report payload is too large to publish.");
     error.name = "ReportSharePayloadTooLarge";
     error.code = "report_data_payload_too_large";
@@ -76,6 +77,7 @@ export async function publishReport({ endpoint, report, locale }) {
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload?.url) {
+      /** @type {Error & { code?: string }} */
       const error = new Error(payload?.error?.message || "Failed to publish report");
       error.code = getResponseErrorCode(payload, response);
       throw error;
@@ -83,6 +85,7 @@ export async function publishReport({ endpoint, report, locale }) {
     return payload;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
+      /** @type {Error & { code?: string }} */
       const timeoutError = new Error("Publish report request timed out.");
       timeoutError.name = "ReportShareTimeout";
       timeoutError.code = "report_share_publish_timeout";

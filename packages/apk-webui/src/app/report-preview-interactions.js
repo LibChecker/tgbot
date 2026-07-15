@@ -8,10 +8,15 @@ const CONTRIBUTOR_GITHUB_ALIASES = new Map([
 ]);
 
 let state = null;
+/** @type {(key: string, variables?: Record<string, unknown>) => string} */
 let t = () => "";
+/** @type {() => void} */
 let ensureRulePreviewMaterial = () => {};
+/** @type {(element: Element) => void} */
 let updateLiquidGlassFilterForPreview = () => {};
+/** @type {(element: Element, clientX: number, clientY: number) => void} */
 let setLiquidGlassHighlightFromClientPoint = () => {};
+/** @type {(options?: { immediate?: boolean }) => void} */
 let scheduleRulePreviewMaterialWarmup = () => {};
 
 export function initReportPreviewInteractions(options) {
@@ -214,7 +219,7 @@ function initSdkIconPreview() {
 
   window.addEventListener("scroll", () => hidePreview({ immediate: true }), true);
 
-  window.addEventListener("resize", hidePreview);
+  window.addEventListener("resize", () => hidePreview());
 }
 
 function initSdkRulePreview() {
@@ -469,7 +474,7 @@ function initSdkRulePreview() {
 
   window.addEventListener("scroll", () => hidePreview({ immediate: true }), true);
 
-  window.addEventListener("resize", hidePreview);
+  window.addEventListener("resize", () => hidePreview());
 }
 
 function initArchiveChartPreview() {

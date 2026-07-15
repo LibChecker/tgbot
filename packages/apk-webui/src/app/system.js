@@ -1,7 +1,7 @@
 import { detectTerminalSystemFromNavigator, normalizeSystemPlatform } from "@shared/terminal-system.js";
 
 export async function detectTerminalSystem() {
-  const navigatorValue = window.navigator || {};
+  const navigatorValue = window.navigator;
   const userAgentData = navigatorValue.userAgentData;
 
   if (userAgentData && typeof userAgentData.getHighEntropyValues === "function") {

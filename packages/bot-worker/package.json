@@ -19,14 +19,19 @@
     "commands:set": "node scripts/manage-webhook.mjs commands:set",
     "commands:info": "node scripts/manage-webhook.mjs commands:info",
     "commands:delete": "node scripts/manage-webhook.mjs commands:delete",
+    "types:generate": "node -e \"require('node:fs').mkdirSync('.wrangler/types',{recursive:true})\" && wrangler types .wrangler/types/worker-configuration.d.ts --config wrangler.toml --strict-vars=false",
+    "typecheck": "npm run types:generate && tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs",
-    "check": "node scripts/check.mjs && npm test"
+    "test:runtime": "vitest run --config vitest.config.mjs",
+    "check": "node scripts/check.mjs && npm run typecheck && npm test && npm run test:runtime"
   },
   "devDependencies": {
-    "wrangler": "^4.103.0"
+    "@cloudflare/vitest-pool-workers": "0.18.4",
+    "vitest": "^4.1.10",
+    "wrangler": "4.110.0"
   },
   "dependencies": {
-    "hono": "^4.12.27",
+    "hono": "^4.12.30",
     "ipaddr.js": "^2.4.0"
   }
 }

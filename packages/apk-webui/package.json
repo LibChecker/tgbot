@@ -5,17 +5,25 @@
   "type": "module",
   "scripts": {
     "build": "npm run generated:generate --workspace @tgbot/shared && node scripts/build.mjs",
-    "check": "npm run generated:generate --workspace @tgbot/shared && node scripts/check.mjs && node --test test/*.test.mjs",
+    "check": "npm run generated:generate --workspace @tgbot/shared && node scripts/check.mjs && npm run typecheck && node --test test/*.test.mjs && npm run test:runtime",
     "dev": "npm run generated:generate --workspace @tgbot/shared && vite --config vite.config.mjs",
     "deploy": "npm run deploy:production",
     "deploy:preview": "npm run build && wrangler pages deploy dist --project-name=tgbot-apk-webui --branch=preview",
     "deploy:production": "npm run build && wrangler pages deploy dist --project-name=tgbot-apk-webui --branch=main",
+    "types:generate": "node -e \"require('node:fs').mkdirSync('.wrangler/types',{recursive:true})\" && wrangler types .wrangler/types/worker-configuration.d.ts --config wrangler.jsonc --strict-vars=false",
+    "typecheck": "npm run types:generate && tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.functions.json",
+    "test:runtime": "vitest run --config vitest.config.mjs",
+    "test:browser": "npm run build && playwright test --config playwright.config.mjs --project=chromium",
+    "test:browser:webkit": "npm run build && playwright test --config playwright.config.mjs --project=webkit",
     "perf:check": "node ../../scripts/check-size-budgets.mjs",
     "size:check": "npm run perf:check"
   },
   "devDependencies": {
-    "vite": "^8.1.0",
-    "wrangler": "^4.103.0"
+    "@cloudflare/vitest-pool-workers": "0.18.4",
+    "@playwright/test": "^1.61.1",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10",
+    "wrangler": "4.110.0"
   },
   "dependencies": {
     "fflate": "^0.8.3"

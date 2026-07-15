@@ -56,7 +56,7 @@ export async function hydrateReportSdkIconImages(report) {
  * @param {SdkRuleDetailMap | null} ruleDetailMap
  */
 function hydrateReportSdkIconTargets(report, iconMap, singleColorIconNames, ruleDetailMap) {
-  const info = report.apkInfo || {};
+  const info = report.apkInfo;
   hydrateBuildFeatureIcons(report, iconMap);
   hydrateSdkIconList(info.sdkSummary?.native, iconMap, singleColorIconNames, ruleDetailMap);
   hydrateSdkIconList(info.sdkSummary?.components, iconMap, singleColorIconNames, ruleDetailMap);
@@ -95,7 +95,7 @@ function hydrateBuildFeatureIcons(report, iconMap) {
  */
 export async function hydrateReportSdkRuleDetails(report) {
   const ruleDetailMap = await loadSdkRuleDetailMap();
-  const info = report.apkInfo || {};
+  const info = report.apkInfo;
   hydrateSdkRuleDetailList(info.sdkSummary?.native, ruleDetailMap);
   hydrateSdkRuleDetailList(info.sdkSummary?.components, ruleDetailMap);
 

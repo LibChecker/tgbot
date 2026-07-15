@@ -92,7 +92,7 @@ async function handlePost({ request, env }) {
   let payload;
   try {
     const body = await request.text();
-    if (body.length > MAX_ANALYTICS_BODY_BYTES) {
+    if (new TextEncoder().encode(body).byteLength > MAX_ANALYTICS_BODY_BYTES) {
       return new Response(null, { status: 413 });
     }
     payload = JSON.parse(body);

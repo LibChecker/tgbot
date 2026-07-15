@@ -29,7 +29,7 @@ export function resolveWebUiSiteConfig(env = {}) {
 }
 
 function getNodeEnv() {
-  return typeof process !== "undefined" && process.env ? process.env : {};
+  return Reflect.get(globalThis, "process")?.env || {};
 }
 
 function normalizeOrigin(value) {

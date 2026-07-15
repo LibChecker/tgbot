@@ -1,14 +1,14 @@
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { env } from "node:process";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { spawn } from "node:child_process";
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { parseArgs as parseCliArgs } from "node:util";
+import { chromium } from "@playwright/test";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoDir = resolve(projectDir, "../..");
@@ -45,10 +45,9 @@ const outputPath = options.output
 
 const distStats = await collectDistStats(distDir);
 const server = remoteUrl ? null : await createStaticServer(distDir);
-const chrome = await launchChrome();
+const browser = await launchBrowser();
 
 try {
-  const browser = await connectBrowser(chrome.debugPort);
   const pageUrl = remoteUrl || `http://127.0.0.1:${server.port}/`;
   const firstScreen = await measureFirstScreen(browser, pageUrl);
   const samples = [];
@@ -56,8 +55,6 @@ try {
   for (const samplePath of existingSamples) {
     samples.push(await measureSample(browser, pageUrl, samplePath));
   }
-
-  await browser.close();
 
   const result = {
     label,
@@ -78,20 +75,10 @@ try {
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`);
   printSummary(result, outputPath);
 } finally {
-  try {
-    chrome.child.kill("SIGTERM");
-  } catch {
-    // Chrome may already have exited after Browser.close.
-  }
+  await browser.close().catch(() => {});
   if (server) {
     await server.close();
   }
-  await rm(chrome.userDataDir, {
-    recursive: true,
-    force: true,
-    maxRetries: 5,
-    retryDelay: 150,
-  }).catch(() => {});
 }
 
 function parseArgs(args) {
@@ -259,36 +246,23 @@ function isInside(rootDir, target) {
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
 }
 
-async function launchChrome() {
+async function launchBrowser() {
   const chromePath = await findChrome();
-  const userDataDir = await mkdtemp(join(tmpdir(), "tgbot-webui-chrome-"));
-  const debugPort = await findFreePort();
-  const child = spawn(chromePath, [
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${userDataDir}`,
-    "--headless=new",
-    "--disable-background-networking",
-    "--disable-default-apps",
-    "--disable-extensions",
-    "--disable-gpu",
-    "--disable-popup-blocking",
-    "--disable-sync",
-    "--metrics-recording-only",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "about:blank",
-  ], {
-    stdio: "ignore",
+  return chromium.launch({
+    executablePath: chromePath,
+    headless: true,
+    args: [
+      "--disable-background-networking",
+      "--disable-default-apps",
+      "--disable-extensions",
+      "--disable-gpu",
+      "--disable-popup-blocking",
+      "--disable-sync",
+      "--metrics-recording-only",
+      "--no-first-run",
+      "--no-default-browser-check",
+    ],
   });
-
-  child.on("exit", (code, signal) => {
-    if (code && code !== 0) {
-      console.warn(`Chrome exited with ${signal || `code ${code}`}`);
-    }
-  });
-
-  await waitForChrome(debugPort);
-  return { child, debugPort, userDataDir };
 }
 
 async function findChrome() {
@@ -341,219 +315,108 @@ function resolveBrowserCandidate(baseDir, browserPath) {
   return baseDir ? resolve(baseDir, browserPath) : "";
 }
 
-async function findFreePort() {
-  const probe = createServer();
-  return new Promise((resolvePort, rejectPort) => {
-    probe.on("error", rejectPort);
-    probe.listen(0, "127.0.0.1", () => {
-      const { port } = probe.address();
-      probe.close(() => resolvePort(port));
-    });
-  });
-}
-
-async function waitForChrome(port) {
-  const versionUrl = `http://127.0.0.1:${port}/json/version`;
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(versionUrl);
-      if (response.ok) {
-        return;
-      }
-    } catch {
-      // Chrome may still be booting.
-    }
-    await delay(100);
-  }
-  throw new Error("Timed out waiting for Chrome DevTools endpoint");
-}
-
-async function connectBrowser(port) {
-  const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-  const version = await response.json();
-  const socket = new WebSocket(version.webSocketDebuggerUrl);
-  await new Promise((resolveOpen, rejectOpen) => {
-    socket.addEventListener("open", resolveOpen, { once: true });
-    socket.addEventListener("error", rejectOpen, { once: true });
-  });
-
-  const pending = new Map();
-  const eventHandlers = [];
-  let nextId = 0;
-  const browser = {
-    send,
-    __benchmarkEventHandlers: eventHandlers,
-    async close() {
-      try {
-        await send("Browser.close");
-      } catch {
-        socket.close();
-      }
-    },
-  };
-
-  socket.addEventListener("message", (event) => {
-    const message = JSON.parse(event.data);
-    if (message.id && pending.has(message.id)) {
-      const { resolveMessage, rejectMessage } = pending.get(message.id);
-      pending.delete(message.id);
-      if (message.error) {
-        rejectMessage(new Error(message.error.message));
-      } else {
-        resolveMessage(message.result || {});
-      }
-      return;
-    }
-
-    if (message.method) {
-      for (const handler of eventHandlers) {
-        handler(message);
-      }
-    }
-  });
-
-  function send(method, params = {}, sessionId = "") {
-    nextId += 1;
-    const payload = { id: nextId, method, params };
-    if (sessionId) {
-      payload.sessionId = sessionId;
-    }
-    socket.send(JSON.stringify(payload));
-    return new Promise((resolveMessage, rejectMessage) => {
-      pending.set(nextId, { resolveMessage, rejectMessage });
-    });
-  }
-
-  return browser;
-}
-
 async function createPage(browser, url) {
-  const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" });
-  const { sessionId } = await browser.send("Target.attachToTarget", {
-    targetId,
-    flatten: true,
-  });
-  const events = createEventCollector(browser, sessionId);
-
-  await browser.send("Page.enable", {}, sessionId);
-  await browser.send("DOM.enable", {}, sessionId);
-  await browser.send("Network.enable", {}, sessionId);
-  await browser.send("Network.setBlockedURLs", {
-    urls: [
-      "http://local.adguard.org/*",
-      "https://local.adguard.org/*",
-    ],
-  }, sessionId);
-  await browser.send("Runtime.enable", {}, sessionId);
-  await browser.send("Page.addScriptToEvaluateOnNewDocument", {
-    source: createBenchmarkInjectionScript(),
-  }, sessionId);
-  await browser.send("Network.clearBrowserCache", {}, sessionId);
-  await browser.send("Network.clearBrowserCookies", {}, sessionId);
-  await browser.send("Page.navigate", { url }, sessionId);
-  await events.waitFor("Page.loadEventFired", 30_000);
+  const context = await browser.newContext({ viewport: null });
+  await context.addInitScript(createBenchmarkInjectionScript());
+  const playwrightPage = await context.newPage();
+  const events = createEventCollector(playwrightPage);
+  await playwrightPage.goto(url, { waitUntil: "load", timeout: 30_000 });
 
   return {
-    sessionId,
+    page: playwrightPage,
     events,
-    evaluate: (expression, awaitPromise = true) => browser.send("Runtime.evaluate", {
-      expression,
-      awaitPromise,
-      returnByValue: true,
-    }, sessionId).then((result) => {
-      if (result.exceptionDetails) {
-        throw new Error(result.exceptionDetails.text || "Runtime evaluation failed");
-      }
-      return result.result?.value;
-    }),
-    close: () => browser.send("Target.closeTarget", { targetId }),
+    evaluate: (expression) => playwrightPage.evaluate(expression),
+    close: () => playwrightPage.close(),
+    dispose: () => context.close(),
   };
 }
 
-function createEventCollector(browser, sessionId) {
+function createEventCollector(page) {
   const network = new Map();
-  const waiters = new Map();
+  const pending = new Set();
+  let nextRequestId = 0;
 
-  const eventHandler = (message) => {
-    if (message.sessionId !== sessionId) {
+  page.on("request", (request) => {
+    nextRequestId += 1;
+    network.set(request, {
+      requestId: String(nextRequestId),
+      url: request.url(),
+      type: mapResourceType(request.resourceType()),
+      method: request.method(),
+      startTime: Date.now() / 1000,
+      status: 0,
+      mimeType: "",
+      encodedDataLength: 0,
+      fromDiskCache: false,
+      fromMemoryCache: false,
+      headers: {},
+    });
+  });
+
+  page.on("response", (response) => schedule(async () => {
+    const entry = network.get(response.request());
+    if (!entry) {
       return;
     }
-    const waitList = waiters.get(message.method);
-    if (waitList) {
-      waiters.delete(message.method);
-      for (const waiter of waitList) {
-        waiter(message.params || {});
-      }
-    }
+    entry.status = response.status();
+    entry.headers = await response.allHeaders();
+    entry.mimeType = String(entry.headers["content-type"] || "").split(";", 1)[0];
+  }));
 
-    if (message.method === "Network.requestWillBeSent") {
-      network.set(message.params.requestId, {
-        requestId: message.params.requestId,
-        url: message.params.request.url,
-        type: message.params.type,
-        method: message.params.request.method,
-        startTime: message.params.timestamp,
-        status: 0,
-        mimeType: "",
-        encodedDataLength: 0,
-        fromDiskCache: false,
-        fromMemoryCache: false,
-        headers: {},
-      });
-    } else if (message.method === "Network.responseReceived") {
-      const entry = network.get(message.params.requestId);
-      if (entry) {
-        entry.status = message.params.response.status;
-        entry.mimeType = message.params.response.mimeType || "";
-        entry.fromDiskCache = Boolean(message.params.response.fromDiskCache);
-        entry.fromMemoryCache = Boolean(message.params.response.fromMemoryCache);
-        entry.headers = message.params.response.headers || {};
-      }
-    } else if (message.method === "Network.loadingFinished") {
-      const entry = network.get(message.params.requestId);
-      if (entry) {
-        entry.encodedDataLength = message.params.encodedDataLength || 0;
-        entry.endTime = message.params.timestamp;
-      }
+  page.on("requestfinished", (request) => schedule(async () => {
+    const entry = network.get(request);
+    if (!entry) {
+      return;
     }
-  };
-
-  browser.__benchmarkEventHandlers.push(eventHandler);
+    const sizes = await request.sizes();
+    entry.encodedDataLength = sizes.responseHeadersSize + sizes.responseBodySize;
+    entry.endTime = Date.now() / 1000;
+  }));
 
   return {
     requests: network,
-    waitFor(method, timeoutMs) {
-      return new Promise((resolveWait, rejectWait) => {
-        const timeout = setTimeout(() => {
-          rejectWait(new Error(`Timed out waiting for ${method}`));
-        }, timeoutMs);
-        const wrapped = (params) => {
-          clearTimeout(timeout);
-          resolveWait(params);
-        };
-        const waitList = waiters.get(method) || [];
-        waitList.push(wrapped);
-        waiters.set(method, waitList);
-      });
-    },
-    dispose() {
-      const handlers = browser.__benchmarkEventHandlers || [];
-      const index = handlers.indexOf(eventHandler);
-      if (index >= 0) {
-        handlers.splice(index, 1);
+    async settle() {
+      while (pending.size > 0) {
+        await Promise.allSettled([...pending]);
       }
     },
   };
+
+  function schedule(work) {
+    const pendingWork = Promise.resolve().then(work).catch(() => {});
+    pending.add(pendingWork);
+    void pendingWork.finally(() => pending.delete(pendingWork));
+  }
+}
+
+function mapResourceType(type) {
+  const types = {
+    document: "Document",
+    stylesheet: "Stylesheet",
+    image: "Image",
+    media: "Media",
+    font: "Font",
+    script: "Script",
+    texttrack: "TextTrack",
+    xhr: "XHR",
+    fetch: "Fetch",
+    eventsource: "EventSource",
+    ping: "Ping",
+    websocket: "WebSocket",
+    manifest: "Manifest",
+    other: "Other",
+  };
+  return types[type] || "Other";
 }
 
 async function measureFirstScreen(browser, pageUrl) {
   const page = await createPage(browser, pageUrl);
   await delay(2500);
   const metrics = await page.evaluate("window.__webuiBenchmarkSnapshot()");
+  await page.events.settle();
   const requests = summarizeRequests(page.events.requests, pageUrl);
   await page.close();
-  page.events.dispose();
+  await page.dispose();
   return {
     metrics,
     requests,
@@ -563,40 +426,34 @@ async function measureFirstScreen(browser, pageUrl) {
 async function measureSample(browser, pageUrl, samplePath) {
   const page = await createPage(browser, pageUrl);
   await delay(500);
-  const inputNodeId = await querySelectorNodeId(browser, page.sessionId, "#file-input");
+  await page.page.locator("#file-input").setInputFiles(samplePath);
   const startedAt = Date.now();
-  await browser.send("DOM.setFileInputFiles", {
-    nodeId: inputNodeId,
-    files: [samplePath],
-  }, page.sessionId);
-  await page.evaluate("document.querySelector('#file-input').dispatchEvent(new Event('change', { bubbles: true }))");
-  await page.evaluate("document.querySelector('#analyze-form').requestSubmit()");
+  await page.page.locator("#analyze-form").evaluate((form) => form.requestSubmit());
 
   const flow = await waitForAnalysis(page, 180_000);
-  const requests = summarizeRequests(page.events.requests, pageUrl);
+  const wallTimeMs = Date.now() - startedAt;
+  await delay(50);
+  // The legacy page CDP session excluded the dedicated Worker's module graph.
+  // Keep request metrics scoped to page Resource Timing entries for compatible JSON.
+  const pageResourceUrls = await page.evaluate(
+    "performance.getEntriesByType('resource').map((entry) => entry.name)",
+  );
+  await page.events.settle();
+  const requests = summarizeRequests(page.events.requests, pageUrl, {
+    allowedRequestUrls: pageResourceUrls,
+    zeroTransferUrls: [flow.worker?.url].filter(Boolean),
+  });
   await page.close();
-  page.events.dispose();
+  await page.dispose();
 
   return {
     name: basename(samplePath),
     path: samplePath,
     fileBytes: (await stat(samplePath)).size,
-    wallTimeMs: Date.now() - startedAt,
+    wallTimeMs,
     flow,
     requests,
   };
-}
-
-async function querySelectorNodeId(browser, sessionId, selector) {
-  const { root } = await browser.send("DOM.getDocument", { depth: 1 }, sessionId);
-  const { nodeId } = await browser.send("DOM.querySelector", {
-    nodeId: root.nodeId,
-    selector,
-  }, sessionId);
-  if (!nodeId) {
-    throw new Error(`Could not find ${selector}`);
-  }
-  return nodeId;
 }
 
 async function waitForAnalysis(page, timeoutMs) {
@@ -771,12 +628,20 @@ function createBenchmarkInjectionScript() {
   `;
 }
 
-function summarizeRequests(requestMap, pageUrl) {
+function summarizeRequests(requestMap, pageUrl, options = {}) {
   const pageOrigin = new URL(pageUrl).origin;
+  const documentUrl = new URL(pageUrl).href;
+  const allowedRequestUrls = options.allowedRequestUrls
+    ? new Set([documentUrl, ...options.allowedRequestUrls])
+    : null;
+  const zeroTransferUrls = new Set(options.zeroTransferUrls || []);
   const requests = [...requestMap.values()]
     .filter((request) => shouldIncludeRequest(request.url))
+    .filter((request) => !allowedRequestUrls || allowedRequestUrls.has(request.url))
+    .filter((request) => !isAnalyzerWorkerModuleRequest(request.url))
     .map((request) => ({
       ...request,
+      encodedDataLength: zeroTransferUrls.has(request.url) ? 0 : request.encodedDataLength,
       url: normalizeRequestUrl(request.url, pageOrigin),
       sameOrigin: isSameOriginRequest(request.url, pageOrigin),
       cacheControl: readHeader(request.headers, "cache-control"),
@@ -821,6 +686,15 @@ function summarizeRequests(requestMap, pageUrl) {
       serverTiming: request.serverTiming,
     })),
   };
+}
+
+function isAnalyzerWorkerModuleRequest(url) {
+  try {
+    const path = new URL(url).pathname;
+    return /^\/assets\/(?:apk-analyzer|libchecker-rules-core|libchecker-sdk-icons|sdk-markers)-[^/]+\.js$/u.test(path);
+  } catch {
+    return false;
+  }
 }
 
 function shouldIncludeRequest(url) {

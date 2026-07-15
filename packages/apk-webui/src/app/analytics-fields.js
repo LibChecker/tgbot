@@ -22,22 +22,22 @@ export function getFileAnalyticsFields(file) {
  * @returns {AnalyticsEventFields}
  */
 export function getReportAnalyticsFields(report) {
-  const info = report?.apkInfo || {};
-  const archive = info.archive || null;
+  const info = report?.apkInfo;
+  const archive = info?.archive || null;
 
   return compactAnalyticsObject({
     file_name: report?.fileName || "",
-    package_name: info.packageName || "",
+    package_name: info?.packageName || "",
     file_extension: getFileExtension(report?.fileName),
     size_bucket: formatSizeBucket(report?.fileSizeBytes),
     duration_ms: Number(report?.durationMs) || 0,
-    permissions_count: countArray(info.permissions),
-    native_library_count: countArray(info.nativeLibraries),
-    component_count: countComponents(info.components),
-    meta_data_count: countArray(info.metaData?.application),
-    sdk_native_match_count: countArray(info.sdkSummary?.native),
-    sdk_component_match_count: countArray(info.sdkSummary?.components),
-    has_app_icon: Boolean(info.icon?.dataUri),
+    permissions_count: countArray(info?.permissions),
+    native_library_count: countArray(info?.nativeLibraries),
+    component_count: countComponents(info?.components),
+    meta_data_count: countArray(info?.metaData?.application),
+    sdk_native_match_count: countArray(info?.sdkSummary?.native),
+    sdk_component_match_count: countArray(info?.sdkSummary?.components),
+    has_app_icon: Boolean(info?.icon?.dataUri),
     archive_type: archive?.type || "apk",
     apk_entry_count:
       archive?.apkEntryCount ||

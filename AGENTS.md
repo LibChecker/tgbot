@@ -55,6 +55,9 @@ and recurring pitfalls only.
 | Web UI check | `npm run pages:check` |
 | Web UI build | `npm run pages:build` |
 | Performance budgets | `npm run perf:check` |
+| JavaScript type checks | `npm run typecheck` |
+| Web UI Chromium smoke tests | `npm run test:browser --workspace @tgbot/apk-webui` |
+| Web UI WebKit smoke tests | `npm run test:browser:webkit --workspace @tgbot/apk-webui` |
 | Generate ignored shared bundles | `npm run generated:generate` |
 | Refresh LibChecker bundles | `npm run generated:refresh` |
 | Check translations | `npm run i18n:check` |
@@ -100,6 +103,12 @@ and recurring pitfalls only.
 - Runtime log UI is page-session frontend diagnostics only: live, capped, not
   Cloudflare logs, and not persisted across refresh. Keep export/share/download
   lazy-loaded.
+- Playwright browser smoke tests build and serve `dist`, while `perf:check`
+  remains browserless. Keep Chromium on the PR path and WebKit as a separate
+  opt-in or scheduled check.
+- `scripts/benchmark.mjs` uses Playwright with an installed system Chrome while
+  preserving its CLI and JSON result contract. Compare runner changes on the
+  same machine and sample before accepting performance drift.
 - `site-config.mjs` reads public Web UI origins from environment variables. Do
   not hard-code private preview or production hostnames.
 
@@ -135,6 +144,9 @@ and recurring pitfalls only.
   `double1`-`double20`. Keep blob/double key arrays at 20 entries or fewer and
   let checks catch overflow.
 - Admin endpoints require `ADMIN_TOKEN`; do not weaken auth behavior.
+- Keep fast pure tests on `node:test`. Use the Cloudflare Vitest Workers pool
+  only for runtime-sensitive Worker and Pages Function behavior such as R2,
+  bindings, CORS, and request limits.
 
 ## Shared Analyzer Rules
 
@@ -168,6 +180,9 @@ and recurring pitfalls only.
   established by the surrounding catalog.
 - `packages/shared/src/generated/` is ignored generated output. Do not hand-edit
   it.
+- Wrangler `.wrangler/types/worker-configuration.d.ts` files are ignored
+  generated output. Package `typecheck` scripts regenerate them from the
+  current Wrangler config before running `tsc`; do not commit or hand-edit them.
 - Scripts usually run `generated:generate` before checks/builds.
 - Keep LibChecker rules/icon generation archive-based, not one
   raw.githubusercontent.com request per file; GitHub Actions can hit HTTP 429.
@@ -210,6 +225,10 @@ and recurring pitfalls only.
 - Worker-only routing/syntax changes: run
   `npm run check --workspace @tgbot/bot-worker`.
 - Shared parser/i18n/contract/cross-package changes: run `npm run check`.
+- Runtime-sensitive Worker or Pages Function changes: run each package's
+  `npm run test:runtime` in addition to its fast `node:test` suite.
+- Browser interaction changes: run the Chromium smoke suite. Run the separate
+  WebKit suite when the change affects WebKit-specific behavior.
 - Deployment script, Wrangler config, size-budget, or production/preview
   behavior changes: run the relevant deploy preflight command.
 - Before trusting `npm run perf:check` or preflight output, scan the full budget

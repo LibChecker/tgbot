@@ -728,7 +728,7 @@ async function computeCertificateFingerprints(bytes) {
 }
 
 async function computeCryptoDigestHex(algorithm, bytes) {
-  const subtle = globalThis.crypto?.subtle;
+  const subtle = Reflect.get(globalThis, "crypto")?.subtle;
   if (!subtle?.digest) {
     return "";
   }

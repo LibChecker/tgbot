@@ -124,6 +124,7 @@ function stripRuleDetail(item) {
 }
 
 function createReportDataError(code, message) {
+  /** @type {Error & { code?: string }} */
   const error = new Error(message);
   error.code = code;
   return error;

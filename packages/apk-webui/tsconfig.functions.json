@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "include": [".wrangler/types/worker-configuration.d.ts", "functions/**/*.d.ts", "functions/**/*.js"],
+  "exclude": ["dist/**"]
+}
