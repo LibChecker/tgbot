@@ -34,4 +34,8 @@ test("native SDK summaries preserve structured counts for localized rendering", 
     annotated.sdkSummary.native.map(({ count, fileCount, abis }) => ({ count, fileCount, abis })),
     [{ count: 1, fileCount: 2, abis: ["arm64-v8a", "x86_64"] }],
   );
+  assert.equal(annotated.nativeLibraries[0].sdk.detailKey, "0::libsample.so");
+  assert.equal(annotated.nativeLibraries[0].sdk.ruleDetail, null);
+  assert.equal(annotated.sdkSummary.native[0].detailKey, "0::libsample.so");
+  assert.equal(annotated.sdkSummary.native[0].ruleDetail, null);
 });

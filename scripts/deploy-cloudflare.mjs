@@ -21,8 +21,8 @@ const DEFAULT_PREVIEW_PAGES_BRANCH = "preview";
 let activeWorkerConfigPath = workerConfigPath;
 let temporaryWorkerConfigPath = null;
 
-const WORKER_UPLOAD_BUDGET_KIB = 5_500;
-const WORKER_UPLOAD_GZIP_BUDGET_KIB = 900;
+const WORKER_UPLOAD_BUDGET_KIB = 2_000;
+const WORKER_UPLOAD_GZIP_BUDGET_KIB = 400;
 
 process.on("unhandledRejection", (error) => {
   fail(error instanceof Error ? error.message : String(error));

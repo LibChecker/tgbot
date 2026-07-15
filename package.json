@@ -45,6 +45,7 @@
     "check": "npm run check --workspace @tgbot/shared && npm run check --workspace @tgbot/bot-worker && npm run check --workspace @tgbot/apk-webui && npm run check:deploy"
   },
   "devDependencies": {
+    "fast-check": "4.9.0",
     "sharp": "^0.35.0",
     "typescript": "^7.0.2",
     "wrangler": "4.111.0"

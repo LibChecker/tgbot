@@ -106,6 +106,9 @@ and recurring pitfalls only.
 - Playwright browser smoke tests build and serve `dist`, while `perf:check`
   remains browserless. Keep Chromium on the PR path and WebKit as a separate
   opt-in or scheduled check.
+- Browser smoke tests include automated axe WCAG A/AA checks for the first
+  screen, analyzed report, and populated compare view; keep semantic keyboard
+  checks because automated accessibility scans are not exhaustive.
 - `scripts/benchmark.mjs` uses Playwright with an installed system Chrome while
   preserving its CLI and JSON result contract. Compare runner changes on the
   same machine and sample before accepting performance drift.

@@ -1781,13 +1781,9 @@ function loadApkUrlPreviewModule() {
 
 function loadSdkRuleAnnotator() {
   if (!sdkRuleAnnotatorPromise) {
-    sdkRuleAnnotatorPromise = Promise.all([
-      import("../../shared/src/generated/libchecker-rules-core.js"),
-      import("../../shared/src/generated/libchecker-rules-detail.js"),
-    ])
-      .then(([rulesModule, detailsModule]) => createSdkMarkerAnnotator(
+    sdkRuleAnnotatorPromise = import("../../shared/src/generated/libchecker-rules-core.js")
+      .then((rulesModule) => createSdkMarkerAnnotator(
         rulesModule.LIBCHECKER_RULES_CORE || [],
-        detailsModule.LIBCHECKER_RULE_DETAILS || {},
       ))
       .catch((error) => {
         sdkRuleAnnotatorPromise = null;

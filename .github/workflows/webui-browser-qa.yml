@@ -1,0 +1,37 @@
+name: WebUI Browser QA
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 19 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webui-browser-qa
+  cancel-in-progress: true
+
+jobs:
+  webkit:
+    name: WebKit smoke and accessibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright WebKit
+        run: npx playwright install --with-deps webkit
+
+      - name: Run WebUI WebKit smoke and accessibility tests
+        run: npm run test:browser:webkit --workspace @tgbot/apk-webui
