@@ -28,7 +28,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.5",
     "vitest": "^4.1.10",
-    "wrangler": "4.110.0"
+    "wrangler": "4.111.0"
   },
   "dependencies": {
     "hono": "^4.12.30",
