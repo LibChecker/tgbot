@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseHttpUrl } from "../src/apk-url-preview.js";
+import { __apkUrlPreviewTestInternals, parseHttpUrl } from "../src/apk-url-preview.js";
+
+const textEncoder = new TextEncoder();
 
 test("parseHttpUrl rejects blocked localhost and private hosts", () => {
   const blockedUrls = [
@@ -52,3 +54,73 @@ test("parseHttpUrl enforces supported URL schemes", () => {
     (error) => error instanceof Error && error.code === "invalid_download_url",
   );
 });
+
+test("remote ZIP directory parsing retains offsets needed for HTTP Range reads", () => {
+  const directory = createCentralDirectoryEntry("AndroidManifest.xml", {
+    compressedSize: 123,
+    uncompressedSize: 456,
+    localHeaderOffset: 789,
+  });
+
+  const entries = __apkUrlPreviewTestInternals.parseCentralDirectory(directory);
+  assert.deepEqual(entries.get("AndroidManifest.xml"), {
+    name: "AndroidManifest.xml",
+    flags: 0,
+    compressionMethod: 8,
+    fileNameLength: 19,
+    extraLength: 0,
+    compressedSize: 123,
+    uncompressedSize: 456,
+    localHeaderOffset: 789,
+  });
+});
+
+test("remote ZIP directory parsing rejects damaged and out-of-bounds records", () => {
+  const damaged = createCentralDirectoryEntry("AndroidManifest.xml");
+  damaged[0] = 0;
+  assert.throws(
+    () => __apkUrlPreviewTestInternals.parseCentralDirectory(damaged),
+    /central directory is invalid/u,
+  );
+
+  const outOfBounds = createCentralDirectoryEntry("AndroidManifest.xml");
+  new DataView(outOfBounds.buffer).setUint16(28, 0xffff, true);
+  assert.throws(
+    () => __apkUrlPreviewTestInternals.parseCentralDirectory(outOfBounds),
+    /entry is out of bounds/u,
+  );
+});
+
+test("remote ZIP EOCD parsing keeps the explicit ZIP64 preview boundary", () => {
+  const eocd = new Uint8Array(22);
+  const view = new DataView(eocd.buffer);
+  view.setUint32(0, 0x06054b50, true);
+  view.setUint16(10, 1, true);
+  view.setUint32(12, 46, true);
+  view.setUint32(16, 0xffffffff, true);
+
+  assert.throws(
+    () => __apkUrlPreviewTestInternals.parseEocd(eocd, 0),
+    /ZIP64 APKs are not supported/u,
+  );
+  assert.throws(
+    () => __apkUrlPreviewTestInternals.findEndOfCentralDirectory(new Uint8Array(22)),
+    /end-of-central-directory record is missing/u,
+  );
+});
+
+function createCentralDirectoryEntry(name, options = {}) {
+  const nameBytes = textEncoder.encode(name);
+  const bytes = new Uint8Array(46 + nameBytes.byteLength);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x02014b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 20, true);
+  view.setUint16(10, options.compressionMethod ?? 8, true);
+  view.setUint32(20, options.compressedSize ?? 10, true);
+  view.setUint32(24, options.uncompressedSize ?? 20, true);
+  view.setUint16(28, nameBytes.byteLength, true);
+  view.setUint32(42, options.localHeaderOffset ?? 30, true);
+  bytes.set(nameBytes, 46);
+  return bytes;
+}

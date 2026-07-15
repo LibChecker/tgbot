@@ -846,6 +846,12 @@ async function inflateRaw(bytes) {
   return new Uint8Array(buffer);
 }
 
+export const __apkUrlPreviewTestInternals = {
+  findEndOfCentralDirectory,
+  parseCentralDirectory,
+  parseEocd,
+};
+
 export function parseHttpUrl(rawUrl) {
   const url = new URL(String(rawUrl).trim());
   if (url.protocol !== "http:" && url.protocol !== "https:") {

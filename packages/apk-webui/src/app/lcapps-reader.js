@@ -1,17 +1,16 @@
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
-const ZIP_DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 const ZIP64_SENTINEL_16 = 0xffff;
 const ZIP64_SENTINEL_32 = 0xffffffff;
-const ZIP_FLAG_DATA_DESCRIPTOR = 0x0008;
+const ZIP_CENTRAL_DIRECTORY_HEADER_BYTES = 46;
 const TEXT_DECODER = new TextDecoder("utf-8");
 
 export async function readLcappsArchive(file, options = {}) {
-  const buffer = await file.arrayBuffer();
-  const zipEntries = readZipEntries(buffer);
+  const zipLibrary = await import("./lcapps-zip.js");
+  const zipEntries = readZipEntries(new Uint8Array(await file.arrayBuffer()), zipLibrary);
   const jsonEntry = await findAppsJsonEntry(zipEntries);
-  const jsonText = TEXT_DECODER.decode(await readZipEntryBytes(jsonEntry));
+  const jsonText = TEXT_DECODER.decode(jsonEntry.bytes);
   const rawPayload = parseJsonPayload(jsonText);
   const rawApps = extractAppObjects(rawPayload);
   const iconStore = await buildIconStore(zipEntries);
@@ -44,12 +43,12 @@ export function isLikelyLcappsFile(file) {
   return name.endsWith(".lcapps");
 }
 
-function readZipEntries(buffer) {
-  const view = new DataView(buffer);
+function readZipEntries(bytes, zipLibrary) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const eocdOffset = findEndOfCentralDirectory(view);
   if (eocdOffset < 0) {
     if (view.byteLength >= 4 && view.getUint32(0, true) === ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
-      return readStreamingZipEntries(buffer);
+      return readStreamingZipEntries(bytes, zipLibrary);
     }
     throw createLcappsError("lcappsInvalidZip");
   }
@@ -65,26 +64,40 @@ function readZipEntries(buffer) {
     throw createLcappsError("lcappsUnsupportedZip64");
   }
 
-  const entries = [];
-  let offset = centralDirectoryOffset;
-  const endOffset = centralDirectoryOffset + centralDirectorySize;
-  while (offset < endOffset && entries.length < entryCount) {
-    if (view.getUint32(offset, true) !== ZIP_CENTRAL_DIRECTORY_SIGNATURE) {
+  if (centralDirectoryOffset + centralDirectorySize > view.byteLength) {
+    throw createLcappsError("lcappsInvalidZip");
+  }
+  validateCentralDirectoryEnvelope(view, centralDirectoryOffset, centralDirectorySize, entryCount);
+
+  try {
+    return Object.entries(zipLibrary.unzipSync(bytes, { filter: shouldExtractZipEntry }))
+      .map(([name, data]) => ({
+        name: normalizeZipEntryName(name),
+        bytes: data,
+      }));
+  } catch (error) {
+    throw mapZipLibraryError(error, zipLibrary);
+  }
+}
+
+function validateCentralDirectoryEnvelope(view, startOffset, byteLength, entryCount) {
+  const endOffset = startOffset + byteLength;
+  let offset = startOffset;
+
+  for (let index = 0; index < entryCount; index += 1) {
+    if (
+      offset + ZIP_CENTRAL_DIRECTORY_HEADER_BYTES > endOffset ||
+      view.getUint32(offset, true) !== ZIP_CENTRAL_DIRECTORY_SIGNATURE
+    ) {
       throw createLcappsError("lcappsInvalidZip");
     }
 
-    const flags = view.getUint16(offset + 8, true);
-    const compressionMethod = view.getUint16(offset + 10, true);
     const compressedSize = view.getUint32(offset + 20, true);
     const uncompressedSize = view.getUint32(offset + 24, true);
     const nameLength = view.getUint16(offset + 28, true);
     const extraLength = view.getUint16(offset + 30, true);
     const commentLength = view.getUint16(offset + 32, true);
     const localHeaderOffset = view.getUint32(offset + 42, true);
-    const nameStart = offset + 46;
-    const nameEnd = nameStart + nameLength;
-    const name = decodeZipEntryName(new Uint8Array(buffer, nameStart, nameLength), flags);
-
     if (
       compressedSize === ZIP64_SENTINEL_32 ||
       uncompressedSize === ZIP64_SENTINEL_32 ||
@@ -93,130 +106,60 @@ function readZipEntries(buffer) {
       throw createLcappsError("lcappsUnsupportedZip64");
     }
 
-    if (name && !name.endsWith("/")) {
-      entries.push({
-        buffer,
-        name,
-        compressionMethod,
-        compressedSize,
-        uncompressedSize,
-        localHeaderOffset,
-      });
+    offset += ZIP_CENTRAL_DIRECTORY_HEADER_BYTES + nameLength + extraLength + commentLength;
+    if (offset > endOffset) {
+      throw createLcappsError("lcappsInvalidZip");
     }
-
-    offset = nameEnd + extraLength + commentLength;
   }
 
-  return entries;
+  if (offset !== endOffset) {
+    throw createLcappsError("lcappsInvalidZip");
+  }
 }
 
-function readStreamingZipEntries(buffer) {
-  const view = new DataView(buffer);
+function readStreamingZipEntries(bytes, zipLibrary) {
   const entries = [];
-  let offset = 0;
-
-  while (offset + 30 <= view.byteLength && view.getUint32(offset, true) === ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
-    const flags = view.getUint16(offset + 6, true);
-    const compressionMethod = view.getUint16(offset + 8, true);
-    const compressedSizeHeader = view.getUint32(offset + 18, true);
-    const uncompressedSizeHeader = view.getUint32(offset + 22, true);
-    const nameLength = view.getUint16(offset + 26, true);
-    const extraLength = view.getUint16(offset + 28, true);
-    const nameStart = offset + 30;
-    const nameEnd = nameStart + nameLength;
-    const dataStart = nameEnd + extraLength;
-
-    if (nameEnd > view.byteLength || dataStart > view.byteLength) {
-      throw createLcappsError("lcappsInvalidZip");
+  let archiveError = null;
+  let discoveredEntries = 0;
+  const unzipper = new zipLibrary.Unzip((file) => {
+    discoveredEntries += 1;
+    const name = normalizeZipEntryName(file.name);
+    if (!shouldExtractZipEntry({ name })) {
+      return;
     }
 
-    const name = decodeZipEntryName(new Uint8Array(buffer, nameStart, nameLength), flags);
-    let compressedSize = compressedSizeHeader;
-    let uncompressedSize = uncompressedSizeHeader;
-    let dataEnd = dataStart + compressedSize;
-    let nextOffset = dataEnd;
-
-    if (compressedSize === ZIP64_SENTINEL_32 || uncompressedSize === ZIP64_SENTINEL_32) {
-      throw createLcappsError("lcappsUnsupportedZip64");
-    }
-
-    if ((flags & ZIP_FLAG_DATA_DESCRIPTOR) !== 0) {
-      const descriptor = findZipDataDescriptor(view, dataStart);
-      if (descriptor) {
-        compressedSize = descriptor.compressedSize;
-        uncompressedSize = descriptor.uncompressedSize;
-        dataEnd = descriptor.offset;
-        nextOffset = descriptor.offset + descriptor.length;
-      } else {
-        throw createLcappsError("lcappsInvalidZip");
+    const chunks = [];
+    file.ondata = (error, chunk, final) => {
+      if (error) {
+        archiveError ||= error;
+        return;
       }
-    }
 
-    if (dataEnd < dataStart || dataEnd > view.byteLength) {
-      throw createLcappsError("lcappsInvalidZip");
-    }
+      if (chunk?.byteLength) {
+        chunks.push(chunk);
+      }
+      if (final) {
+        entries.push({ name, bytes: concatenateBytes(chunks) });
+      }
+    };
+    file.start();
+  });
+  unzipper.register(zipLibrary.UnzipInflate);
 
-    if (name && !name.endsWith("/")) {
-      entries.push({
-        buffer,
-        name,
-        compressionMethod,
-        compressedSize,
-        uncompressedSize,
-        localHeaderOffset: offset,
-        dataStart,
-      });
-    }
-
-    offset = nextOffset;
+  try {
+    unzipper.push(bytes, true);
+  } catch (error) {
+    archiveError ||= error;
   }
 
-  if (entries.length === 0) {
+  if (archiveError) {
+    throw mapZipLibraryError(archiveError, zipLibrary);
+  }
+  if (discoveredEntries === 0) {
     throw createLcappsError("lcappsInvalidZip");
   }
 
   return entries;
-}
-
-function findZipDataDescriptor(view, dataStart) {
-  for (let offset = dataStart; offset <= view.byteLength - 16; offset += 1) {
-    if (view.getUint32(offset, true) !== ZIP_DATA_DESCRIPTOR_SIGNATURE) {
-      continue;
-    }
-
-    const compressedSize = view.getUint32(offset + 8, true);
-    const uncompressedSize = view.getUint32(offset + 12, true);
-    const nextOffset = offset + 16;
-    if (
-      compressedSize === offset - dataStart &&
-      isZipStreamingEntryBoundary(view, nextOffset)
-    ) {
-      return {
-        offset,
-        length: 16,
-        compressedSize,
-        uncompressedSize,
-      };
-    }
-  }
-
-  return null;
-}
-
-function isZipStreamingEntryBoundary(view, offset) {
-  if (offset === view.byteLength) {
-    return true;
-  }
-  if (offset + 4 > view.byteLength) {
-    return false;
-  }
-
-  const signature = view.getUint32(offset, true);
-  return (
-    signature === ZIP_LOCAL_FILE_HEADER_SIGNATURE ||
-    signature === ZIP_CENTRAL_DIRECTORY_SIGNATURE ||
-    signature === ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE
-  );
 }
 
 function findEndOfCentralDirectory(view) {
@@ -229,15 +172,48 @@ function findEndOfCentralDirectory(view) {
   return -1;
 }
 
-function decodeZipEntryName(bytes) {
-  return TEXT_DECODER.decode(bytes).replaceAll("\\", "/");
+function shouldExtractZipEntry(file) {
+  const name = normalizeZipEntryName(file?.name);
+  return Boolean(name) && !name.endsWith("/") && (
+    name.toLowerCase().endsWith(".json") ||
+    Boolean(getImageMimeType(name))
+  );
+}
+
+function normalizeZipEntryName(name) {
+  return String(name || "").replaceAll("\\", "/");
+}
+
+function concatenateBytes(chunks) {
+  if (chunks.length === 0) {
+    return new Uint8Array();
+  }
+  if (chunks.length === 1) {
+    return chunks[0];
+  }
+
+  const byteLength = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const result = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
+function mapZipLibraryError(error, zipLibrary) {
+  if (error?.code === zipLibrary.FlateErrorCode.UnknownCompressionMethod) {
+    return createLcappsError("lcappsUnsupportedCompression", { cause: error });
+  }
+  return createLcappsError("lcappsInvalidZip", { cause: error });
 }
 
 async function findAppsJsonEntry(entries) {
   const jsonEntries = entries.filter((entry) => entry.name.toLowerCase().endsWith(".json"));
   for (const entry of jsonEntries) {
     try {
-      const text = TEXT_DECODER.decode(await readZipEntryBytes(entry));
+      const text = TEXT_DECODER.decode(entry.bytes);
       if (extractAppObjects(parseJsonPayload(text)).length === 0) {
         throw createLcappsError("lcappsEmpty");
       }
@@ -295,7 +271,7 @@ async function buildIconStore(entries) {
       continue;
     }
 
-    const bytes = await readZipEntryBytes(entry);
+    const bytes = entry.bytes;
     const icon = {
       name: entry.name,
       baseName: getBaseName(entry.name),
@@ -315,55 +291,6 @@ async function buildIconStore(entries) {
     byBaseName,
     byStem,
   };
-}
-
-async function readZipEntryBytes(entry) {
-  const compressedBytes = readCompressedZipEntryBytes(entry);
-  if (entry.compressionMethod === 0) {
-    return compressedBytes;
-  }
-
-  if (entry.compressionMethod === 8) {
-    return inflateZipDeflate(compressedBytes);
-  }
-
-  throw createLcappsError("lcappsUnsupportedCompression");
-}
-
-function readCompressedZipEntryBytes(entry) {
-  const view = new DataView(entry.buffer);
-  const offset = entry.localHeaderOffset;
-  if (view.getUint32(offset, true) !== ZIP_LOCAL_FILE_HEADER_SIGNATURE) {
-    throw createLcappsError("lcappsInvalidZip");
-  }
-
-  const nameLength = view.getUint16(offset + 26, true);
-  const extraLength = view.getUint16(offset + 28, true);
-  const dataStart = offset + 30 + nameLength + extraLength;
-  const dataEnd = dataStart + entry.compressedSize;
-  if (dataStart < 0 || dataEnd > entry.buffer.byteLength || dataEnd < dataStart) {
-    throw createLcappsError("lcappsInvalidZip");
-  }
-
-  return new Uint8Array(entry.buffer, dataStart, entry.compressedSize);
-}
-
-async function inflateZipDeflate(bytes) {
-  if (typeof DecompressionStream !== "function") {
-    throw createLcappsError("unsupportedDecompression");
-  }
-
-  let lastError = null;
-  for (const format of ["deflate-raw", "deflate"]) {
-    try {
-      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
-      return new Uint8Array(await new Response(stream).arrayBuffer());
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw createLcappsError("lcappsUnsupportedCompression", { cause: lastError });
 }
 
 function normalizeLcappsReport(item, context) {

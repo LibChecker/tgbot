@@ -109,6 +109,23 @@ test("uses and falls back from the optional ZIP parser profile hook", () => {
   assert.equal(fallbackEntries.has("AndroidManifest.xml"), true);
 });
 
+test("rejects damaged or missing ZIP directory records in the JS fallback", () => {
+  const zipBytes = createStoredZipWithSingleEntry("AndroidManifest.xml", new Uint8Array([1]));
+  const damagedBytes = zipBytes.slice();
+  const centralDirectoryOffset = findZipSignature(damagedBytes, 0x02014b50);
+  assert.notEqual(centralDirectoryOffset, -1);
+  damagedBytes[centralDirectoryOffset] = 0;
+
+  assert.throws(
+    () => __apkTestInternals.parseZipEntries(damagedBytes),
+    /APK ZIP 中央目录损坏/u,
+  );
+  assert.throws(
+    () => __apkTestInternals.parseZipEntries(zipBytes.subarray(0, zipBytes.byteLength - 22)),
+    /APK ZIP 结束记录不存在/u,
+  );
+});
+
 function createSource(files) {
   const fileMap = new Map(Object.entries(files));
   const zipEntries = new Map(
@@ -195,6 +212,16 @@ function createStoredZipWithSingleEntry(path, data) {
   eocdView.setUint32(16, centralDirectoryOffset, true);
 
   return concatBytes(localHeader, data, centralDirectory, eocd);
+}
+
+function findZipSignature(bytes, signature) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let offset = 0; offset <= view.byteLength - 4; offset += 1) {
+    if (view.getUint32(offset, true) === signature) {
+      return offset;
+    }
+  }
+  return -1;
 }
 
 function concatBytes(...chunks) {
