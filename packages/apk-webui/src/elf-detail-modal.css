@@ -12,7 +12,9 @@
 }
 
 .elf-detail-dialog::backdrop {
-  background: rgb(12 8 18 / 0.42);
+  background: rgb(12 8 18 / 0.18);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08);
+  backdrop-filter: blur(16px) saturate(1.08);
 }
 
 .elf-detail-panel {
@@ -447,4 +449,3 @@
     transform: rotate(360deg);
   }
 }
-
