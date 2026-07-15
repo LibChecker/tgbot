@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 import sharp from "sharp";
 
 import { BUILD_FEATURE_ICON_NAMES } from "../packages/shared/src/build-feature-icons.js";
@@ -32,7 +33,28 @@ const SVG_TO_TGS_SCRIPT = fileURLToPath(new URL("./svg-to-tgs.py", import.meta.u
 const SVG_TO_TGS_PYTHON = process.env.TELEGRAM_SDK_EMOJI_PYTHON || process.env.PYTHON || "python";
 
 const [, , ...argv] = process.argv;
-const options = parseArgs(argv);
+const { values: options } = parseArgs({
+  args: argv,
+  options: {
+    "sticker-format": { type: "string" },
+    "allow-static": { type: "boolean" },
+    "self-test": { type: "boolean" },
+    "dry-run": { type: "boolean" },
+    check: { type: "boolean" },
+    "bot-token": { type: "string" },
+    "owner-id": { type: "string" },
+    "bot-username": { type: "string" },
+    "set-base": { type: "string" },
+    "set-title": { type: "string" },
+    "render-check": { type: "boolean" },
+    "kv-namespace-id": { type: "string" },
+    "kv-namespace-title": { type: "string" },
+    "kv-namespace-name": { type: "string" },
+    "cloudflare-account-id": { type: "string" },
+    "cloudflare-api-token": { type: "string" },
+    "kv-key": { type: "string" },
+  },
+});
 const stickerFormat = normalizeStickerFormat(options["sticker-format"] || process.env.TELEGRAM_SDK_EMOJI_FORMAT);
 if (stickerFormat !== "animated" && !getBooleanOption("allow-static")) {
   fail("Static SDK emoji sync is disabled by default. Pass --allow-static only when raster PNG/WebP emoji are intentional.");
@@ -1068,33 +1090,6 @@ async function runRenderCheck() {
     max: sizes[0],
     largest: sizes.slice(0, 5),
   }, null, 2)}\n`);
-}
-
-function parseArgs(args) {
-  const result = {};
-  for (let index = 0; index < args.length; index += 1) {
-    const token = args[index];
-    if (!token.startsWith("--")) {
-      continue;
-    }
-
-    const key = token.slice(2);
-    const equalIndex = key.indexOf("=");
-    if (equalIndex >= 0) {
-      result[key.slice(0, equalIndex)] = key.slice(equalIndex + 1);
-      continue;
-    }
-
-    const next = args[index + 1];
-    if (!next || next.startsWith("--")) {
-      result[key] = "true";
-      continue;
-    }
-
-    result[key] = next;
-    index += 1;
-  }
-  return result;
 }
 
 function getBooleanOption(name) {

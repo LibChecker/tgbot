@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseArgs as parseCliArgs } from "node:util";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageDir = resolve(scriptDir, "..");
@@ -33,38 +34,32 @@ try {
 }
 
 function parseArgs(args) {
-  const parsed = {
-    compareHead: false,
-    srcDir: defaultSrcDir,
-    label: "after:worktree",
-    iterations: 60,
-    warmup: 8,
-    samples: [],
-  };
+  const { values } = parseCliArgs({
+    args,
+    options: {
+      "compare-head": { type: "boolean" },
+      "src-dir": { type: "string" },
+      label: { type: "string" },
+      iterations: { type: "string" },
+      warmup: { type: "string" },
+      sample: { type: "string", multiple: true },
+      help: { type: "boolean" },
+    },
+  });
 
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--compare-head") {
-      parsed.compareHead = true;
-    } else if (arg === "--src-dir") {
-      parsed.srcDir = resolve(repoDir, args[++index] || "");
-    } else if (arg === "--label") {
-      parsed.label = args[++index] || parsed.label;
-    } else if (arg === "--iterations") {
-      parsed.iterations = Math.max(5, Number(args[++index]) || parsed.iterations);
-    } else if (arg === "--warmup") {
-      parsed.warmup = Math.max(0, Number(args[++index]) || parsed.warmup);
-    } else if (arg === "--sample") {
-      parsed.samples.push(resolve(args[++index] || ""));
-    } else if (arg === "--help") {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown benchmark option: ${arg}`);
-    }
+  if (values.help) {
+    printHelp();
+    process.exit(0);
   }
 
-  return parsed;
+  return {
+    compareHead: values["compare-head"] || false,
+    srcDir: values["src-dir"] ? resolve(repoDir, values["src-dir"]) : defaultSrcDir,
+    label: values.label || "after:worktree",
+    iterations: Math.max(5, Number(values.iterations) || 60),
+    warmup: Math.max(0, Number(values.warmup) || 8),
+    samples: (values.sample || []).map((sample) => resolve(sample)),
+  };
 }
 
 function printHelp() {

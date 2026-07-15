@@ -347,6 +347,21 @@ test("report data route rejects publishes from untrusted origins", async () => {
     });
 
     assert.equal(response.status, 403);
+
+    const oversizedResponse = await app.request("https://worker.example.com/report-data?lang=en", {
+      method: "POST",
+      headers: {
+        origin: "https://attacker.example.com",
+        "content-type": "application/json; charset=UTF-8",
+        "content-length": String(5 * 1024 * 1024),
+      },
+      body: "{}",
+    }, {
+      REPORT_DATA_BUCKET: bucket,
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+
+    assert.equal(oversizedResponse.status, 403);
     assert.equal(bucket.objects.size, 0);
   } finally {
     console.log = originalLog;
@@ -375,6 +390,92 @@ test("report data route rejects oversized publish bodies", async () => {
     });
 
     assert.equal(response.status, 413);
+
+    const contentLengthResponse = await app.request("https://worker.example.com/report-data?lang=en", {
+      method: "POST",
+      headers: {
+        origin: "https://webui.example.com",
+        "content-type": "application/json; charset=UTF-8",
+        "content-length": String(5 * 1024 * 1024),
+      },
+      body: "{}",
+    }, {
+      REPORT_DATA_BUCKET: createMemoryBucket(),
+      WEBUI_SITE_URL: "https://webui.example.com/",
+    });
+
+    assert.equal(contentLengthResponse.status, 413);
+  } finally {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  }
+});
+
+test("admin routes accept bearer and legacy admin token headers", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  console.log = () => {};
+  globalThis.fetch = async () => Response.json({
+    ok: true,
+    result: {
+      url: "https://worker.example.com/webhook",
+      pending_update_count: 0,
+    },
+  });
+
+  try {
+    for (const headers of [
+      { authorization: "Bearer admin-secret" },
+      { "x-admin-token": "admin-secret" },
+    ]) {
+      const response = await app.request("https://worker.example.com/admin/webhook", {
+        headers,
+      }, {
+        ADMIN_TOKEN: "admin-secret",
+        BOT_TOKEN: "bot-token",
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).ok, true);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+  }
+});
+
+test("admin and webhook routes reject invalid secrets", async () => {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  console.log = () => {};
+  console.warn = () => {};
+
+  try {
+    const adminResponse = await app.request("https://worker.example.com/admin/webhook", {
+      headers: {
+        authorization: "Bearer wrong-secret",
+      },
+    }, {
+      ADMIN_TOKEN: "admin-secret",
+      BOT_TOKEN: "bot-token",
+    });
+    assert.equal(adminResponse.status, 401);
+
+    const webhookResponse = await app.request("https://worker.example.com/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": "wrong-secret",
+      },
+      body: "{}",
+    }, {
+      BOT_TOKEN: "bot-token",
+      TELEGRAM_WEBHOOK_SECRET: "webhook-secret",
+    }, {
+      passThroughOnException() {},
+      waitUntil() {},
+    });
+    assert.equal(webhookResponse.status, 401);
   } finally {
     console.log = originalLog;
     console.warn = originalWarn;

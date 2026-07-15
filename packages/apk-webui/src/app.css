@@ -2014,7 +2014,9 @@ svg {
   margin: 0;
   color: var(--muted);
   font-size: 10px;
-  white-space: nowrap;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .progress,

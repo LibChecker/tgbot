@@ -1,5 +1,7 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
+import { timingSafeEqual } from "hono/utils/buffer";
 import { readAndroidPackageInfo } from "../../shared/src/apk.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
@@ -41,6 +43,23 @@ let sdkRuleAnnotatorPromise = null;
 let reportStoreModulePromise = null;
 
 const app = new Hono();
+const reportDataPublishOriginGuard = async (context, next) => {
+  if (isAllowedReportPublishOrigin(context.env, context.req.header("origin") || "")) {
+    return next();
+  }
+
+  return respondReportDataPublishError(
+    context,
+    createErrorWithCode("report_data_publish_origin_forbidden", "Report publishing is not allowed from this origin"),
+  );
+};
+const reportDataBodyLimit = bodyLimit({
+  maxSize: MAX_REPORT_PUBLISH_BODY_BYTES,
+  onError: (context) => respondReportDataPublishError(
+    context,
+    createErrorWithCode("request_body_too_large", "Request body is too large"),
+  ),
+});
 
 app.use("*", async (context, next) => {
   const request = context.req.raw;
@@ -118,17 +137,14 @@ app.get("/report-data", async (context) => {
   }
 });
 
-app.post("/report-data", async (context) => {
+app.post("/report-data", reportDataPublishOriginGuard, reportDataBodyLimit, async (context) => {
   const url = getRequestUrl(context);
   const telemetry = getRequestTelemetry(context);
   const startedAt = Date.now();
   const locale = normalizeLocale(url.searchParams.get("lang"));
 
   try {
-    if (!isAllowedReportPublishOrigin(context.env, context.req.header("origin") || "")) {
-      throw createErrorWithCode("report_data_publish_origin_forbidden", "Report publishing is not allowed from this origin");
-    }
-    const payload = await readJsonBodyWithLimit(context.req.raw, MAX_REPORT_PUBLISH_BODY_BYTES);
+    const payload = await readJsonBodyStrict(context.req.raw);
     const { createApkReportDataEntry } = await loadReportStoreModule();
     const entry = await createApkReportDataEntry(context.env, payload?.report);
     const reportUrl = buildWebUiReportUrl(
@@ -149,18 +165,7 @@ app.post("/report-data", async (context) => {
       url: reportUrl,
     });
   } catch (error) {
-    const status = getReportPublishErrorStatus(error);
-    logWarnEvent(context.env, telemetry, "report.data_publish_failed", {
-      result: "error",
-      http_status: status,
-      duration_ms: Date.now() - startedAt,
-      ...getErrorTelemetryFields(error),
-    });
-    return context.json({
-      error: {
-        message: getLocalizedErrorMessage(error, locale),
-      },
-    }, status);
+    return respondReportDataPublishError(context, error, startedAt, locale, telemetry);
   }
 });
 
@@ -240,7 +245,7 @@ async function handleWebhookRequest(request, env, ctx, requestOrigin, telemetry)
     return new Response("BOT_TOKEN is not configured", { status: 500 });
   }
 
-  if (!isWebhookSecretValid(request, env)) {
+  if (!await isWebhookSecretValid(request, env)) {
     logWarnEvent(
       env,
       telemetry,
@@ -326,7 +331,7 @@ async function handleAdminRequest(request, env, url, telemetry) {
     );
   }
 
-  if (!isAdminAuthorized(request, env.ADMIN_TOKEN)) {
+  if (!await isAdminAuthorized(request, env.ADMIN_TOKEN)) {
     logWarnEvent(
       env,
       telemetry,
@@ -1255,22 +1260,25 @@ async function analyzeApkUrl(env, message, apkUrl, requestOrigin, telemetry, loc
   }
 }
 
-function isWebhookSecretValid(request, env) {
+async function isWebhookSecretValid(request, env) {
   const expected = env.TELEGRAM_WEBHOOK_SECRET?.trim();
   if (!expected) {
     return true;
   }
 
-  return request.headers.get("X-Telegram-Bot-Api-Secret-Token") === expected;
+  return timingSafeEqual(
+    request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "",
+    expected,
+  );
 }
 
-function isAdminAuthorized(request, adminToken) {
+async function isAdminAuthorized(request, adminToken) {
   const authorization = request.headers.get("authorization");
   if (authorization?.startsWith("Bearer ")) {
-    return authorization.slice("Bearer ".length) === adminToken;
+    return timingSafeEqual(authorization.slice("Bearer ".length), adminToken);
   }
 
-  return request.headers.get("x-admin-token") === adminToken;
+  return timingSafeEqual(request.headers.get("x-admin-token") || "", adminToken);
 }
 
 function buildWebhookUrl(url, env) {
@@ -1488,21 +1496,12 @@ async function readJsonBody(request) {
   }
 }
 
-async function readJsonBodyWithLimit(request, maxBytes) {
-  const contentLength = parseContentLengthHeader(request.headers.get("content-length"));
-  if (contentLength > maxBytes) {
-    throw createErrorWithCode("request_body_too_large", "Request body is too large");
-  }
-
+async function readJsonBodyStrict(request) {
   let text = "";
   try {
     text = await request.text();
   } catch {
     throw createErrorWithCode("invalid_json_request_body", "Invalid JSON request body");
-  }
-
-  if (new TextEncoder().encode(text).byteLength > maxBytes) {
-    throw createErrorWithCode("request_body_too_large", "Request body is too large");
   }
 
   try {
@@ -1537,6 +1536,27 @@ function getReportPublishErrorStatus(error) {
   }
 
   return error instanceof TypeError ? 400 : 500;
+}
+
+function respondReportDataPublishError(
+  context,
+  error,
+  startedAt = Date.now(),
+  locale = normalizeLocale(getRequestUrl(context).searchParams.get("lang")),
+  telemetry = getRequestTelemetry(context),
+) {
+  const status = getReportPublishErrorStatus(error);
+  logWarnEvent(context.env, telemetry, "report.data_publish_failed", {
+    result: "error",
+    http_status: status,
+    duration_ms: Date.now() - startedAt,
+    ...getErrorTelemetryFields(error),
+  });
+  return context.json({
+    error: {
+      message: getLocalizedErrorMessage(error, locale),
+    },
+  }, status);
 }
 
 function jsonResponse(data, status = 200) {

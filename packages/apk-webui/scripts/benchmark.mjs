@@ -8,6 +8,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { spawn } from "node:child_process";
 import { gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
+import { parseArgs as parseCliArgs } from "node:util";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoDir = resolve(projectDir, "../..");
@@ -94,36 +95,30 @@ try {
 }
 
 function parseArgs(args) {
-  const parsed = {
-    dist: "",
-    label: "",
-    output: "",
-    samples: [],
-    url: "",
-  };
+  const { values } = parseCliArgs({
+    args,
+    options: {
+      dist: { type: "string" },
+      label: { type: "string" },
+      output: { type: "string" },
+      sample: { type: "string", multiple: true },
+      url: { type: "string" },
+      help: { type: "boolean" },
+    },
+  });
 
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--dist") {
-      parsed.dist = args[++index] || "";
-    } else if (arg === "--label") {
-      parsed.label = args[++index] || "";
-    } else if (arg === "--output") {
-      parsed.output = args[++index] || "";
-    } else if (arg === "--sample") {
-      parsed.samples.push(args[++index] || "");
-    } else if (arg === "--url") {
-      parsed.url = args[++index] || "";
-    } else if (arg === "--help") {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown benchmark option: ${arg}`);
-    }
+  if (values.help) {
+    printHelp();
+    process.exit(0);
   }
 
-  parsed.samples = parsed.samples.filter(Boolean);
-  return parsed;
+  return {
+    dist: values.dist || "",
+    label: values.label || "",
+    output: values.output || "",
+    samples: (values.sample || []).filter(Boolean),
+    url: values.url || "",
+  };
 }
 
 function printHelp() {

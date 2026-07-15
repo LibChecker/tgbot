@@ -1,8 +1,19 @@
 import { readFileSync } from "node:fs";
+import { parseArgs } from "node:util";
 
 const [, , action = "info", ...restArgs] = process.argv;
 
-const options = parseArgs(restArgs);
+const { values: options } = parseArgs({
+  args: restArgs,
+  options: {
+    "direct-telegram": { type: "boolean" },
+    "bot-token": { type: "string" },
+    "worker-url": { type: "string" },
+    "admin-token": { type: "string" },
+    "webhook-url": { type: "string" },
+    "drop-pending-updates": { type: "boolean" },
+  },
+});
 const directTelegram = getBooleanFlag(
   options["direct-telegram"],
   process.env.DIRECT_TELEGRAM_WEBHOOK,
@@ -205,35 +216,6 @@ async function callAdminApi(baseUrl, adminTokenValue, path, request) {
   }
 
   return data ?? { ok: true, raw: responseText };
-}
-
-function parseArgs(args) {
-  const result = {};
-
-  for (let index = 0; index < args.length; index += 1) {
-    const token = args[index];
-    if (!token.startsWith("--")) {
-      continue;
-    }
-
-    const normalized = token.slice(2);
-    const equalIndex = normalized.indexOf("=");
-    if (equalIndex >= 0) {
-      result[normalized.slice(0, equalIndex)] = normalized.slice(equalIndex + 1);
-      continue;
-    }
-
-    const next = args[index + 1];
-    if (!next || next.startsWith("--")) {
-      result[normalized] = "true";
-      continue;
-    }
-
-    result[normalized] = next;
-    index += 1;
-  }
-
-  return result;
 }
 
 function getBooleanFlag(value, fallback) {

@@ -14,9 +14,17 @@ test("parseHttpUrl rejects blocked localhost and private hosts", () => {
     "http://0x7f000001/file.apk",
     "http://0177.0.0.1/file.apk",
     "http://3232235521/file.apk",
+    "http://100.64.0.1/file.apk",
+    "http://198.18.0.1/file.apk",
+    "http://224.0.0.1/file.apk",
     "https://[::1]/file.apk",
+    "https://[::]/file.apk",
+    "https://[::ffff:127.0.0.1]/file.apk",
     "http://192.168.1.1/file.apk",
     "https://[fe80::1]/file.apk",
+    "https://[fd00::1]/file.apk",
+    "https://[fec0::1]/file.apk",
+    "https://[ff00::1]/file.apk",
     "http://example.local/file.apk",
     "http://example.local./file.apk",
   ];
@@ -33,6 +41,9 @@ test("parseHttpUrl accepts public URLs and removes URL fragments", () => {
   const url = parseHttpUrl("https://example.com/sample.apk#preview");
 
   assert.equal(url.href, "https://example.com/sample.apk");
+
+  assert.equal(parseHttpUrl("https://8.8.8.8/sample.apk").hostname, "8.8.8.8");
+  assert.equal(parseHttpUrl("https://[2001:4860:4860::8888]/sample.apk").hostname, "[2001:4860:4860::8888]");
 });
 
 test("parseHttpUrl enforces supported URL schemes", () => {

@@ -3,6 +3,7 @@ import { existsSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
 
 const repoDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workerConfigPath = resolve(repoDir, "packages/bot-worker/wrangler.toml");
@@ -47,8 +48,18 @@ const TARGETS = {
   },
 };
 
-const options = parseArgs(process.argv.slice(2));
-const targetName = String(options.target || options._[0] || "preview").toLowerCase();
+const { values: options, positionals: targetArgs } = parseArgs({
+  args: process.argv.slice(2),
+  allowPositionals: true,
+  options: {
+    target: { type: "string" },
+    "skip-preflight": { type: "boolean" },
+    "preflight-only": { type: "boolean" },
+    "worker-only": { type: "boolean" },
+    "pages-only": { type: "boolean" },
+  },
+});
+const targetName = String(options.target || targetArgs[0] || "preview").toLowerCase();
 const target = TARGETS[targetName];
 
 if (!target) {
@@ -514,34 +525,6 @@ function quoteWindowsCommandArg(value) {
   }
 
   return `"${text.replaceAll('"', '""')}"`;
-}
-
-function parseArgs(args) {
-  const parsed = { _: [] };
-  for (let index = 0; index < args.length; index += 1) {
-    const token = args[index];
-    if (!token.startsWith("--")) {
-      parsed._.push(token);
-      continue;
-    }
-
-    const normalized = token.slice(2);
-    const equalIndex = normalized.indexOf("=");
-    if (equalIndex >= 0) {
-      parsed[normalized.slice(0, equalIndex)] = normalized.slice(equalIndex + 1);
-      continue;
-    }
-
-    const next = args[index + 1];
-    if (!next || next.startsWith("--")) {
-      parsed[normalized] = true;
-      continue;
-    }
-
-    parsed[normalized] = next;
-    index += 1;
-  }
-  return parsed;
 }
 
 function formatCommand(command, args) {

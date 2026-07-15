@@ -46,3 +46,12 @@ test("static shell styling stays in stylesheets", async () => {
   const indexHtml = await readSource("src/index.html");
   assert.doesNotMatch(indexHtml, /\sstyle="/u);
 });
+
+test("localized action notes can wrap inside the tool panel", async () => {
+  const appCss = await readSource("src/app.css");
+  const localNoteRule = appCss.match(/^\.local-note\s*\{([^}]*)\}/msu)?.[1] || "";
+
+  assert.match(localNoteRule, /\boverflow-wrap:\s*anywhere;/u);
+  assert.match(localNoteRule, /\bwhite-space:\s*normal;/u);
+  assert.doesNotMatch(localNoteRule, /\bwhite-space:\s*nowrap;/u);
+});
