@@ -268,6 +268,8 @@ function summarizeNativeSdkMarkers(libraries, resolveIconUrl) {
       detailKey: entry.detailKey || null,
       ruleDetail: entry.ruleDetail || null,
       count: entry.count,
+      fileCount: entry.fileCount,
+      abis: [...entry.abis].filter(Boolean).sort(),
       detail: buildNativeSummaryDetail(entry),
       previewItems: [...entry.itemNames].slice(0, 4),
     }))
@@ -333,10 +335,12 @@ function summarizeComponentSdkMarkers(components, resolveIconUrl) {
 function buildNativeSummaryDetail(entry) {
   const abiText = [...entry.abis].sort().join(", ");
   if (!abiText) {
-    return `${entry.fileCount} 个文件`;
+    return `${entry.fileCount} ${entry.fileCount === 1 ? "file" : "files"}`;
   }
 
-  return `${entry.count} 个库名 · ${entry.fileCount} 个文件 · ABI ${abiText}`;
+  const libraryLabel = entry.count === 1 ? "library name" : "library names";
+  const fileLabel = entry.fileCount === 1 ? "file" : "files";
+  return `${entry.count} ${libraryLabel} · ${entry.fileCount} ${fileLabel} · ABI ${abiText}`;
 }
 
 function buildComponentSummaryDetail(entry) {

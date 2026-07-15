@@ -5,6 +5,7 @@ import { createServer, mergeConfig } from "vite";
 import viteConfig from "../vite.config.mjs";
 
 let viteServer;
+let i18n;
 let reportRenderer;
 
 before(async () => {
@@ -13,11 +14,72 @@ before(async () => {
     logLevel: "silent",
     server: { middlewareMode: true },
   }));
+  i18n = await viteServer.ssrLoadModule("/app/i18n.js");
   reportRenderer = await viteServer.ssrLoadModule("/app/report-renderer.js");
 });
 
 after(async () => {
   await viteServer?.close();
+});
+
+test("report version labels use semantic localized names", () => {
+  assert.equal(i18n.translate("en", "versionName"), "Version Name");
+  assert.equal(i18n.translate("en", "versionCode"), "Version Code");
+  assert.equal(i18n.translate("zh-Hans", "versionName"), "版本名称");
+  assert.equal(i18n.translate("zh-Hans", "versionCode"), "版本号");
+});
+
+test("native SDK summary details follow the active locale", () => {
+  const report = createReport({
+    sdkSummary: {
+      native: [{
+        label: "Sample SDK",
+        count: 1,
+        fileCount: 4,
+        abis: ["arm64-v8a", "x86_64"],
+        detail: "1 library name · 4 files · ABI arm64-v8a, x86_64",
+        previewItems: ["libsample.so"],
+      }],
+      components: [],
+    },
+  });
+
+  setupRenderer("sdk", {}, {
+    locale: "en",
+    translate: (key, variables) => i18n.translate("en", key, variables),
+  });
+  const englishHtml = reportRenderer.renderTabPanelHtml(report);
+  assert.match(englishHtml, /1 library name · 4 files · ABI arm64-v8a, x86_64/);
+  assert.doesNotMatch(englishHtml, /个库名|个文件/);
+
+  setupRenderer("sdk", {}, {
+    locale: "zh-Hans",
+    translate: (key, variables) => i18n.translate("zh-Hans", key, variables),
+  });
+  const chineseHtml = reportRenderer.renderTabPanelHtml(report);
+  assert.match(chineseHtml, /1 个库名 · 4 个文件 · ABI arm64-v8a, x86_64/);
+});
+
+test("native SDK summary localizes legacy stored detail text", () => {
+  const report = createReport({
+    sdkSummary: {
+      native: [{
+        label: "Legacy SDK",
+        count: 1,
+        detail: "1 个库名 · 4 个文件 · ABI arm64-v8a, x86_64",
+        previewItems: [],
+      }],
+      components: [],
+    },
+  });
+
+  setupRenderer("sdk", {}, {
+    locale: "en",
+    translate: (key, variables) => i18n.translate("en", key, variables),
+  });
+  const html = reportRenderer.renderTabPanelHtml(report);
+  assert.match(html, /1 library name · 4 files · ABI arm64-v8a, x86_64/);
+  assert.doesNotMatch(html, /个库名|个文件/);
 });
 
 test("report renderer caps long permission lists", () => {
@@ -112,7 +174,7 @@ test("report hero labels only local reports as local files", () => {
   assert.doesNotMatch(reportRenderer.renderHero(legacyUrlReport), /Local file/);
 });
 
-function setupRenderer(activeTab, sdkIconRendererOverrides = {}) {
+function setupRenderer(activeTab, sdkIconRendererOverrides = {}, localization = {}) {
   reportRenderer.configureReportRenderer({
     runtime: {
       sdkIconRendererModule: {
@@ -126,9 +188,9 @@ function setupRenderer(activeTab, sdkIconRendererOverrides = {}) {
     state: {
       activeTab,
       activeNativeAbi: "",
-      locale: "en",
+      locale: localization.locale || "en",
     },
-    t,
+    t: localization.translate || t,
     formatDate: (value) => String(value || ""),
     trackWebEvent: () => {},
     getReportAnalyticsFields: () => ({}),

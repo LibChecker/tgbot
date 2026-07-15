@@ -614,7 +614,7 @@ function renderSdkRows(entries) {
   const rows = visibleItems.map((entry) => {
     const width = Math.max(4, Math.round(((entry.count || 0) / max) * 100));
     const preview = renderCodeChipList(entry.previewItems || []);
-    const detail = joinTextParts([entry.source, entry.detail]);
+    const detail = joinTextParts([entry.source, formatSdkSummaryDetail(entry)]);
     return [
       `<article class="sdk-row">`,
       `<div class="sdk-row-header">`,
@@ -629,6 +629,64 @@ function renderSdkRows(entries) {
   }).join("");
 
   return `<div class="sdk-stack">${rows}${renderOverflowNote(hiddenCount)}</div>`;
+}
+
+function formatSdkSummaryDetail(entry) {
+  const structured = formatNativeSdkSummaryDetail(entry.count, entry.fileCount, entry.abis);
+  if (structured) {
+    return structured;
+  }
+
+  const legacy = parseLegacyNativeSdkSummaryDetail(entry.detail);
+  if (legacy) {
+    return formatNativeSdkSummaryDetail(legacy.libraryCount, legacy.fileCount, legacy.abis);
+  }
+
+  return entry.detail || "";
+}
+
+function formatNativeSdkSummaryDetail(libraryCount, fileCount, abis = []) {
+  const normalizedFileCount = Number(fileCount);
+  if (!Number.isFinite(normalizedFileCount)) {
+    return "";
+  }
+
+  const normalizedLibraryCount = libraryCount == null ? null : Number(libraryCount);
+  const parts = [];
+  if (normalizedLibraryCount != null && Number.isFinite(normalizedLibraryCount)) {
+    parts.push(t(
+      normalizedLibraryCount === 1 ? "sdkNativeLibraryCountOne" : "sdkNativeLibraryCountMany",
+      { count: normalizedLibraryCount },
+    ));
+  }
+  parts.push(t(
+    normalizedFileCount === 1 ? "sdkNativeFileCountOne" : "sdkNativeFileCountMany",
+    { count: normalizedFileCount },
+  ));
+
+  const abiText = Array.isArray(abis) ? abis.filter(Boolean).join(", ") : String(abis || "");
+  if (abiText) {
+    parts.push(`ABI ${abiText}`);
+  }
+  return joinTextParts(parts);
+}
+
+function parseLegacyNativeSdkSummaryDetail(detail) {
+  const text = String(detail || "");
+  const fullMatch = text.match(/^(\d+) 个库名 · (\d+) 个文件(?: · ABI (.+))?$/u);
+  if (fullMatch) {
+    return {
+      libraryCount: Number(fullMatch[1]),
+      fileCount: Number(fullMatch[2]),
+      abis: fullMatch[3] ? fullMatch[3].split(/,\s*/u) : [],
+    };
+  }
+
+  const filesOnlyMatch = text.match(/^(\d+) 个文件$/u);
+  if (filesOnlyMatch) {
+    return { libraryCount: null, fileCount: Number(filesOnlyMatch[1]), abis: [] };
+  }
+  return null;
 }
 
 function renderCodeChipList(items) {

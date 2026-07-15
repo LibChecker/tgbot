@@ -1620,7 +1620,6 @@ function ensureReportPreviewInteractions() {
     runtime.reportPreviewInteractionsPromise = import("./app/report-preview-interactions.js")
       .then(({ initReportPreviewInteractions }) => {
         initReportPreviewInteractions({
-          runtime,
           state,
           t,
           ensureRulePreviewMaterial,

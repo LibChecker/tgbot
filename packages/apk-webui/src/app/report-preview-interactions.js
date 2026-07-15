@@ -1,4 +1,5 @@
 import { clamp } from "./math.js";
+import { getRegisteredSdkRuleDetail } from "./sdk-icon-renderer.js";
 
 const tapPopupMedia = window.matchMedia("(hover: none), (pointer: coarse)");
 const supportsPointerEvents = typeof window.PointerEvent === "function";
@@ -6,7 +7,6 @@ const CONTRIBUTOR_GITHUB_ALIASES = new Map([
   ["absinthe", "zhaobozhen"],
 ]);
 
-let runtime = null;
 let state = null;
 let t = () => "";
 let ensureRulePreviewMaterial = () => {};
@@ -15,7 +15,6 @@ let setLiquidGlassHighlightFromClientPoint = () => {};
 let scheduleRulePreviewMaterialWarmup = () => {};
 
 export function initReportPreviewInteractions(options) {
-  runtime = options.runtime;
   state = options.state;
   t = options.t;
   ensureRulePreviewMaterial = options.ensureRulePreviewMaterial;
@@ -358,7 +357,7 @@ function initSdkRulePreview() {
       return;
     }
 
-    const detail = runtime.sdkIconRendererModule?.getRegisteredSdkRuleDetail(label.dataset.ruleDetailId) || null;
+    const detail = getRegisteredSdkRuleDetail(label.dataset.ruleDetailId);
     const content = buildRulePreviewContent(label, detail);
     if (!content) {
       hidePreview();

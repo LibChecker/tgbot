@@ -174,6 +174,8 @@
  * @property {string | null=} detailKey
  * @property {LibCheckerRuleDetail | null} ruleDetail
  * @property {number} count
+ * @property {number=} fileCount
+ * @property {string[]=} abis
  * @property {string} detail
  * @property {string[]} previewItems
  */

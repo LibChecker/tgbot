@@ -6,8 +6,6 @@ const NON_TRANSLATABLE_MESSAGES = Object.freeze({
   title: "LibChecker WebUI",
   tabSdk: "SDK",
   tabRaw: "JSON",
-  versionName: "versionName",
-  versionCode: "versionCode",
   targetSdk: "Target SDK",
   minSdk: "Min SDK",
   compileSdk: "Compile SDK",
