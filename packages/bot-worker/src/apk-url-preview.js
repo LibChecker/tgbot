@@ -1,4 +1,4 @@
-import { readApkInfoFromZipSource } from "../../shared/src/apk.js";
+import { applyNativeLibraryZipAlignments, readApkInfoFromZipSource } from "../../shared/src/apk.js";
 import ipaddr from "ipaddr.js";
 
 const EOCD_SIGNATURE = 0x06054b50;
@@ -16,6 +16,10 @@ const DEFAULT_MAX_ENTRY_COMPRESSED_BYTES = 24 * 1024 * 1024;
 const DEFAULT_MAX_RESOURCE_BYTES = 12 * 1024 * 1024;
 const METADATA_PROBE_BYTES = 1024;
 const LOCAL_HEADER_EXTRA_SLOP_BYTES = 512;
+const NATIVE_LOCAL_HEADER_PROBE_CONCURRENCY = 4;
+const MAX_NATIVE_LOCAL_HEADER_PROBES = 16;
+// Keep headroom below the Workers Free 50-subrequest limit for HEAD, R2/KV, and Telegram follow-ups.
+const OPTIONAL_NATIVE_HEADER_RANGE_REQUEST_CEILING = 32;
 const SMALL_ENTRY_COALESCE_MAX_BYTES = 128 * 1024;
 const SMALL_ENTRY_LOOKAHEAD_BYTES = 192 * 1024;
 const SMALL_ENTRY_COALESCE_MIN_OFFSET = 1024 * 1024;
@@ -144,6 +148,11 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
       scanDex: false,
       maxResourceBytes: options.maxResourceBytes ?? DEFAULT_MAX_RESOURCE_BYTES,
     });
+    await hydrateStoredNativeLibraryDataOffsets(apkUrl, zipEntries, stats, {
+      contentLength: metadata.contentLength,
+      rangeCache,
+    });
+    applyNativeLibraryZipAlignments(apkInfo.nativeLibraries, zipEntries);
     notifyUrlProgress(options, stats, diagnostics, "apk_metadata", 0.82);
 
     return {
@@ -228,6 +237,7 @@ async function fetchHeadMetadata(url) {
 }
 
 async function fetchRangeProbeMetadata(url, stats) {
+  stats.rangeRequestCount += 1;
   const response = await fetch(url, {
     headers: {
       ...buildRemoteHeaders(),
@@ -241,7 +251,6 @@ async function fetchRangeProbeMetadata(url, stats) {
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
-  stats.rangeRequestCount += 1;
   stats.downloadedBytes += bytes.byteLength;
 
   return {
@@ -463,6 +472,93 @@ function compactDiagnosticFields(fields) {
     }
   }
   return compacted;
+}
+
+async function hydrateStoredNativeLibraryDataOffsets(url, zipEntries, stats, options = {}) {
+  const requestedMaxProbes = Number(options.maxProbes ?? MAX_NATIVE_LOCAL_HEADER_PROBES);
+  const configuredMaxProbes = Number.isFinite(requestedMaxProbes)
+    ? Math.max(0, Math.trunc(requestedMaxProbes))
+    : MAX_NATIVE_LOCAL_HEADER_PROBES;
+  const remainingRangeRequestBudget = Math.max(
+    0,
+    OPTIONAL_NATIVE_HEADER_RANGE_REQUEST_CEILING - (Number(stats.rangeRequestCount) || 0),
+  );
+  const maxProbes = Math.min(configuredMaxProbes, remainingRangeRequestBudget);
+  const entries = [];
+  for (const [path, entry] of zipEntries.entries()) {
+    if (
+      entries.length >= maxProbes ||
+      !path.startsWith("lib/") ||
+      !path.endsWith(".so") ||
+      entry.compressionMethod !== ZIP_COMPRESSION_STORE ||
+      entry.dataOffset
+    ) {
+      continue;
+    }
+    entries.push(entry);
+  }
+
+  let nextIndex = 0;
+  let stopped = false;
+  const workerCount = Math.min(NATIVE_LOCAL_HEADER_PROBE_CONCURRENCY, entries.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (!stopped && nextIndex < entries.length) {
+      const entry = entries[nextIndex];
+      nextIndex += 1;
+      try {
+        const dataOffset = await readRemoteZipEntryDataOffset(url, entry, stats, options);
+        if (dataOffset > 0) {
+          entry.dataOffset = dataOffset;
+        }
+      } catch {
+        // Stop optional probes after a shared remote failure so required work keeps its request budget.
+        stopped = true;
+      }
+    }
+  });
+  await Promise.all(workers);
+}
+
+async function readRemoteZipEntryDataOffset(url, entry, stats, options) {
+  const headerOffset = Number(entry.localHeaderOffset);
+  const contentLength = Number(options.contentLength) || 0;
+  if (
+    !Number.isSafeInteger(headerOffset) ||
+    headerOffset < 0 ||
+    (contentLength > 0 && headerOffset + LOCAL_FILE_HEADER_FIXED_SIZE > contentLength)
+  ) {
+    return 0;
+  }
+
+  const header = hasAvailableRange(options.rangeCache, headerOffset, LOCAL_FILE_HEADER_FIXED_SIZE)
+    ? await downloadCachedRange(
+      url,
+      headerOffset,
+      LOCAL_FILE_HEADER_FIXED_SIZE,
+      stats,
+      options.rangeCache,
+    )
+    : await downloadRange(url, headerOffset, LOCAL_FILE_HEADER_FIXED_SIZE, stats);
+  if (
+    header.byteLength < LOCAL_FILE_HEADER_FIXED_SIZE ||
+    readUint32(header, 0) !== LOCAL_FILE_HEADER_SIGNATURE ||
+    readUint16(header, 8) !== ZIP_COMPRESSION_STORE
+  ) {
+    return 0;
+  }
+
+  const fileNameLength = readUint16(header, 26);
+  const extraLength = readUint16(header, 28);
+  const dataOffset = headerOffset + LOCAL_FILE_HEADER_FIXED_SIZE + fileNameLength + extraLength;
+  const dataEnd = dataOffset + (Number(entry.compressedSize) || 0);
+  if (
+    !Number.isSafeInteger(dataOffset) ||
+    !Number.isSafeInteger(dataEnd) ||
+    (contentLength > 0 && dataEnd > contentLength)
+  ) {
+    return 0;
+  }
+  return dataOffset;
 }
 
 async function downloadRemoteZipEntry(url, entry, stats, options) {
@@ -704,6 +800,7 @@ async function downloadRange(url, offset, length, stats) {
   }
 
   const end = offset + length - 1;
+  stats.rangeRequestCount += 1;
   const response = await fetch(url, {
     headers: {
       ...buildRemoteHeaders(),
@@ -717,7 +814,6 @@ async function downloadRange(url, offset, length, stats) {
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
-  stats.rangeRequestCount += 1;
   stats.downloadedBytes += bytes.byteLength;
   return bytes;
 }
@@ -850,6 +946,7 @@ async function inflateRaw(bytes) {
 
 export const __apkUrlPreviewTestInternals = {
   findEndOfCentralDirectory,
+  hydrateStoredNativeLibraryDataOffsets,
   parseCentralDirectory,
   parseEocd,
 };

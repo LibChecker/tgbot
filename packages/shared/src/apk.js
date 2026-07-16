@@ -2623,7 +2623,9 @@ async function collectNativeLibraries(source, options = {}) {
 }
 
 async function readNativeLibraryBinaryInfo(source, entry, parseElf, parserProfile = null) {
-  const info = {};
+  const info = {
+    zipCompression: getNativeLibraryZipCompression(entry),
+  };
   const zipAlignment = getNativeLibraryZipAlignment(entry);
   if (zipAlignment > 0) {
     info.zipAlignment = zipAlignment;
@@ -2647,6 +2649,39 @@ async function readNativeLibraryBinaryInfo(source, entry, parseElf, parserProfil
     info.elf16kbAligned = elfInfo.pageSize % NATIVE_PAGE_SIZE_16_KB === 0;
   }
   return info;
+}
+
+function getNativeLibraryZipCompression(entry) {
+  if (entry.compressionMethod === ZIP_COMPRESSION_STORE) {
+    return "store";
+  }
+  if (entry.compressionMethod === ZIP_COMPRESSION_DEFLATE) {
+    return "deflate";
+  }
+  return "unknown";
+}
+
+export function applyNativeLibraryZipAlignments(nativeLibraries, zipEntries) {
+  if (!Array.isArray(nativeLibraries) || !(zipEntries instanceof Map)) {
+    return;
+  }
+
+  for (const library of nativeLibraries) {
+    const entry = zipEntries.get(library?.path);
+    if (!entry) {
+      continue;
+    }
+
+    library.zipCompression = getNativeLibraryZipCompression(entry);
+    const zipAlignment = getNativeLibraryZipAlignment(entry);
+    if (zipAlignment > 0) {
+      library.zipAlignment = zipAlignment;
+      library.zip16kbAligned = zipAlignment >= NATIVE_PAGE_SIZE_16_KB;
+    } else {
+      delete library.zipAlignment;
+      delete library.zip16kbAligned;
+    }
+  }
 }
 
 function getNativeLibraryZipAlignment(entry) {

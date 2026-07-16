@@ -375,12 +375,17 @@ function renderElfDetailError(library, t) {
 function renderElfDetailFacts(library, details, t) {
   const pageSize = Number(library?.elfPageSize) || 0;
   const zipAlignment = Number(library?.zipAlignment) || 0;
+  const zipAlignmentText = library?.zipCompression === "deflate"
+    ? t("elfZipAlignmentCompressed")
+    : zipAlignment > 0
+      ? formatAlignmentBytes(zipAlignment)
+      : t("unknown");
   const facts = [
     ["ABI", library?.abi || t("unknown")],
     [t("size"), formatBytes(library?.size || details?.byteLength || 0)],
     [t("elfClass"), details?.header?.class || t("unknown")],
     [t("elfPageAlignment"), pageSize > 0 ? formatAlignmentBytes(pageSize) : t("unknown")],
-    ["ZIPALIGN", zipAlignment > 0 ? formatAlignmentBytes(zipAlignment) : t("unknown")],
+    ["ZIPALIGN", zipAlignmentText],
   ];
 
   return [

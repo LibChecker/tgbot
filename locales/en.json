@@ -192,6 +192,7 @@
     "elfNeededLibraries": "Needed Libraries",
     "elfClass": "ELF Class",
     "elfPageAlignment": "Page Alignment",
+    "elfZipAlignmentCompressed": "Compressed / not applicable",
     "components": "Components",
     "signatures": "Signatures",
     "metaData": "Meta-Data",

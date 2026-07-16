@@ -132,6 +132,7 @@ test("annotates native libraries with ELF page size and ZIP alignment", async ()
   assert.equal(libraries[0].name, "libpage.so");
   assert.equal(libraries[0].elfPageSize, 0x4000);
   assert.equal(libraries[0].elf16kbAligned, true);
+  assert.equal(libraries[0].zipCompression, "store");
   assert.equal(libraries[0].zipAlignment, 4096);
   assert.equal(libraries[0].zip16kbAligned, false);
 });
@@ -155,6 +156,9 @@ test("reads deflated native library ELF info without full entry extraction", asy
   assert.equal(libraries.length, 1);
   assert.equal(libraries[0].elfPageSize, 0x4000);
   assert.equal(libraries[0].elf16kbAligned, true);
+  assert.equal(libraries[0].zipCompression, "deflate");
+  assert.equal(libraries[0].zipAlignment, undefined);
+  assert.equal(libraries[0].zip16kbAligned, undefined);
   assert.ok(stages.find((stage) => stage.stage === "parse-native-elf").bytes < elfBytes.byteLength);
 });
 
