@@ -1,4 +1,8 @@
-import { resolveWebUiSiteConfig } from "../site-config.mjs";
+import {
+  resolveWebUiSiteConfig,
+  WEBUI_SITE_DESCRIPTION,
+  WEBUI_SITE_NAME,
+} from "../site-config.mjs";
 
 const HOMEPAGE_PATHS = new Set(["/", "/index.html"]);
 
@@ -16,7 +20,10 @@ export async function onRequest(context) {
     return response;
   }
 
-  return withHomepageDiscoveryHeaders(response, context.env);
+  return withHomepageDiscoveryHeaders(
+    response,
+    resolveRequestSiteConfig(context.request, context.env),
+  );
 }
 
 export function handleMarkdownRequest(request, env = {}) {
@@ -24,7 +31,10 @@ export function handleMarkdownRequest(request, env = {}) {
     return null;
   }
 
-  return createHomepageMarkdownResponse(request.method, env);
+  return createHomepageMarkdownResponse(
+    request.method,
+    resolveRequestSiteConfig(request, env),
+  );
 }
 
 export function createHomepageMarkdownResponse(method = "GET", env = {}) {
@@ -56,14 +66,14 @@ function getHomepageMarkdown(env = {}) {
   } = resolveWebUiSiteConfig(env);
 
   return `---
-title: LibChecker WebUI
-description: Analyze APK/APKS/APKM/XAPK packages in your browser with local parsing, SDK markers, signatures, and reports.
+title: ${WEBUI_SITE_NAME}
+description: ${WEBUI_SITE_DESCRIPTION}
 image: ${socialPreviewUrl}
 ---
 
-# LibChecker WebUI
+# ${WEBUI_SITE_NAME}
 
-LibChecker WebUI is a browser-first Android package analyzer for APK, APKS, APKM, XAPK, and LCAPPS files.
+${WEBUI_SITE_NAME} is the official browser-first LibChecker package analyzer for APK, APKS, APKM, XAPK, and LCAPPS files.
 
 ## What It Does
 
@@ -103,6 +113,29 @@ function buildHomepageHeaders(sourceHeaders, env = {}) {
   headers.set("Content-Signal", "search=yes,ai-input=yes,ai-train=no,use=reference");
   headers.set("Vary", mergeVary(headers.get("Vary"), "Accept"));
   return headers;
+}
+
+function resolveRequestSiteConfig(request, env = {}) {
+  const siteOrigin = normalizeRequestSiteOrigin(env.WEBUI_SITE_ORIGIN)
+    || normalizeRequestSiteOrigin(env.WEBUI_SITE_URL)
+    || new URL(request.url).origin;
+  return {
+    ...env,
+    WEBUI_SITE_ORIGIN: siteOrigin,
+  };
+}
+
+function normalizeRequestSiteOrigin(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  try {
+    return new URL(text).origin;
+  } catch {
+    return "";
+  }
 }
 
 function isHomepageRequest(request) {

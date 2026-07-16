@@ -1,6 +1,10 @@
 const DEFAULT_WEBUI_SITE_ORIGIN = "https://example.com";
 const DEFAULT_WEBUI_SOURCE_REPOSITORY_URL = "https://github.com/LibChecker/tgbot";
 
+export const WEBUI_SITE_NAME = "LibChecker WebUI";
+export const WEBUI_SITE_TITLE = "LibChecker WebUI – APK Analyzer in Your Browser";
+export const WEBUI_SITE_DESCRIPTION = "Official LibChecker WebUI for analyzing APK, APKS, APKM, XAPK, and LCAPPS packages locally in your browser. Inspect SDKs, permissions, components, and signatures.";
+
 const nodeEnv = getNodeEnv();
 
 export const WEBUI_SITE_ORIGIN = normalizeOrigin(

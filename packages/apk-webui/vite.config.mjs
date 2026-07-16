@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, minify } from "vite";
 import {
   BOT_REPORT_DATA_ORIGIN,
+  WEBUI_SITE_DESCRIPTION,
+  WEBUI_SITE_NAME,
+  WEBUI_SITE_TITLE,
   WEBUI_SITE_URL,
   WEBUI_SOCIAL_PREVIEW_URL,
   WEBUI_SOURCE_REPOSITORY_URL,
@@ -114,6 +117,9 @@ export default defineConfig({
 
 function siteMetadataHtmlReplacements() {
   const replacements = {
+    "%WEBUI_SITE_DESCRIPTION%": WEBUI_SITE_DESCRIPTION,
+    "%WEBUI_SITE_NAME%": WEBUI_SITE_NAME,
+    "%WEBUI_SITE_TITLE%": WEBUI_SITE_TITLE,
     "%WEBUI_SITE_URL%": WEBUI_SITE_URL,
     "%WEBUI_SOCIAL_PREVIEW_URL%": WEBUI_SOCIAL_PREVIEW_URL,
     "%WEBUI_SOURCE_REPOSITORY_URL%": WEBUI_SOURCE_REPOSITORY_URL,

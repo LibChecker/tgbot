@@ -3039,7 +3039,6 @@ function resolveColorScheme(choice) {
 
 function applyLocale() {
   document.documentElement.lang = state.locale;
-  document.title = t("title");
 
   elements.i18nNodes.forEach((node) => {
     node.textContent = t(node.dataset.i18n);

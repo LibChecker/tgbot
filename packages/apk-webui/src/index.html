@@ -6,14 +6,15 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#f8fbff" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#10131c" media="(prefers-color-scheme: dark)">
-    <meta name="description" content="Analyze APK/APKS/APKM/XAPK locally.">
+    <meta name="description" content="%WEBUI_SITE_DESCRIPTION%">
     <meta name="robots" content="index, follow, max-image-preview:large">
-    <meta name="application-name" content="LibChecker WebUI">
+    <meta name="application-name" content="%WEBUI_SITE_NAME%">
+    <meta name="author" content="LibChecker">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="en_US">
-    <meta property="og:site_name" content="LibChecker WebUI">
-    <meta property="og:title" content="LibChecker WebUI">
-    <meta property="og:description" content="Analyze APK/APKS/APKM/XAPK locally.">
+    <meta property="og:site_name" content="%WEBUI_SITE_NAME%">
+    <meta property="og:title" content="%WEBUI_SITE_TITLE%">
+    <meta property="og:description" content="%WEBUI_SITE_DESCRIPTION%">
     <meta property="og:url" content="%WEBUI_SITE_URL%">
     <meta property="og:image" content="%WEBUI_SOCIAL_PREVIEW_URL%">
     <meta property="og:image:secure_url" content="%WEBUI_SOCIAL_PREVIEW_URL%">
@@ -22,14 +23,15 @@
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="LibChecker WebUI preview">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="LibChecker WebUI">
-    <meta name="twitter:description" content="Analyze APK/APKS/APKM/XAPK locally.">
+    <meta name="twitter:title" content="%WEBUI_SITE_TITLE%">
+    <meta name="twitter:description" content="%WEBUI_SITE_DESCRIPTION%">
     <meta name="twitter:image" content="%WEBUI_SOCIAL_PREVIEW_URL%">
     <link rel="canonical" href="%WEBUI_SITE_URL%">
-    <title>LibChecker WebUI</title>
+    <link rel="alternate" type="text/markdown" href="%WEBUI_SITE_URL%index.md" title="%WEBUI_SITE_NAME% in Markdown">
+    <title>%WEBUI_SITE_TITLE%</title>
     <link rel="icon" type="image/svg+xml" href="./assets/icon_round.svg">
     <link rel="manifest" href="/manifest.webmanifest">
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"LibChecker WebUI","url":"%WEBUI_SITE_URL%","description":"Analyze APK/APKS/APKM/XAPK locally.","applicationCategory":"DeveloperApplication","image":"%WEBUI_SOCIAL_PREVIEW_URL%"}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"%WEBUI_SITE_NAME%","alternateName":"LibChecker APK Analyzer","url":"%WEBUI_SITE_URL%","description":"%WEBUI_SITE_DESCRIPTION%","applicationCategory":"DeveloperApplication","operatingSystem":"Any","browserRequirements":"Requires a modern browser with Web Workers","isAccessibleForFree":true,"image":"%WEBUI_SOCIAL_PREVIEW_URL%","sameAs":"%WEBUI_SOURCE_REPOSITORY_URL%","creator":{"@type":"Organization","name":"LibChecker","url":"https://github.com/LibChecker"},"featureList":["Local Android package analysis","SDK and permission inspection","Signature and component inspection","Package report comparison"]}</script>
     <script>
       (() => {
         const key = "apk-webui-theme";
@@ -63,8 +65,9 @@
               <span class="brand-orb__gloss"></span>
             </span>
           </div>
-          <div>
+          <div class="brand-copy">
             <h1 class="brand-title">LibChecker WebUI</h1>
+            <p class="brand-subtitle" data-i18n="subtitle">APK/APKS/APKM/XAPK Analyzer in Browser</p>
           </div>
         </div>
         <div class="topbar-actions">

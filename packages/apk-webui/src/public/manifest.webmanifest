@@ -1,7 +1,7 @@
 {
   "name": "LibChecker WebUI",
   "short_name": "LibChecker",
-  "description": "Analyze APK, APKS, APKM, and XAPK files locally in your browser.",
+  "description": "Official LibChecker WebUI for analyzing APK, APKS, APKM, XAPK, and LCAPPS packages locally in your browser.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
