@@ -22,6 +22,7 @@ test("report and compare styles stay behind lazy module boundaries", async () =>
     /^\.native-abi-count\s*\{/mu,
     /^\.component-group-block\s*\{/mu,
     /^\.component-group-grid\s*\{/mu,
+    /^\.component-name-prefix\s*\{/mu,
     /^\.component-row-header\s*\{/mu,
     /^\.permission-table-row\s*\{/mu,
     /^\.sdk-row-header\s*\{/mu,

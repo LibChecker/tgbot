@@ -119,6 +119,25 @@ test("report renderer caps long component groups", () => {
   assert.doesNotMatch(html, /Activity121/);
 });
 
+test("report renderer separates and escapes component package and simple name", () => {
+  setupRenderer("components");
+  const html = reportRenderer.renderTabPanelHtml(createReport({
+    components: {
+      activities: [
+        { name: "top.yukonga.mishka.MainActivity" },
+        { name: "StandaloneActivity" },
+        { name: "com.example.<UnsafeActivity>" },
+      ],
+    },
+  }));
+
+  assert.match(html, /<span class="component-name-prefix">top\.yukonga\.mishka\.<\/span>/);
+  assert.match(html, /<span class="component-name-simple">MainActivity<\/span>/);
+  assert.match(html, /<span class="component-name-simple">StandaloneActivity<\/span>/);
+  assert.match(html, /<span class="component-name-simple">&lt;UnsafeActivity&gt;<\/span>/);
+  assert.doesNotMatch(html, /<UnsafeActivity>/);
+});
+
 test("report renderer caps long native library groups", () => {
   setupRenderer("native");
   const nativeLibraries = Array.from({ length: reportRenderer.REPORT_LIST_RENDER_LIMIT + 4 }, (_, index) => ({

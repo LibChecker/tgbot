@@ -752,6 +752,14 @@
   line-height: 1.35;
 }
 
+.component-name-prefix {
+  color: var(--control-text);
+}
+
+.component-name-simple {
+  color: var(--heading-text);
+}
+
 .component-detail-table .kv-row {
   grid-template-columns: minmax(92px, 145px) minmax(0, 1fr);
   padding: 9px 12px;
