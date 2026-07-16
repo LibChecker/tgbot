@@ -215,6 +215,9 @@ test("ELF detail content renders all inspection groups and escapes parsed data",
   const dialog = {};
   assert.equal(elfDetailModal.shouldCloseElfDetailModalOnBackdropClick({ target: dialog }, dialog, true), true);
   assert.equal(elfDetailModal.shouldCloseElfDetailModalOnBackdropClick({ target: {} }, dialog, true), false);
+  assert.equal(elfDetailModal.parseCssTimeMs("150ms", 1), 150);
+  assert.equal(elfDetailModal.parseCssTimeMs("0.25s", 1), 250);
+  assert.equal(elfDetailModal.parseCssTimeMs("invalid", 150), 150);
 });
 
 test("report renderer adds build feature icons and hides app metadata", () => {

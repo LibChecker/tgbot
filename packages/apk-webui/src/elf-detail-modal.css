@@ -12,9 +12,27 @@
 }
 
 .elf-detail-dialog::backdrop {
-  background: rgb(12 8 18 / 0.18);
+  background-color: rgb(12 8 18 / 0);
+  -webkit-backdrop-filter: blur(0) saturate(1);
+  backdrop-filter: blur(0) saturate(1);
+  transition:
+    background-color var(--modal-open-dur) var(--modal-ease),
+    -webkit-backdrop-filter var(--modal-open-dur) var(--modal-ease),
+    backdrop-filter var(--modal-open-dur) var(--modal-ease);
+}
+
+.elf-detail-dialog.is-open::backdrop {
+  background-color: rgb(12 8 18 / 0.18);
   -webkit-backdrop-filter: blur(16px) saturate(1.08);
   backdrop-filter: blur(16px) saturate(1.08);
+}
+
+.elf-detail-dialog.is-closing {
+  pointer-events: none;
+}
+
+.elf-detail-dialog.is-closing::backdrop {
+  transition-duration: var(--modal-close-dur);
 }
 
 .elf-detail-panel {
@@ -28,7 +46,24 @@
   border-radius: 20px;
   background: var(--surface);
   box-shadow: 0 30px 80px rgb(10 8 18 / 0.32);
-  animation: elf-detail-enter var(--modal-open-dur) var(--modal-ease);
+  opacity: 0;
+  transform: translateY(8px) scale(var(--modal-scale));
+  transform-origin: center;
+  transition:
+    opacity var(--modal-open-dur) var(--modal-ease),
+    transform var(--modal-open-dur) var(--modal-ease);
+  will-change: opacity, transform;
+}
+
+.elf-detail-dialog.is-open .elf-detail-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.elf-detail-dialog.is-closing .elf-detail-panel {
+  opacity: 0;
+  transform: translateY(8px) scale(var(--modal-scale));
+  transition-duration: var(--modal-close-dur);
 }
 
 .elf-detail-header {
@@ -422,25 +457,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .elf-detail-panel,
+  .elf-detail-dialog::backdrop,
+  .elf-detail-panel {
+    transition: none;
+  }
+
   .elf-detail-spinner {
     animation: none;
   }
 
   .elf-detail-group > summary::after {
     transition: none;
-  }
-}
-
-@keyframes elf-detail-enter {
-  from {
-    opacity: 1;
-    transform: translateY(8px) scale(var(--modal-scale));
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 
