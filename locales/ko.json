@@ -192,6 +192,7 @@
     "elfNeededLibraries": "필요한 라이브러리",
     "elfClass": "ELF 클래스",
     "elfPageAlignment": "페이지 정렬",
+    "elfZipAlignmentCompressed": "압축됨 / 해당 없음",
     "components": "구성요소",
     "signatures": "서명",
     "metaData": "메타데이터",

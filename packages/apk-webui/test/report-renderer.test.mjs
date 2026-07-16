@@ -230,6 +230,7 @@ test("ELF detail content renders all inspection groups and escapes parsed data",
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/u);
   assert.doesNotMatch(html, /<img/u);
   assert.match(html, />16 KB</u);
+  assert.match(html, /<dt>ZIPALIGN<\/dt><dd class="app-data-text">4 KB<\/dd>/u);
   assert.doesNotMatch(html, /16\.00 KB/u);
   const dialog = {};
   assert.equal(elfDetailModal.shouldCloseElfDetailModalOnBackdropClick({ target: dialog }, dialog, true), true);
@@ -237,6 +238,37 @@ test("ELF detail content renders all inspection groups and escapes parsed data",
   assert.equal(elfDetailModal.parseCssTimeMs("150ms", 1), 150);
   assert.equal(elfDetailModal.parseCssTimeMs("0.25s", 1), 250);
   assert.equal(elfDetailModal.parseCssTimeMs("invalid", 150), 150);
+});
+
+test("ELF detail content distinguishes compressed and unknown ZIP alignment", () => {
+  const translate = (key, variables) => i18n.translate("en", key, variables);
+  const details = {
+    byteLength: 4096,
+    header: { class: "ELF64" },
+  };
+  const compressedHtml = elfDetailModal.renderElfDetailContent({
+    library: {
+      abi: "arm64-v8a",
+      name: "libcompressed.so",
+      size: 4096,
+      zipCompression: "deflate",
+    },
+    details,
+    t: translate,
+  });
+  const unknownHtml = elfDetailModal.renderElfDetailContent({
+    library: {
+      abi: "arm64-v8a",
+      name: "libunknown.so",
+      size: 4096,
+      zipCompression: "store",
+    },
+    details,
+    t: translate,
+  });
+
+  assert.match(compressedHtml, /<dt>ZIPALIGN<\/dt><dd class="app-data-text">Compressed \/ not applicable<\/dd>/u);
+  assert.match(unknownHtml, /<dt>ZIPALIGN<\/dt><dd class="app-data-text">Unknown<\/dd>/u);
 });
 
 test("report renderer adds build feature icons and hides app metadata", () => {

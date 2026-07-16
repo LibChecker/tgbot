@@ -192,6 +192,7 @@
     "elfNeededLibraries": "必要なライブラリ",
     "elfClass": "ELF クラス",
     "elfPageAlignment": "ページアラインメント",
+    "elfZipAlignmentCompressed": "圧縮済み / 対象外",
     "components": "コンポーネント",
     "signatures": "署名",
     "metaData": "メタデータ",
