@@ -507,18 +507,6 @@ svg {
   max-width: var(--brand-title-max-width);
 }
 
-.brand-subtitle {
-  max-width: var(--brand-title-max-width);
-  margin: 1px 0 0;
-  overflow: hidden;
-  color: var(--topbar-muted);
-  font-size: 9px;
-  font-weight: 500;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .brand-title.is-text-rendered {
   position: relative;
   display: grid;
