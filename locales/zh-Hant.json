@@ -192,6 +192,7 @@
     "elfNeededLibraries": "相依程式庫",
     "elfClass": "ELF 位元數",
     "elfPageAlignment": "頁面對齊",
+    "elfZipAlignmentCompressed": "已壓縮 / 不適用",
     "components": "元件",
     "signatures": "簽章",
     "metaData": "中繼資料",
