@@ -6,8 +6,10 @@ import { escapeAttr, escapeHtml } from "./html.js";
 const SYMBOL_RENDER_LIMIT = 500;
 const SECTION_RENDER_LIMIT = 512;
 const DYNAMIC_RENDER_LIMIT = 512;
+const ELF_DETAIL_CLOSE_FALLBACK_MS = 150;
 
 let requestToken = 0;
+let closeTimer = 0;
 /** @type {HTMLElement | null} */
 let restoreFocusTarget = null;
 
@@ -39,10 +41,7 @@ export function openElfDetailModal({
     ? renderElfDetailLoading(library, t)
     : renderElfDetailUnavailable(library, t);
   elements.body.setAttribute("aria-busy", sourceAvailable ? "true" : "false");
-
-  if (!elements.dialog.open) {
-    elements.dialog.showModal();
-  }
+  showElfDetailDialog(elements.dialog);
 
   if (!sourceAvailable) {
     onLoaded("unavailable");
@@ -70,10 +69,51 @@ export function openElfDetailModal({
 }
 
 export function closeElfDetailModal() {
+  requestToken += 1;
   const dialog = /** @type {HTMLDialogElement | null} */ (document.querySelector("#elf-detail-dialog"));
-  if (dialog?.open) {
-    dialog.close();
+  if (!dialog?.open || dialog.classList.contains("is-closing")) {
+    return;
   }
+
+  dialog.classList.remove("is-open");
+  dialog.classList.add("is-closing");
+  const closeDurationMs = getElfDetailModalCloseDurationMs(dialog);
+  closeTimer = window.setTimeout(() => {
+    closeTimer = 0;
+    if (dialog.open && dialog.classList.contains("is-closing")) {
+      dialog.close();
+    }
+  }, closeDurationMs);
+}
+
+export function getElfDetailModalCloseDurationMs(dialog) {
+  if (
+    !dialog ||
+    typeof window === "undefined" ||
+    typeof window.getComputedStyle !== "function"
+  ) {
+    return ELF_DETAIL_CLOSE_FALLBACK_MS;
+  }
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    return 0;
+  }
+  return parseCssTimeMs(
+    window.getComputedStyle(dialog).getPropertyValue("--modal-close-dur"),
+    ELF_DETAIL_CLOSE_FALLBACK_MS,
+  );
+}
+
+export function parseCssTimeMs(value, fallbackMs = 0) {
+  const normalized = String(value || "").trim();
+  if (normalized.endsWith("ms")) {
+    const milliseconds = Number.parseFloat(normalized);
+    return Number.isFinite(milliseconds) ? milliseconds : fallbackMs;
+  }
+  if (normalized.endsWith("s")) {
+    const seconds = Number.parseFloat(normalized);
+    return Number.isFinite(seconds) ? seconds * 1000 : fallbackMs;
+  }
+  return fallbackMs;
 }
 
 export function shouldCloseElfDetailModalOnBackdropClick(event, dialog, pointerStartedOnBackdrop) {
@@ -189,18 +229,27 @@ function ensureElfDetailModalElements(t) {
       throw new Error("Failed to create ELF detail dialog");
     }
     let pointerStartedOnBackdrop = false;
-    dialog.querySelector("#elf-detail-close")?.addEventListener("click", () => dialog.close());
+    dialog.querySelector("#elf-detail-close")?.addEventListener("click", closeElfDetailModal);
     dialog.addEventListener("pointerdown", (event) => {
       pointerStartedOnBackdrop = event.target === dialog;
     });
     dialog.addEventListener("click", (event) => {
       if (shouldCloseElfDetailModalOnBackdropClick(event, dialog, pointerStartedOnBackdrop)) {
-        dialog.close();
+        closeElfDetailModal();
       }
       pointerStartedOnBackdrop = false;
     });
+    dialog.addEventListener("pointercancel", () => {
+      pointerStartedOnBackdrop = false;
+    });
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeElfDetailModal();
+    });
     dialog.addEventListener("close", () => {
       requestToken += 1;
+      clearCloseTimer();
+      dialog.classList.remove("is-open", "is-closing");
       const target = restoreFocusTarget;
       restoreFocusTarget = null;
       target?.focus?.();
@@ -214,6 +263,26 @@ function ensureElfDetailModalElements(t) {
     body: dialog.querySelector("#elf-detail-body"),
     close: dialog.querySelector("#elf-detail-close"),
   };
+}
+
+function showElfDetailDialog(dialog) {
+  clearCloseTimer();
+  const wasOpen = dialog.open;
+  dialog.classList.remove("is-closing");
+  if (!wasOpen) {
+    dialog.classList.remove("is-open");
+    dialog.showModal();
+    dialog.getBoundingClientRect();
+  }
+  dialog.classList.add("is-open");
+}
+
+function clearCloseTimer() {
+  if (!closeTimer) {
+    return;
+  }
+  window.clearTimeout(closeTimer);
+  closeTimer = 0;
 }
 
 function renderElfDetailModalShell(t) {
@@ -382,4 +451,3 @@ function renderDataTable(label, columns, rows, total, limit, t, truncated = fals
       : "",
   ].join("");
 }
-
