@@ -438,11 +438,28 @@ function renderComponentRow(component) {
     `<article class="list-row component-row">`,
     `<div class="component-row-header">`,
     `<div class="component-row-main">`,
-    `<div class="row-title component-row-title"><span class="app-data-text">${escapeHtml(component.name || t("unknown"))}</span></div>`,
+    `<div class="row-title component-row-title">${renderComponentName(component.name)}</div>`,
     `</div>`,
     `</div>`,
     renderComponentDetails(component),
     `</article>`,
+  ].join("");
+}
+
+function renderComponentName(name) {
+  const value = String(name || t("unknown"));
+  const separatorIndex = value.lastIndexOf(".");
+  if (separatorIndex < 0 || separatorIndex === value.length - 1) {
+    return `<span class="app-data-text component-name"><span class="component-name-simple">${escapeHtml(value)}</span></span>`;
+  }
+
+  const prefix = value.slice(0, separatorIndex + 1);
+  const simpleName = value.slice(separatorIndex + 1);
+  return [
+    `<span class="app-data-text component-name">`,
+    `<span class="component-name-prefix">${escapeHtml(prefix)}</span>`,
+    `<span class="component-name-simple">${escapeHtml(simpleName)}</span>`,
+    `</span>`,
   ].join("");
 }
 
