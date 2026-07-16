@@ -6,9 +6,11 @@ import { escapeAttr, escapeHtml } from "./html.js";
 const SYMBOL_RENDER_LIMIT = 500;
 const SECTION_RENDER_LIMIT = 512;
 const DYNAMIC_RENDER_LIMIT = 512;
+const ELF_DETAIL_LOADING_DELAY_MS = 150;
 const ELF_DETAIL_CLOSE_FALLBACK_MS = 150;
 
 let requestToken = 0;
+let loadingTimer = 0;
 let closeTimer = 0;
 /** @type {HTMLElement | null} */
 let restoreFocusTarget = null;
@@ -37,39 +39,54 @@ export function openElfDetailModal({
   const token = ++requestToken;
   restoreFocusTarget = trigger || null;
   updateElfDetailModalHeader(elements, library, t);
-  elements.body.innerHTML = sourceAvailable
-    ? renderElfDetailLoading(library, t)
-    : renderElfDetailUnavailable(library, t);
-  elements.body.setAttribute("aria-busy", sourceAvailable ? "true" : "false");
-  showElfDetailDialog(elements.dialog);
+  elements.dialog.classList.toggle("has-source", sourceAvailable);
+  clearLoadingTimer();
 
   if (!sourceAvailable) {
+    elements.body.innerHTML = renderElfDetailUnavailable(library, t);
+    elements.body.setAttribute("aria-busy", "false");
+    showElfDetailDialog(elements.dialog);
     onLoaded("unavailable");
     return;
   }
 
+  elements.body.setAttribute("aria-busy", "true");
+  loadingTimer = window.setTimeout(() => {
+    loadingTimer = 0;
+    if (token !== requestToken) {
+      return;
+    }
+    elements.body.innerHTML = renderElfDetailLoading(library, t);
+    showElfDetailDialog(elements.dialog);
+  }, ELF_DETAIL_LOADING_DELAY_MS);
+
   void Promise.resolve()
     .then(loadDetails)
     .then((details) => {
-      if (token !== requestToken || !elements.dialog.open) {
+      if (token !== requestToken) {
         return;
       }
+      clearLoadingTimer();
       elements.body.setAttribute("aria-busy", "false");
       elements.body.innerHTML = renderElfDetailContent({ details, library, t });
+      showElfDetailDialog(elements.dialog);
       onLoaded("success");
     })
     .catch(() => {
-      if (token !== requestToken || !elements.dialog.open) {
+      if (token !== requestToken) {
         return;
       }
+      clearLoadingTimer();
       elements.body.setAttribute("aria-busy", "false");
       elements.body.innerHTML = renderElfDetailError(library, t);
+      showElfDetailDialog(elements.dialog);
       onLoaded("error");
     });
 }
 
 export function closeElfDetailModal() {
   requestToken += 1;
+  clearLoadingTimer();
   const dialog = /** @type {HTMLDialogElement | null} */ (document.querySelector("#elf-detail-dialog"));
   if (!dialog?.open || dialog.classList.contains("is-closing")) {
     return;
@@ -248,6 +265,7 @@ function ensureElfDetailModalElements(t) {
     });
     dialog.addEventListener("close", () => {
       requestToken += 1;
+      clearLoadingTimer();
       clearCloseTimer();
       dialog.classList.remove("is-open", "is-closing");
       const target = restoreFocusTarget;
@@ -275,6 +293,14 @@ function showElfDetailDialog(dialog) {
     dialog.getBoundingClientRect();
   }
   dialog.classList.add("is-open");
+}
+
+function clearLoadingTimer() {
+  if (!loadingTimer) {
+    return;
+  }
+  window.clearTimeout(loadingTimer);
+  loadingTimer = 0;
 }
 
 function clearCloseTimer() {

@@ -66,6 +66,10 @@
   transition-duration: var(--modal-close-dur);
 }
 
+.elf-detail-dialog.has-source .elf-detail-panel {
+  height: min(880px, calc(100dvh - clamp(32px, 8vw, 72px)));
+}
+
 .elf-detail-header {
   display: flex;
   align-items: flex-start;
@@ -117,13 +121,17 @@
 }
 
 .elf-detail-body {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   min-height: 0;
   padding: 16px 20px 22px;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+.elf-detail-body > * {
+  flex: 0 0 auto;
 }
 
 .elf-detail-facts {

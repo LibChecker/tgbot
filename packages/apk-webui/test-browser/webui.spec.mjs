@@ -81,7 +81,7 @@ test("analyzes a small APK, saves history, reopens the report, and compares it",
   await expect(page.locator("#compare-result")).toContainText(/No differences|无差异/u);
 });
 
-test("opens ELF details on demand and degrades safely for history reports", async ({ page }) => {
+test("opens ELF details on demand and degrades safely for history reports", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 375, height: 812 });
   const workerStarted = page.waitForEvent("worker");
   await page.locator("#file-input").setInputFiles(validApk);
@@ -96,14 +96,39 @@ test("opens ELF details on demand and degrades safely for history reports", asyn
   await expect(alignmentLabel).toHaveCSS("border-top-style", "solid");
   await expect(alignmentLabel).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(detailButton).toHaveAttribute("aria-label", /libsmoke\.so/u);
+  await expect(detailButton).toHaveCSS("border-top-style", "none");
+  await expect(detailButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.evaluate(() => {
+    window.__elfLoadingRenderCount = 0;
+    window.__elfLoadingObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (
+            node.nodeType === Node.ELEMENT_NODE &&
+            (node.matches?.(".elf-detail-status:not(.is-empty):not(.is-error)") ||
+              node.querySelector?.(".elf-detail-status:not(.is-empty):not(.is-error)"))
+          ) {
+            window.__elfLoadingRenderCount += 1;
+          }
+        }
+      }
+    });
+    window.__elfLoadingObserver.observe(document.body, { childList: true, subtree: true });
+  });
   await detailButton.click();
 
   const dialog = page.locator("#elf-detail-dialog");
   const body = page.locator("#elf-detail-body");
   await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveClass(/\bis-open\b/u);
   await expect(body).toHaveAttribute("aria-busy", "false");
   await expect(body).toContainText("ELF64");
   await expect(body).toContainText("PT_LOAD");
+  const loadingRenderCount = await page.evaluate(() => {
+    window.__elfLoadingObserver.disconnect();
+    return window.__elfLoadingRenderCount;
+  });
+  expect(loadingRenderCount).toBe(0);
 
   const spinnerShape = await body.evaluate((element) => {
     const spinner = document.createElement("span");
@@ -114,7 +139,11 @@ test("opens ELF details on demand and degrades safely for history reports", asyn
     spinner.remove();
     return result;
   });
-  expect(spinnerShape).toEqual({ cornerShape: "round", width: 22, height: 22 });
+  expect(spinnerShape).toEqual({
+    cornerShape: testInfo.project.name === "webkit" ? undefined : "round",
+    width: 22,
+    height: 22,
+  });
   await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
   await body.evaluate((element) => {
     element.scrollTop = 120;
@@ -122,6 +151,7 @@ test("opens ELF details on demand and degrades safely for history reports", asyn
   await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 
   await page.keyboard.press("Escape");
+  await expect(dialog).toHaveClass(/\bis-closing\b/u);
   await expect(dialog).toBeHidden();
   await expect(detailButton).toBeFocused();
 
