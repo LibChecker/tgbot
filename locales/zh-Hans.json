@@ -192,6 +192,7 @@
     "elfNeededLibraries": "依赖库",
     "elfClass": "ELF 位数",
     "elfPageAlignment": "页面对齐",
+    "elfZipAlignmentCompressed": "已压缩 / 不适用",
     "components": "组件",
     "signatures": "签名",
     "metaData": "元数据",
