@@ -124,6 +124,23 @@ test("opens ELF details on demand and degrades safely for history reports", asyn
   await expect(body).toHaveAttribute("aria-busy", "false");
   await expect(body).toContainText("ELF64");
   await expect(body).toContainText("PT_LOAD");
+  const headerKeyValues = page.locator(".elf-detail-group[open] .elf-detail-kv");
+  await expect(headerKeyValues).toBeVisible();
+  expect(await headerKeyValues.evaluate((element) => getComputedStyle(element, "::before").display)).toBe("none");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const desktopDivider = await headerKeyValues.evaluate((element) => {
+    const style = getComputedStyle(element, "::before");
+    return {
+      containerWidth: element.clientWidth,
+      display: style.display,
+      left: Number.parseFloat(style.left),
+      width: style.width,
+    };
+  });
+  expect(desktopDivider.display).toBe("block");
+  expect(desktopDivider.width).toBe("1px");
+  expect(desktopDivider.left).toBeCloseTo(desktopDivider.containerWidth / 2, 0);
+  await page.setViewportSize({ width: 375, height: 812 });
   const loadingRenderCount = await page.evaluate(() => {
     window.__elfLoadingObserver.disconnect();
     return window.__elfLoadingRenderCount;
