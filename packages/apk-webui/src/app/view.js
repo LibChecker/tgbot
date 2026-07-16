@@ -68,6 +68,7 @@ export function collectAppElements(root = document) {
     resultView: queryAppElement(root, "#result-view"),
     reportHero: queryAppElement(root, "#report-hero"),
     reportShareButton: queryAppElement(root, "#report-share-button"),
+    pwaInstallGuide: queryAppElement(root, "#pwa-install-guide"),
     archiveDistribution: queryAppElement(root, "#archive-distribution"),
     tabs: queryAppElement(root, "#tabs"),
     tabButtons: queryAppElements(root, "#tabs [data-tab]"),

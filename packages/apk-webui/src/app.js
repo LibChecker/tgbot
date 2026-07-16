@@ -158,6 +158,8 @@ const tabDrag = createReportTabDragState();
 const runtime = createRuntimeState();
 const elements = collectAppElements();
 
+initPwaLifecycle();
+
 function t(key, variables = {}) {
   return translate(state.locale, key, variables);
 }
@@ -1198,6 +1200,162 @@ function applyFilePickerAcceptCompatibilityWhenReady() {
   window.setTimeout(apply, 3200);
 }
 
+function initPwaLifecycle() {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    runtime.pwaInstallPrompt = event;
+    runtime.pwaInstallGuideController?.setInstallAvailable(true);
+  });
+
+  window.addEventListener("appinstalled", () => {
+    runtime.pwaInstallPrompt = null;
+    if (runtime.pwaInstallGuideController) {
+      runtime.pwaInstallGuideController.markInstalled();
+    } else {
+      void loadPwaInstallGuideModule()
+        .then(({ rememberPwaInstallation }) => rememberPwaInstallation())
+        .catch(() => {});
+    }
+    trackWebEvent("webui.pwa_install.installed", {
+      result: "accepted",
+      operation: "appinstalled",
+    });
+  });
+}
+
+function initPwaFileHandling() {
+  if (typeof window.launchQueue?.setConsumer !== "function") {
+    return;
+  }
+
+  void import("./app/pwa-file-handler.js")
+    .then(({ registerPwaFileHandler }) => {
+      const registered = registerPwaFileHandler(handlePwaLaunchedFile, {
+        launchQueueRef: window.launchQueue,
+        onError: handlePwaFileLaunchError,
+      });
+      if (registered) {
+        appendRuntimeLog("debug", "PWA file handler registered");
+      }
+    })
+    .catch(handlePwaFileLaunchError);
+}
+
+async function handlePwaLaunchedFile(file) {
+  if (!(file instanceof File)) {
+    throw new TypeError("The launched item is not a file");
+  }
+
+  if (state.analyzeBusy) {
+    resetState();
+  }
+  setAppMode("analyze");
+  setSelectedFile(file, { inputSource: "file_handler" });
+  trackWebEvent("webui.file_handler.opened", {
+    result: isLikelyApk(file) ? "valid" : "invalid",
+    input_source: "file_handler",
+    ...getFileAnalyticsFields(file),
+  });
+  await analyzeSelectedFile();
+}
+
+function handlePwaFileLaunchError(error) {
+  showError(t("pwaFileOpenFailed"));
+  trackWebEvent("webui.file_handler.failed", {
+    result: "error",
+    input_source: "file_handler",
+    ...getClientErrorTelemetryFields(error),
+  });
+}
+
+function loadPwaInstallGuideModule() {
+  if (!runtime.pwaInstallGuideModulePromise) {
+    runtime.pwaInstallGuideModulePromise = import("./app/pwa-install-guide.js")
+      .catch((error) => {
+        runtime.pwaInstallGuideModulePromise = null;
+        throw error;
+      });
+  }
+  return runtime.pwaInstallGuideModulePromise;
+}
+
+async function maybeShowPwaInstallGuide() {
+  const report = state.report;
+  if (!report || !elements.pwaInstallGuide) {
+    return;
+  }
+
+  try {
+    const { createPwaInstallGuide } = await loadPwaInstallGuideModule();
+    if (state.report !== report || state.appMode !== "analyze") {
+      return;
+    }
+    if (!runtime.pwaInstallGuideController) {
+      runtime.pwaInstallGuideController = createPwaInstallGuide({
+        root: elements.pwaInstallGuide,
+        t,
+        onInstall: promptPwaInstall,
+        onEvent: trackPwaInstallGuideEvent,
+        isPowerConstrained: isAppPowerConstrained,
+      });
+    }
+    runtime.pwaInstallGuideController.show({
+      installAvailable: Boolean(runtime.pwaInstallPrompt),
+    });
+  } catch (error) {
+    trackWebEvent("webui.pwa_guide.load_failed", {
+      result: "error",
+      operation: "load",
+      ...getClientErrorTelemetryFields(error),
+    });
+  }
+}
+
+function hidePwaInstallGuide() {
+  runtime.pwaInstallGuideController?.hide();
+}
+
+function trackPwaInstallGuideEvent(operation) {
+  trackWebEvent(`webui.pwa_guide.${operation}`, {
+    result: "success",
+    operation,
+  });
+}
+
+async function promptPwaInstall() {
+  const installPrompt = runtime.pwaInstallPrompt;
+  if (!installPrompt) {
+    runtime.pwaInstallGuideController?.setInstallAvailable(false);
+    return;
+  }
+
+  runtime.pwaInstallPrompt = null;
+  runtime.pwaInstallGuideController?.setInstallAvailable(false);
+  trackWebEvent("webui.pwa_install.prompted", {
+    result: "started",
+    operation: "custom_prompt",
+  });
+
+  try {
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    const outcome = choice?.outcome === "accepted" ? "accepted" : "dismissed";
+    trackWebEvent("webui.pwa_install.completed", {
+      result: outcome,
+      operation: "custom_prompt",
+    });
+    if (outcome === "accepted") {
+      runtime.pwaInstallGuideController?.markInstalled();
+    }
+  } catch (error) {
+    trackWebEvent("webui.pwa_install.failed", {
+      result: "error",
+      operation: "custom_prompt",
+      ...getClientErrorTelemetryFields(error),
+    });
+  }
+}
+
 void initializeApp();
 
 async function initializeApp() {
@@ -1212,6 +1370,7 @@ async function initializeApp() {
   updateHistoryCollapse();
   updateAppMode();
   bindEvents();
+  initPwaFileHandling();
   initWebMcpWhenAvailable();
   syncMobileBottomControls();
   scheduleColorOrbBackground();
@@ -2922,6 +3081,7 @@ function applyLocale() {
   renderRuntimeLogs();
   renderLcappsPicker();
   renderLcappsBubble();
+  runtime.pwaInstallGuideController?.refresh();
   if (runtime.topbarIdentityMode !== "report" || !state.report) {
     renderTopbarDefaultIdentity({ force: true });
   }
@@ -3145,12 +3305,15 @@ function renderLanguageOptions() {
     .join("");
 }
 
-function setSelectedFile(file) {
+function setSelectedFile(file, options = {}) {
   hideError();
   if (file) {
     setDownloadUrl("", { keepFile: true, syncInput: true });
   }
   state.selectedFile = file;
+  state.selectedFileInputSource = file && options.inputSource === "file_handler"
+    ? "file_handler"
+    : "upload";
   renderSelectedFile();
   updateAnalyzeControls();
   updateClearButton();
@@ -3161,6 +3324,7 @@ function setSelectedFile(file) {
     trackWebEvent("webui.file.selected", {
       result: isValid ? "valid" : "invalid",
       is_valid: isValid,
+      input_source: state.selectedFileInputSource,
       file_kind: isLcapps ? "lcapps" : "android_package",
       ...getFileAnalyticsFields(file),
     });
@@ -3182,6 +3346,7 @@ function setDownloadUrl(value, options = {}) {
 
   if (state.downloadUrl && !options.keepFile) {
     state.selectedFile = null;
+    state.selectedFileInputSource = "upload";
     elements.fileInput.value = "";
     renderSelectedFile();
   }
@@ -3316,6 +3481,7 @@ function closeReportShareModal(options = {}) {
 
 async function analyzeSelectedFile() {
   const file = state.selectedFile;
+  const inputSource = state.selectedFileInputSource || "upload";
   hideError();
 
   if (!file) {
@@ -3323,6 +3489,7 @@ async function analyzeSelectedFile() {
     trackWebEvent("webui.analysis.failed", {
       result: "missing_file",
       error_name: "MissingFile",
+      input_source: inputSource,
     });
     return;
   }
@@ -3337,6 +3504,7 @@ async function analyzeSelectedFile() {
     trackWebEvent("webui.analysis.failed", {
       result: "invalid_file",
       error_name: "InvalidFile",
+      input_source: inputSource,
       ...getFileAnalyticsFields(file),
     });
     return;
@@ -3348,6 +3516,7 @@ async function analyzeSelectedFile() {
     trackWebEvent("webui.analysis.failed", {
       result: "worker_unavailable",
       error_name: "WorkerUnavailable",
+      input_source: inputSource,
       ...getFileAnalyticsFields(file),
     });
     return;
@@ -3356,6 +3525,7 @@ async function analyzeSelectedFile() {
   state.jobId += 1;
   const jobId = state.jobId;
   state.startedAt = performance.now();
+  hidePwaInstallGuide();
   clearCurrentReportSource();
   state.report = null;
   clearReportShareState();
@@ -3365,6 +3535,7 @@ async function analyzeSelectedFile() {
   state.jobs.set(jobId, {
     type: "analyze",
     sourceFile: file,
+    inputSource,
   });
 
   void loadSdkIconRendererModule().catch(() => {});
@@ -3375,7 +3546,7 @@ async function analyzeSelectedFile() {
   startTimer();
   trackWebEvent("webui.analysis.started", {
     result: "started",
-    input_source: "upload",
+    input_source: inputSource,
     ...getFileAnalyticsFields(file),
   });
 
@@ -3401,7 +3572,7 @@ async function analyzeSelectedFile() {
     trackWebEvent("webui.analysis.failed", {
       result: "error",
       error_name: "ReadFileFailed",
-      input_source: "upload",
+      input_source: inputSource,
       ...getFileAnalyticsFields(file),
       ...getClientErrorTelemetryFields(error),
     });
@@ -3451,6 +3622,7 @@ async function analyzeDownloadUrl() {
   const jobId = state.jobId;
   const abortController = new AbortController();
   state.startedAt = performance.now();
+  hidePwaInstallGuide();
   clearCurrentReportSource();
   state.report = null;
   clearReportShareState();
@@ -3672,6 +3844,7 @@ function failActiveWorkerJobs(message) {
       trackWebEvent("webui.analysis.failed", {
         result: "worker_error",
         error_name: "AnalyzerWorkerError",
+        input_source: job.inputSource || "upload",
       });
     }
   }
@@ -3723,6 +3896,7 @@ function handleWorkerMessage(event) {
       trackWebEvent("webui.analysis.failed", {
         result: "error",
         error_name: "AnalyzerWorkerError",
+        input_source: job.inputSource || "upload",
       });
     }
     return;
@@ -3755,13 +3929,14 @@ function handleWorkerMessage(event) {
     void renderReport()
       .then(() => {
         revealReportHeroAfterAnalysis(message.report);
+        void maybeShowPwaInstallGuide();
       })
       .catch(() => {});
     scheduleHistoryReportSave(message.report);
     scheduleReportSdkRuleDetailHydration(message.report);
     trackWebEvent("webui.analysis.succeeded", {
       result: "success",
-      input_source: "upload",
+      input_source: job.inputSource || "upload",
       ...getReportAnalyticsFields(message.report),
     });
     scheduleWorkerIdleTermination();
@@ -4073,6 +4248,7 @@ async function exportRuntimeLogs() {
 
 function resetState() {
   const hadContent = Boolean(state.selectedFile || state.downloadUrl || state.report || state.activeAnalyzeJobId != null);
+  hidePwaInstallGuide();
   cancelLcappsReportActivation();
   clearLcappsBubbleTransitionTimer();
   state.linkAbortController?.abort();
@@ -4086,6 +4262,7 @@ function resetState() {
   hideError();
   clearCurrentReportSource();
   state.selectedFile = null;
+  state.selectedFileInputSource = "upload";
   state.downloadUrl = "";
   state.linkStatusKey = "linkIdle";
   state.report = null;
@@ -4750,6 +4927,7 @@ async function renderReport() {
   }
 
   if (!state.report) {
+    hidePwaInstallGuide();
     showEmptyReportState(elements);
     setTopbarReportIdentity(false, { animate: true });
     updateReportShareControls();

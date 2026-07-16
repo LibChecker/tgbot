@@ -11,6 +11,7 @@ export function createAppState({ locale, themeChoice, history, historyCollapsed,
     locale,
     themeChoice,
     selectedFile: null,
+    selectedFileInputSource: "upload",
     downloadUrl: "",
     linkStatusKey: "linkIdle",
     runtimeLogs: [],
@@ -170,6 +171,9 @@ export function createRuntimeState() {
     analyticsContextProvider: () => ({}),
     analyticsInitialized: false,
     analyticsLoadScheduled: false,
+    pwaInstallPrompt: null,
+    pwaInstallGuideModulePromise: null,
+    pwaInstallGuideController: null,
   };
 }
 

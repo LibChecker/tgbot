@@ -126,6 +126,14 @@ and recurring pitfalls only.
 - iOS/iPadOS file pickers can gray out `.apk/.apks/.apkm/.xapk` when `accept`
   is set. Use `file-picker-support.js` to relax picker filtering on Apple
   mobile WebKit while keeping in-app validation.
+- Desktop Chromium PWA file associations are declared in
+  `packages/apk-webui/src/public/manifest.webmanifest`. Keep `launchQueue`
+  handling progressive and route received `File` objects through the existing
+  local analyzer flow; Safari and Firefox must retain picker/drag-and-drop
+  fallback behavior.
+- The PWA currently has no offline guarantee and intentionally has no service
+  worker. Add one only with an explicit cache/update design for the analyzer,
+  locale, report, and generated-rule chunks.
 - Liquid/glass effects must be capability- and power-mode gated, not OS-name
   gated. Keep fallback reasons in `liquid-glass-support.js`.
 - Web UI CSS/JS budgets are intentionally tight. Before raising a budget, prefer
