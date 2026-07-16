@@ -61,7 +61,7 @@ function normalizeVersionPart(value) {
 export default defineConfig({
   root: srcDir,
   base: "./",
-  publicDir: false,
+  publicDir: resolve(srcDir, "public"),
   plugins: [
     siteMetadataHtmlReplacements(),
     pagesFunctionDevProxy(),

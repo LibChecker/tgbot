@@ -1,0 +1,650 @@
+.pwa-install-guide {
+  --pwa-guide-duration: 8s;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(210px, 0.76fr) minmax(340px, 1.24fr);
+  gap: clamp(18px, 3vw, 34px);
+  min-width: 0;
+  overflow: hidden;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-soft) 92%, transparent), color-mix(in srgb, var(--card-bg) 88%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 74%, transparent);
+}
+
+.pwa-install-guide__copy {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.pwa-install-guide__eyebrow {
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pwa-install-guide h2 {
+  max-width: 18ch;
+  margin: 0;
+  color: var(--heading-text);
+  font-size: clamp(1.18rem, 2.2vw, 1.58rem);
+  line-height: 1.16;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.pwa-install-guide__body,
+.pwa-install-guide__manual,
+.pwa-install-guide__permission-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.pwa-install-guide__body {
+  font-size: 0.91rem;
+}
+
+.pwa-install-guide__manual,
+.pwa-install-guide__permission-note {
+  font-size: 0.75rem;
+}
+
+.pwa-install-guide__permission-note {
+  padding-left: 16px;
+  background: radial-gradient(circle at 5px 0.7em, var(--accent) 0 2px, transparent 2.5px);
+}
+
+.pwa-install-guide__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.pwa-install-guide__install {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 15px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent-strong);
+  font-size: 0.84rem;
+  font-weight: 700;
+  white-space: nowrap;
+  transition:
+    background var(--duration-quick) ease,
+    color var(--duration-quick) ease;
+}
+
+.pwa-install-guide__install svg {
+  width: 19px;
+  height: 19px;
+  fill: currentColor;
+}
+
+.pwa-install-guide__dismiss {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  transition: background var(--duration-quick) ease, color var(--duration-quick) ease;
+}
+
+.pwa-install-guide__dismiss svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.pwa-install-guide__visual {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pwa-install-guide__stage {
+  width: 100%;
+  min-height: 212px;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+.pwa-guide-stage-bg {
+  fill: color-mix(in srgb, var(--surface) 76%, var(--surface-soft));
+  stroke: color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.pwa-guide-orb {
+  opacity: 0.18;
+  fill: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.pwa-guide-orb--two {
+  fill: color-mix(in srgb, #5e9b79 28%, transparent);
+}
+
+.pwa-guide-window,
+.pwa-guide-menu {
+  fill: color-mix(in srgb, var(--surface) 86%, transparent);
+  stroke: color-mix(in srgb, var(--line-strong) 72%, transparent);
+  stroke-width: 1.25;
+}
+
+.pwa-guide-menu {
+  filter: drop-shadow(0 10px 16px color-mix(in srgb, var(--text) 10%, transparent));
+}
+
+.pwa-guide-window-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--line) 82%, transparent);
+  stroke-width: 1.2;
+}
+
+.pwa-guide-window-dot,
+.pwa-guide-placeholder,
+.pwa-guide-toolbar-line {
+  fill: color-mix(in srgb, var(--muted) 20%, transparent);
+}
+
+.pwa-guide-placeholder--short {
+  fill: color-mix(in srgb, var(--muted) 15%, transparent);
+}
+
+.pwa-guide-placeholder--soft,
+.pwa-guide-sidebar {
+  fill: color-mix(in srgb, var(--surface-soft) 82%, transparent);
+}
+
+.pwa-guide-accent-fill,
+.pwa-guide-menu-highlight {
+  fill: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  stroke: color-mix(in srgb, var(--accent) 20%, transparent);
+  stroke-width: 1;
+}
+
+.pwa-guide-apk-badge {
+  fill: color-mix(in srgb, var(--accent) 78%, #6f8fa4 22%);
+}
+
+.pwa-guide-menu-icon,
+.pwa-guide-check-path,
+.pwa-guide-cursor {
+  fill: none;
+  stroke: var(--on-accent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pwa-guide-button-icon {
+  fill: var(--accent-strong);
+}
+
+.pwa-guide-menu-icon {
+  stroke: var(--accent-strong);
+}
+
+.pwa-guide-button-label {
+  fill: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.pwa-guide-apk-label {
+  fill: var(--on-accent);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.pwa-guide-app-icon-bg,
+.pwa-guide-menu-icon-bg {
+  fill: color-mix(in srgb, var(--accent) 72%, #5e9b79 28%);
+}
+
+.pwa-guide-app-icon {
+  fill: var(--on-accent);
+}
+
+.pwa-guide-menu-icon {
+  stroke-width: 1.5;
+}
+
+.pwa-guide-menu-label {
+  fill: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 660;
+}
+
+.pwa-guide-scene-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 660;
+}
+
+.pwa-guide-cursor {
+  fill: color-mix(in srgb, var(--heading-text) 88%, transparent);
+  stroke: color-mix(in srgb, var(--surface) 88%, transparent);
+  stroke-width: 1.2;
+}
+
+.pwa-guide-result-dot,
+.pwa-guide-check-bg {
+  fill: color-mix(in srgb, #5e9b79 68%, var(--surface));
+}
+
+.pwa-guide-scan-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 58%, transparent);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.pwa-guide-check-path {
+  stroke-width: 3;
+  stroke-dasharray: var(--pwa-guide-check-length, 40);
+  stroke-dashoffset: var(--pwa-guide-check-length, 40);
+}
+
+.pwa-guide-apk-file {
+  fill: color-mix(in srgb, var(--surface) 92%, var(--surface-soft));
+  stroke: color-mix(in srgb, var(--line-strong) 88%, transparent);
+  stroke-width: 1.5;
+}
+
+.pwa-guide-apk-fold {
+  fill: none;
+  stroke: color-mix(in srgb, var(--line-strong) 88%, transparent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pwa-guide-scene--install {
+  opacity: 1;
+}
+
+.pwa-guide-scene--open,
+.pwa-guide-scene--report {
+  opacity: 0;
+}
+
+.pwa-guide-scene,
+.pwa-guide-install-control,
+.pwa-guide-check {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.pwa-guide-cursor {
+  transform-box: fill-box;
+  transform-origin: 2px 0;
+}
+
+.pwa-guide-context-menu {
+  transform-box: fill-box;
+  transform-origin: 88% 57%;
+}
+
+.pwa-guide-check {
+  opacity: 0;
+}
+
+.pwa-guide-shared-apk {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.pwa-install-guide__progress {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+
+.pwa-install-guide__progress-item {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 26%, transparent);
+}
+
+.pwa-install-guide__progress-item--one {
+  width: 18px;
+  background: color-mix(in srgb, var(--accent) 72%, #6f8fa4 28%);
+}
+
+.pwa-install-guide.is-playing :is(
+  .pwa-guide-scene,
+  .pwa-guide-shared-apk,
+  .pwa-guide-context-menu,
+  .pwa-guide-install-control,
+  .pwa-guide-check,
+  .pwa-guide-cursor,
+  .pwa-guide-result-row,
+  .pwa-guide-scan-line
+) {
+  will-change: opacity, transform;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-scene--install {
+  animation: pwa-guide-scene-install var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-scene--open {
+  animation: pwa-guide-scene-open var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-scene--report {
+  animation: pwa-guide-scene-report var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-shared-apk {
+  animation: pwa-guide-shared-file var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-install-control {
+  animation: pwa-guide-install-pulse var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-context-menu {
+  animation: pwa-guide-menu-open var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-check {
+  animation: pwa-guide-check-pop var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-cursor {
+  animation: pwa-guide-cursor-click var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-result-row--one {
+  animation: pwa-guide-result-row-one var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-result-row--two {
+  animation: pwa-guide-result-row-two var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-scan-line {
+  animation: pwa-guide-scan var(--pwa-guide-duration) ease-in-out both;
+}
+
+.pwa-install-guide.is-playing .pwa-guide-check-path {
+  animation: pwa-guide-check var(--pwa-guide-duration) var(--ease-smooth-out) both;
+}
+
+.pwa-install-guide.is-playing .pwa-install-guide__progress-item--one {
+  animation: pwa-guide-progress-one var(--pwa-guide-duration) linear both;
+}
+
+.pwa-install-guide.is-playing .pwa-install-guide__progress-item--two {
+  animation: pwa-guide-progress-two var(--pwa-guide-duration) linear both;
+}
+
+.pwa-install-guide.is-playing .pwa-install-guide__progress-item--three {
+  animation: pwa-guide-progress-three var(--pwa-guide-duration) linear both;
+}
+
+.pwa-install-guide.is-complete .pwa-guide-scene--install,
+.pwa-install-guide.is-complete .pwa-guide-scene--open,
+.pwa-install-guide.is-complete .pwa-guide-shared-apk {
+  opacity: 0;
+}
+
+.pwa-install-guide.is-complete .pwa-guide-scene--report {
+  opacity: 1;
+}
+
+.pwa-install-guide.is-complete .pwa-guide-check-path {
+  stroke-dashoffset: 0;
+}
+
+.pwa-install-guide.is-complete .pwa-guide-check {
+  opacity: 1;
+  transform: none;
+}
+
+.pwa-install-guide.is-complete .pwa-guide-scan-line {
+  opacity: 0;
+}
+
+.pwa-install-guide.is-complete .pwa-install-guide__progress-item--one,
+.pwa-install-guide.is-complete .pwa-install-guide__progress-item--two {
+  width: 6px;
+  background: color-mix(in srgb, var(--muted) 26%, transparent);
+}
+
+.pwa-install-guide.is-complete .pwa-install-guide__progress-item--three {
+  width: 18px;
+  background: color-mix(in srgb, var(--accent) 72%, #6f8fa4 28%);
+}
+
+@keyframes pwa-guide-scene-install {
+  0%, 27% { opacity: 1; transform: translateY(0) scale(1); }
+  34%, 100% { opacity: 0; transform: translateY(-5px) scale(0.985); }
+}
+
+@keyframes pwa-guide-scene-open {
+  0%, 27% { opacity: 0; transform: translateY(7px) scale(0.985); }
+  34%, 62% { opacity: 1; transform: translateY(0) scale(1); }
+  69%, 100% { opacity: 0; transform: translateY(-5px) scale(0.985); }
+}
+
+@keyframes pwa-guide-scene-report {
+  0%, 63% { opacity: 0; transform: translateY(7px) scale(0.985); }
+  72%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes pwa-guide-shared-file {
+  0%, 14% { opacity: 0; transform: translate(76px, -54px) scale(0.6); }
+  20%, 28% { opacity: 1; transform: translate(70px, -46px) scale(0.68); }
+  36%, 58% { opacity: 1; transform: translate(-160px, 8px) scale(0.78); }
+  64% { opacity: 1; transform: translate(-70px, -4px) scale(0.68); }
+  70%, 100% { opacity: 0; transform: translate(-28px, -9px) scale(0.56); }
+}
+
+@keyframes pwa-guide-install-pulse {
+  0%, 7%, 27%, 100% { transform: scale(1); }
+  12% { transform: scale(0.96); }
+  17% { transform: scale(1.045); }
+}
+
+@keyframes pwa-guide-menu-open {
+  0%, 34% { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  42%, 62% { opacity: 1; transform: translateY(0) scale(1); }
+  68%, 100% { opacity: 0; transform: translateY(-3px) scale(0.985); }
+}
+
+@keyframes pwa-guide-cursor-click {
+  0%, 43% { opacity: 0; transform: translate(14px, 12px); }
+  49% { opacity: 1; transform: translate(0, 0); }
+  54% { opacity: 1; transform: translate(1px, 2px) scale(0.92); }
+  61% { opacity: 1; transform: translate(0, 0); }
+  68%, 100% { opacity: 0; transform: translate(0, 0); }
+}
+
+@keyframes pwa-guide-result-row-one {
+  0%, 75% { opacity: 0; transform: translateY(8px); }
+  80%, 100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pwa-guide-result-row-two {
+  0%, 80% { opacity: 0; transform: translateY(8px); }
+  85%, 100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pwa-guide-scan {
+  0%, 72% { opacity: 0; transform: translateY(-18px); }
+  76% { opacity: 1; }
+  85% { opacity: 0.8; transform: translateY(66px); }
+  89%, 100% { opacity: 0; transform: translateY(66px); }
+}
+
+@keyframes pwa-guide-check {
+  0%, 91% { stroke-dashoffset: var(--pwa-guide-check-length, 40); }
+  97%, 100% { stroke-dashoffset: 0; }
+}
+
+@keyframes pwa-guide-check-pop {
+  0%, 86% { opacity: 0; transform: scale(0.82); }
+  90% { opacity: 1; transform: scale(1.045); }
+  93%, 100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pwa-guide-progress-one {
+  0%, 28% { width: 18px; background: color-mix(in srgb, var(--accent) 72%, #6f8fa4 28%); }
+  35%, 100% { width: 6px; background: color-mix(in srgb, var(--muted) 26%, transparent); }
+}
+
+@keyframes pwa-guide-progress-two {
+  0%, 28% { width: 6px; background: color-mix(in srgb, var(--muted) 26%, transparent); }
+  35%, 64% { width: 18px; background: color-mix(in srgb, var(--accent) 72%, #6f8fa4 28%); }
+  71%, 100% { width: 6px; background: color-mix(in srgb, var(--muted) 26%, transparent); }
+}
+
+@keyframes pwa-guide-progress-three {
+  0%, 64% { width: 6px; background: color-mix(in srgb, var(--muted) 26%, transparent); }
+  71%, 100% { width: 18px; background: color-mix(in srgb, var(--accent) 72%, #6f8fa4 28%); }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pwa-install-guide__install:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+    color: var(--accent-strong);
+  }
+
+  .pwa-install-guide__dismiss:hover {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+}
+
+@media (max-width: 760px) {
+  .pwa-install-guide {
+    grid-template-columns: 1fr;
+  }
+
+  .pwa-install-guide h2 {
+    max-width: 26ch;
+  }
+}
+
+@media (max-width: 540px) {
+  .pwa-install-guide {
+    display: none;
+  }
+}
+
+:root[data-power-mode="constrained"] .pwa-install-guide :is(
+  .pwa-guide-scene,
+  .pwa-guide-shared-apk,
+  .pwa-guide-context-menu,
+  .pwa-guide-install-control,
+  .pwa-guide-check,
+  .pwa-guide-cursor,
+  .pwa-guide-result-row,
+  .pwa-guide-scan-line,
+  .pwa-guide-check-path,
+  .pwa-install-guide__progress-item
+) {
+  animation: none;
+  will-change: auto;
+}
+
+:root[data-power-mode="constrained"] .pwa-install-guide .pwa-guide-scene--install,
+:root[data-power-mode="constrained"] .pwa-install-guide .pwa-guide-scene--open,
+:root[data-power-mode="constrained"] .pwa-install-guide .pwa-guide-shared-apk {
+  opacity: 0;
+}
+
+:root[data-power-mode="constrained"] .pwa-install-guide .pwa-guide-scene--report {
+  opacity: 1;
+  transform: none;
+}
+
+:root[data-power-mode="constrained"] .pwa-install-guide .pwa-guide-check-path {
+  stroke-dashoffset: 0;
+}
+
+:root[data-power-mode="constrained"] .pwa-install-guide .pwa-guide-check {
+  opacity: 1;
+  transform: none;
+}
+
+:root[data-power-mode="constrained"] .pwa-install-guide .pwa-guide-scan-line {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pwa-install-guide :is(
+    .pwa-guide-scene,
+    .pwa-guide-shared-apk,
+    .pwa-guide-context-menu,
+    .pwa-guide-install-control,
+    .pwa-guide-check,
+    .pwa-guide-cursor,
+    .pwa-guide-result-row,
+    .pwa-guide-scan-line,
+    .pwa-guide-check-path,
+    .pwa-install-guide__progress-item
+  ) {
+    animation: none;
+    will-change: auto;
+  }
+
+  .pwa-install-guide .pwa-guide-scene--install,
+  .pwa-install-guide .pwa-guide-scene--open,
+  .pwa-install-guide .pwa-guide-shared-apk {
+    opacity: 0;
+  }
+
+  .pwa-install-guide .pwa-guide-scene--report {
+    opacity: 1;
+    transform: none;
+  }
+
+  .pwa-install-guide .pwa-guide-check-path {
+    stroke-dashoffset: 0;
+  }
+
+  .pwa-install-guide .pwa-guide-check {
+    opacity: 1;
+    transform: none;
+  }
+
+  .pwa-install-guide .pwa-guide-scan-line {
+    opacity: 0;
+  }
+
+  .pwa-install-guide__install,
+  .pwa-install-guide__dismiss {
+    transition: none;
+  }
+}

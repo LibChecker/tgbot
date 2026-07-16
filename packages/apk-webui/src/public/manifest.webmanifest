@@ -1,0 +1,42 @@
+{
+  "name": "LibChecker WebUI",
+  "short_name": "LibChecker",
+  "description": "Analyze APK, APKS, APKM, and XAPK files locally in your browser.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "prefer_related_applications": false,
+  "background_color": "#f7f5f2",
+  "theme_color": "#6200ee",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "application/vnd.android.package-archive": [
+          ".apk"
+        ],
+        "application/zip": [
+          ".apks",
+          ".apkm",
+          ".xapk"
+        ]
+      },
+      "launch_type": "multiple-clients"
+    }
+  ]
+}

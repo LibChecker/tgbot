@@ -28,6 +28,7 @@
     <link rel="canonical" href="%WEBUI_SITE_URL%">
     <title>LibChecker WebUI</title>
     <link rel="icon" type="image/svg+xml" href="./assets/icon_round.svg">
+    <link rel="manifest" href="/manifest.webmanifest">
     <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"LibChecker WebUI","url":"%WEBUI_SITE_URL%","description":"Analyze APK/APKS/APKM/XAPK locally.","applicationCategory":"DeveloperApplication","image":"%WEBUI_SOCIAL_PREVIEW_URL%"}</script>
     <script>
       (() => {
@@ -216,6 +217,7 @@
                 </svg>
               </button>
             </div>
+            <section id="pwa-install-guide" hidden></section>
             <nav class="tabs" id="tabs" role="tablist" aria-label="Report tabs">
               <button type="button" class="tab is-active" data-tab="summary" role="tab" aria-selected="true" data-i18n="tabSummary">Summary</button>
               <button type="button" class="tab" data-tab="sdk" role="tab" aria-selected="false" data-i18n="tabSdk">SDK</button>
