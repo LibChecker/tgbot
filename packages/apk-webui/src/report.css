@@ -526,9 +526,8 @@
   width: 40px;
   height: 40px;
   margin: -4px -4px -4px 0;
-  border-color: var(--line);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+  border: 0;
+  background: transparent;
   color: color-mix(in srgb, var(--control-text) 78%, var(--muted));
   touch-action: manipulation;
 }
@@ -1157,9 +1156,8 @@
     color: var(--topbar-text);
   }
 
-  .native-library-detail-button:hover {
-    border-color: color-mix(in srgb, var(--accent-border) 70%, var(--line));
-    background: var(--accent-soft);
+  .icon-button.native-library-detail-button:hover:not(:disabled) {
+    background: transparent;
     color: var(--accent-strong);
   }
 
