@@ -69,6 +69,7 @@ test("APK report view model keeps shared report sections aligned", () => {
   assert.equal(model.summary.rows[fileNameRowIndex + 1]?.key, "downloadUrl");
   assert.equal(model.summary.rows[fileNameRowIndex + 1]?.value, "https://example.com/sample.apk");
   assert.equal(model.summary.sdkPreview[0].label, "SDK A");
+  assert.equal(model.summary.sdkPreview[0].previewItemKind, "native");
   assert.equal(model.native.groups[0].abi, "arm64-v8a");
   const signatureRows = model.signatures.certificates[0].rows;
   assert.equal(signatureRows.find((row) => row.key === "serialNumber")?.value, "Unknown");

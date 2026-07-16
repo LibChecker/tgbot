@@ -166,17 +166,28 @@ export function buildFeatureLabel(name, version) {
 
 export function getSdkSummaryPreviewEntries(sdkSummary, sourceLabels = {}, limit = 8) {
   const combined = [];
-  appendSdkSummaryEntries(combined, sdkSummary?.native, sourceLabels.native || "Native Libraries");
-  appendSdkSummaryEntries(combined, sdkSummary?.components, sourceLabels.components || "Components");
+  appendSdkSummaryEntries(
+    combined,
+    sdkSummary?.native,
+    sourceLabels.native || "Native Libraries",
+    "native",
+  );
+  appendSdkSummaryEntries(
+    combined,
+    sdkSummary?.components,
+    sourceLabels.components || "Components",
+    "component",
+  );
   combined.sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
   return combined.slice(0, limit);
 }
 
-export function appendSdkSummaryEntries(target, entries = [], source) {
+export function appendSdkSummaryEntries(target, entries = [], source, previewItemKind = "component") {
   for (const entry of entries || []) {
     target.push({
       ...entry,
       source,
+      previewItemKind,
     });
   }
 }

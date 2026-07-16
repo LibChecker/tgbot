@@ -315,6 +315,7 @@ function formatSvgNumber(value) {
 function renderSummaryTab(report) {
   const model = buildWebReportViewModel(report);
   const featureHtml = renderFeaturePills(model.summary.features, report.featureIcons);
+  const componentPreviewKinds = buildComponentPreviewKindLookup(report.apkInfo.components);
 
   return sectionStack([
     `<section class="summary-grid">`,
@@ -322,15 +323,20 @@ function renderSummaryTab(report) {
     `</section>`,
     section(t("summary"), renderKeyValueTable(model.summary.rows.map((row) => [row.label, row.value]))),
     section(t("buildFeatures"), featureHtml || emptyList(t("noBuildFeatures"))),
-    section(t("sdk"), renderSdkRows(model.summary.sdkPreview)),
+    section(t("sdk"), renderSdkRows(model.summary.sdkPreview, "component", componentPreviewKinds)),
   ]);
 }
 
 function renderSdkTab(report) {
   const summary = report.apkInfo.sdkSummary || {};
+  const componentPreviewKinds = buildComponentPreviewKindLookup(report.apkInfo.components);
   return sectionStack([
-    section(t("sdkNative"), renderSdkRows(summary.native || [])),
-    section(t("sdkComponents"), renderSdkRows(summary.components || [])),
+    section(t("sdkNative"), renderSdkRows(summary.native || [], "native")),
+    section(t("sdkComponents"), renderSdkRows(
+      summary.components || [],
+      "component",
+      componentPreviewKinds,
+    )),
   ]);
 }
 
@@ -631,7 +637,7 @@ function renderRawTab(report) {
   ].join("");
 }
 
-function renderSdkRows(entries) {
+function renderSdkRows(entries, fallbackPreviewKind = "component", componentPreviewKinds = new Map()) {
   if (!entries.length) {
     return emptyList(t("noSdkMarkers"));
   }
@@ -644,7 +650,11 @@ function renderSdkRows(entries) {
   const { visibleItems, hiddenCount } = getVisibleItems(entries);
   const rows = visibleItems.map((entry) => {
     const width = Math.max(4, Math.round(((entry.count || 0) / max) * 100));
-    const preview = renderCodeChipList(entry.previewItems || []);
+    const preview = renderSdkPreviewItems(
+      entry.previewItems || [],
+      entry.previewItemKind || fallbackPreviewKind,
+      componentPreviewKinds,
+    );
     const detail = joinTextParts([entry.source, formatSdkSummaryDetail(entry)]);
     return [
       `<article class="sdk-row">`,
@@ -720,12 +730,80 @@ function parseLegacyNativeSdkSummaryDetail(detail) {
   return null;
 }
 
-function renderCodeChipList(items) {
+function renderSdkPreviewItems(items, fallbackKind, componentPreviewKinds) {
   let html = "";
   for (const item of items) {
-    html += codeChip(item);
+    const normalized = normalizeSdkPreviewItem(item, fallbackKind, componentPreviewKinds);
+    if (!normalized) {
+      continue;
+    }
+    html += [
+      `<span class="sdk-preview-item sdk-preview-item--${normalized.kind}" data-sdk-preview-kind="${normalized.kind}">`,
+      `<span class="sdk-preview-kind">${escapeHtml(getSdkPreviewKindLabel(normalized.kind))}</span>`,
+      `<span class="sdk-preview-name">${escapeHtml(normalized.name)}</span>`,
+      `</span>`,
+    ].join("");
   }
   return html;
+}
+
+function normalizeSdkPreviewItem(item, fallbackKind, componentPreviewKinds) {
+  const normalizedFallback = normalizeSdkPreviewKind(fallbackKind, "component");
+  if (typeof item === "string") {
+    return item ? {
+      name: item,
+      kind: componentPreviewKinds.get(item) || normalizedFallback,
+    } : null;
+  }
+  if (!item || typeof item !== "object" || typeof item.name !== "string" || !item.name) {
+    return null;
+  }
+  return {
+    name: item.name,
+    kind: normalizeSdkPreviewKind(
+      item.kind,
+      componentPreviewKinds.get(item.name) || normalizedFallback,
+    ),
+  };
+}
+
+function buildComponentPreviewKindLookup(components = {}) {
+  const lookup = new Map();
+  const sectionKinds = {
+    activities: "activity",
+    services: "service",
+    receivers: "receiver",
+    providers: "provider",
+  };
+  for (const [sectionName, kind] of Object.entries(sectionKinds)) {
+    for (const component of components?.[sectionName] || []) {
+      if (component.name) {
+        lookup.set(component.name, kind);
+      }
+      if (component.shortName) {
+        lookup.set(component.shortName, kind);
+      }
+    }
+  }
+  return lookup;
+}
+
+function normalizeSdkPreviewKind(kind, fallbackKind) {
+  return SDK_PREVIEW_KINDS.has(kind) ? kind : fallbackKind;
+}
+
+const SDK_PREVIEW_KIND_LABELS = Object.freeze({
+  native: "ELF",
+  activity: "Activity",
+  service: "Service",
+  receiver: "Receiver",
+  provider: "Provider",
+  component: "Component",
+});
+const SDK_PREVIEW_KINDS = new Set(Object.keys(SDK_PREVIEW_KIND_LABELS));
+
+function getSdkPreviewKindLabel(kind) {
+  return SDK_PREVIEW_KIND_LABELS[kind] || SDK_PREVIEW_KIND_LABELS.component;
 }
 
 function joinTextParts(parts) {
