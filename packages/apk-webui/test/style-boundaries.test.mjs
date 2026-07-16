@@ -39,6 +39,8 @@ test("report and compare styles stay behind lazy module boundaries", async () =>
   assert.match(compareController, /^import "\.\.\/compare\.css";/mu);
   assert.match(reportCss, /^\.group-block\s*\{[^}]*\bpadding:\s*14px;/msu);
   assert.match(reportCss, /^\.component-group-grid\s*\{[^}]*\bgrid-template-columns:\s*1fr;/msu);
+  assert.match(reportCss, /^\.component-name-prefix\s*\{[^}]*\bcolor:\s*var\(--muted\);[^}]*\bfont-weight:\s*600;/msu);
+  assert.match(reportCss, /^\.component-name-simple\s*\{[^}]*\bcolor:\s*var\(--heading-text\);[^}]*\bfont-weight:\s*700;/msu);
   assert.match(reportCss, /^\.permission-table-row\s*\{[^}]*\bgrid-template-columns:\s*minmax\(0,\s*1fr\);/msu);
   assert.doesNotMatch(compareCss, /^\.compare-diff-block\s*\{[^}]*\bpadding:/msu);
 });
