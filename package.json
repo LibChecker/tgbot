@@ -49,12 +49,5 @@
     "sharp": "^0.35.0",
     "typescript": "^7.0.2",
     "wrangler": "4.111.0"
-  },
-  "allowScripts": {
-    "esbuild@0.28.1": true,
-    "fsevents@2.3.3": true,
-    "fsevents@2.3.2": true,
-    "sharp@0.34.5": true,
-    "workerd@1.20260710.1": true
   }
 }
