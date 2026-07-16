@@ -753,11 +753,13 @@
 }
 
 .component-name-prefix {
-  color: var(--control-text);
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .component-name-simple {
   color: var(--heading-text);
+  font-weight: 700;
 }
 
 .component-detail-table .kv-row {
