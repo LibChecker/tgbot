@@ -60,6 +60,7 @@ test("native SDK summary details follow the active locale", () => {
   const englishHtml = reportRenderer.renderTabPanelHtml(report);
   assert.match(englishHtml, /1 library name · 4 files · ABI arm64-v8a, x86_64/);
   assert.doesNotMatch(englishHtml, /个库名|个文件/);
+  assert.match(englishHtml, /data-sdk-preview-kind="native"[\s\S]*sdk-preview-kind">ELF</);
 
   setupRenderer("sdk", {}, {
     locale: "zh-Hans",
@@ -89,6 +90,47 @@ test("native SDK summary localizes legacy stored detail text", () => {
   const html = reportRenderer.renderTabPanelHtml(report);
   assert.match(html, /1 library name · 4 files · ABI arm64-v8a, x86_64/);
   assert.doesNotMatch(html, /个库名|个文件/);
+});
+
+test("SDK summaries render typed two-part preview items and support legacy strings", () => {
+  const report = createReport({
+    components: {
+      services: [{ name: "com.example.LegacyService", shortName: "LegacyService" }],
+    },
+    sdkSummary: {
+      native: [{
+        label: "Native SDK",
+        count: 1,
+        previewItems: [{ name: "lib<unsafe>.so", kind: "native" }],
+      }],
+      components: [{
+        label: "Component SDK",
+        count: 6,
+        previewItems: [
+          { name: "MainActivity", kind: "activity" },
+          { name: "SyncService", kind: "service" },
+          { name: "BootReceiver", kind: "receiver" },
+          { name: "DataProvider", kind: "provider" },
+          "LegacyService",
+          "LegacyComponent",
+        ],
+      }],
+    },
+  });
+
+  setupRenderer("sdk");
+  const html = reportRenderer.renderTabPanelHtml(report);
+
+  assert.equal(count(html, `<span class="sdk-preview-item `), 7);
+  assert.match(html, /sdk-preview-item--native" data-sdk-preview-kind="native"[\s\S]*sdk-preview-kind">ELF</);
+  assert.match(html, /sdk-preview-item--activity" data-sdk-preview-kind="activity"[\s\S]*sdk-preview-kind">Activity</);
+  assert.match(html, /sdk-preview-item--service" data-sdk-preview-kind="service"[\s\S]*sdk-preview-kind">Service</);
+  assert.match(html, /sdk-preview-item--receiver" data-sdk-preview-kind="receiver"[\s\S]*sdk-preview-kind">Receiver</);
+  assert.match(html, /sdk-preview-item--provider" data-sdk-preview-kind="provider"[\s\S]*sdk-preview-kind">Provider</);
+  assert.match(html, /sdk-preview-item--service" data-sdk-preview-kind="service"[\s\S]*sdk-preview-kind">Service[\s\S]*LegacyService/);
+  assert.match(html, /sdk-preview-item--component" data-sdk-preview-kind="component"[\s\S]*sdk-preview-kind">Component[\s\S]*LegacyComponent/);
+  assert.match(html, /lib&lt;unsafe&gt;\.so/);
+  assert.doesNotMatch(html, /lib<unsafe>\.so/);
 });
 
 test("report renderer caps long permission lists", () => {

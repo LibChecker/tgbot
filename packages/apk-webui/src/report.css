@@ -1086,6 +1086,78 @@
   padding: 12px 14px;
 }
 
+.sdk-preview-item {
+  --sdk-preview-tone: #737880;
+
+  display: inline-flex;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--sdk-preview-tone) 46%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sdk-preview-tone) 10%, var(--surface-soft));
+}
+
+.sdk-preview-item--native {
+  --sdk-preview-tone: #6687a2;
+}
+
+.sdk-preview-item--activity {
+  --sdk-preview-tone: #836e99;
+}
+
+.sdk-preview-item--service {
+  --sdk-preview-tone: #588676;
+}
+
+.sdk-preview-item--receiver {
+  --sdk-preview-tone: #987b49;
+}
+
+.sdk-preview-item--provider {
+  --sdk-preview-tone: #97697d;
+}
+
+.sdk-preview-kind,
+.sdk-preview-name {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sdk-preview-kind {
+  flex: 0 0 auto;
+  padding: 0.42rem 0.6rem;
+  border-inline-end: 1px solid color-mix(in srgb, var(--sdk-preview-tone) 52%, var(--line));
+  background: color-mix(in srgb, var(--sdk-preview-tone) 38%, var(--surface));
+  color: color-mix(in srgb, var(--sdk-preview-tone) 78%, var(--control-text));
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sdk-preview-name {
+  min-width: 0;
+  padding: 0.42rem 0.72rem;
+  color: var(--control-text);
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+:root[data-color-scheme="dark"] .sdk-preview-item {
+  border-color: color-mix(in srgb, var(--sdk-preview-tone) 52%, var(--line));
+  background: color-mix(in srgb, var(--sdk-preview-tone) 16%, var(--surface-soft));
+}
+
+:root[data-color-scheme="dark"] .sdk-preview-kind {
+  border-inline-end-color: color-mix(in srgb, var(--sdk-preview-tone) 58%, var(--line));
+  background: color-mix(in srgb, var(--sdk-preview-tone) 34%, var(--surface));
+  color: color-mix(in srgb, var(--sdk-preview-tone) 38%, var(--control-text));
+}
+
 .sdk-count {
   flex: 0 0 auto;
   padding: 0.2rem 0.58rem;
@@ -1230,6 +1302,14 @@
 }
 
 @media (max-width: 480px) {
+
+  .sdk-preview-item {
+    width: 100%;
+  }
+
+  .sdk-preview-name {
+    flex: 1 1 auto;
+  }
 
   .archive-chart-body {
     grid-template-columns: 1fr;

@@ -151,6 +151,13 @@
 /** @typedef {Record<string, LibCheckerRuleDetail>} LibCheckerRuleDetailMap */
 
 /** @typedef {"exact" | "regex" | "action"} SdkMarkerMatchSource */
+/** @typedef {"native" | "activity" | "service" | "receiver" | "provider" | "component"} SdkSummaryPreviewKind */
+
+/**
+ * @typedef {object} SdkSummaryPreviewItem
+ * @property {string} name
+ * @property {SdkSummaryPreviewKind} kind
+ */
 
 /**
  * @typedef {object} SdkMarker
@@ -178,7 +185,7 @@
  * @property {number=} fileCount
  * @property {string[]=} abis
  * @property {string} detail
- * @property {string[]} previewItems
+ * @property {(string | SdkSummaryPreviewItem)[]} previewItems
  */
 
 /**

@@ -4,6 +4,8 @@ import { isLibCheckerRule } from "./contracts.js";
 /** @typedef {import("./contracts.js").LibCheckerRule} LibCheckerRule */
 /** @typedef {import("./contracts.js").LibCheckerRuleDetailMap} LibCheckerRuleDetailMap */
 /** @typedef {import("./contracts.js").SdkMarkerAnnotations} SdkMarkerAnnotations */
+/** @typedef {import("./contracts.js").SdkSummaryPreviewItem} SdkSummaryPreviewItem */
+/** @typedef {import("./contracts.js").SdkSummaryPreviewKind} SdkSummaryPreviewKind */
 
 const RULE_TYPE_NATIVE = 0;
 const RULE_TYPE_SERVICE = 1;
@@ -17,6 +19,14 @@ const COMPONENT_TYPE_LABELS = {
   services: "Service",
   receivers: "Receiver",
   providers: "Provider",
+};
+
+/** @type {Record<string, SdkSummaryPreviewKind>} */
+const COMPONENT_PREVIEW_KINDS = {
+  activities: "activity",
+  services: "service",
+  receivers: "receiver",
+  providers: "provider",
 };
 
 const QIHOO_NATIVE_LIBS = new Set([
@@ -271,7 +281,9 @@ function summarizeNativeSdkMarkers(libraries, resolveIconUrl) {
       fileCount: entry.fileCount,
       abis: [...entry.abis].filter(Boolean).sort(),
       detail: buildNativeSummaryDetail(entry),
-      previewItems: [...entry.itemNames].slice(0, 4),
+      previewItems: [...entry.itemNames]
+        .slice(0, 4)
+        .map((name) => createSdkSummaryPreviewItem(name, "native")),
     }))
     .sort(compareSummaryEntries);
 }
@@ -281,6 +293,7 @@ function summarizeComponentSdkMarkers(components, resolveIconUrl) {
 
   for (const [sectionName, items] of Object.entries(components)) {
     const componentTypeLabel = COMPONENT_TYPE_LABELS[sectionName] || "Component";
+    const previewKind = COMPONENT_PREVIEW_KINDS[sectionName] || "component";
     for (const component of items) {
       if (!component.sdk) {
         continue;
@@ -298,14 +311,17 @@ function summarizeComponentSdkMarkers(components, resolveIconUrl) {
           detailKey: component.sdk.detailKey || null,
           ruleDetail: component.sdk.ruleDetail || null,
           count: 0,
-          items: [],
+          previewItems: [],
           componentKinds: new Map(),
         };
         grouped.set(key, entry);
       }
 
       entry.count += 1;
-      entry.items.push(component);
+      const previewName = component.shortName || component.name;
+      if (previewName) {
+        entry.previewItems.push(createSdkSummaryPreviewItem(previewName, previewKind));
+      }
       entry.componentKinds.set(
         componentTypeLabel,
         (entry.componentKinds.get(componentTypeLabel) || 0) + 1,
@@ -324,12 +340,18 @@ function summarizeComponentSdkMarkers(components, resolveIconUrl) {
       ruleDetail: entry.ruleDetail || null,
       count: entry.count,
       detail: buildComponentSummaryDetail(entry),
-      previewItems: entry.items
-        .map((item) => item.shortName || item.name)
-        .filter(Boolean)
-        .slice(0, 4),
+      previewItems: entry.previewItems.slice(0, 4),
     }))
     .sort(compareSummaryEntries);
+}
+
+/**
+ * @param {string} name
+ * @param {SdkSummaryPreviewKind} kind
+ * @returns {SdkSummaryPreviewItem}
+ */
+function createSdkSummaryPreviewItem(name, kind) {
+  return { name, kind };
 }
 
 function buildNativeSummaryDetail(entry) {
