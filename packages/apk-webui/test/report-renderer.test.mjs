@@ -133,6 +133,27 @@ test("SDK summaries render typed two-part preview items and support legacy strin
   assert.doesNotMatch(html, /lib<unsafe>\.so/);
 });
 
+test("SDK summary rows omit decorative progress bars", () => {
+  const report = createReport({
+    sdkSummary: {
+      native: [{
+        label: "Sample SDK",
+        count: 4,
+        detail: "4 library names",
+        previewItems: ["libsample.so"],
+      }],
+      components: [],
+    },
+  });
+
+  setupRenderer("sdk");
+  const html = reportRenderer.renderTabPanelHtml(report);
+
+  assert.match(html, /<article class="sdk-row">/u);
+  assert.match(html, /<span class="sdk-count app-data-text">4<\/span>/u);
+  assert.doesNotMatch(html, /class="bar(?:-track)?"/u);
+});
+
 test("report renderer caps long permission lists", () => {
   setupRenderer("permissions");
   const permissions = Array.from({ length: reportRenderer.REPORT_LIST_RENDER_LIMIT + 3 }, (_, index) => (

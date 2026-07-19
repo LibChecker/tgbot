@@ -642,14 +642,8 @@ function renderSdkRows(entries, fallbackPreviewKind = "component", componentPrev
     return emptyList(t("noSdkMarkers"));
   }
 
-  let max = 1;
-  for (const entry of entries) {
-    max = Math.max(max, entry.count || 0);
-  }
-
   const { visibleItems, hiddenCount } = getVisibleItems(entries);
   const rows = visibleItems.map((entry) => {
-    const width = Math.max(4, Math.round(((entry.count || 0) / max) * 100));
     const preview = renderSdkPreviewItems(
       entry.previewItems || [],
       entry.previewItemKind || fallbackPreviewKind,
@@ -662,7 +656,6 @@ function renderSdkRows(entries, fallbackPreviewKind = "component", componentPrev
       `<div class="sdk-title app-data-text">${renderSdkIcon(entry.iconUrl, entry.label, entry.singleColorIcon)}${renderSdkRuleLabel(entry, t("unknown"))}</div>`,
       `<span class="sdk-count app-data-text">${escapeHtml(String(entry.count || 0))}</span>`,
       `</div>`,
-      `<div class="bar-track"><div class="bar" style="width: ${width}%"></div></div>`,
       detail ? `<div class="sdk-meta app-data-text">${escapeHtml(detail)}</div>` : "",
       preview ? `<div class="sdk-preview app-data-text">${preview}</div>` : "",
       `</article>`,

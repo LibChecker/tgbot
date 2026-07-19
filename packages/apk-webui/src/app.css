@@ -39,8 +39,6 @@
   --compare-moved-border: rgba(37, 99, 235, 0.36);
   --compare-moved-text: #1d4ed8;
   --table-row-alt: rgba(0, 0, 0, 0.025);
-  --bar-track: rgba(118, 118, 128, 0.16);
-  --bar-fill: linear-gradient(90deg, var(--blue), #34c759);
   --count-bg: rgba(0, 113, 227, 0.1);
   --count-text: #005ecb;
   --shadow: 0 18px 42px rgba(0, 0, 0, 0.08);
@@ -139,8 +137,6 @@
   --compare-moved-border: rgba(96, 165, 250, 0.44);
   --compare-moved-text: #bfdbfe;
   --table-row-alt: rgba(255, 255, 255, 0.045);
-  --bar-track: rgba(118, 118, 128, 0.28);
-  --bar-fill: linear-gradient(90deg, var(--blue), #30d158);
   --count-bg: rgba(10, 132, 255, 0.18);
   --count-text: #8ec5ff;
   --shadow: 0 20px 48px rgba(0, 0, 0, 0.28);

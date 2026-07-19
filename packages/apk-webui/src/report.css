@@ -1169,19 +1169,6 @@
   font-weight: 650;
 }
 
-.bar-track {
-  height: 9px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--bar-track);
-}
-
-.bar {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--bar-fill);
-}
-
 .json-block {
   margin: 0;
   padding: 14px;
