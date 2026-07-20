@@ -21,7 +21,7 @@ const DEFAULT_EMOJI = "🔹";
 const STICKER_EMOJI_SIZE = 100;
 const STICKER_SVG_DENSITY = 384;
 const TGS_MAX_BYTES = 64 * 1024;
-const STICKER_RENDER_VERSION = 7;
+const STICKER_RENDER_VERSION = 8;
 const MONOCHROME_ICON_COLOR = "#74777F";
 const DEFAULT_STICKER_FORMAT = "animated";
 const STICKER_FORMATS = new Set(["animated", "static"]);
@@ -1141,7 +1141,7 @@ function runSelfTest() {
   assert(plan.actions.filter((action) => action.type === "create").length === 2, "first sticker in each set creates it");
   assert(plan.actions.filter((action) => action.type === "add").length === 199, "remaining stickers are appended");
   const currentSetBase = buildVersionedSetBase("libchecker_sdk");
-  assert(currentSetBase === `libchecker_sdk_${stickerFormat}_v7`, "default sticker set base includes the render version");
+  assert(currentSetBase === `libchecker_sdk_${stickerFormat}_v8`, "corrected build feature icons use a fresh sticker set namespace");
   const currentSetName = buildSetName(currentSetBase, "examplebot", 1);
   assert(
     buildAddEmojiUrl(currentSetName) === `https://t.me/addemoji/${currentSetName}`,
@@ -1152,16 +1152,18 @@ function runSelfTest() {
     "sync output includes the official addstickers set link",
   );
   assert(
-    buildStickerFilename("ic_lib_test_000", "tgs") === `ic_lib_test_000_${stickerFormat}_v7.tgs`,
+    buildStickerFilename("ic_lib_test_000", "tgs") === `ic_lib_test_000_${stickerFormat}_v8.tgs`,
     "uploaded sticker filenames include the render version",
   );
   const stickerIconMap = buildStickerIconSvgMap({
     ic_gradle: "<svg id=\"gradle\" />",
     ic_lib_jetpack_compose: "<svg id=\"compose\" />",
+    ic_lib_jetbrain_kmp: "<svg id=\"kmp\" />",
     ic_lib_kotlin: "<svg id=\"kotlin\" />",
     ic_lib_existing: "<svg id=\"existing\" />",
   });
   assert(stickerIconMap.ic_feature_kotlin === stickerIconMap.ic_lib_kotlin, "Kotlin sticker icon reuses the WebUI SDK icon source");
+  assert(stickerIconMap.ic_feature_kotlin !== stickerIconMap.ic_lib_jetbrain_kmp, "Kotlin sticker icon does not reuse the KMP source");
   assert(stickerIconMap.ic_feature_compose === stickerIconMap.ic_lib_jetpack_compose, "Compose sticker icon reuses the WebUI SDK icon source");
   assert(stickerIconMap.ic_feature_agp === stickerIconMap.ic_gradle, "AGP sticker icon reuses the WebUI SDK icon source");
   assert(stickerIconMap.ic_feature_gradle === stickerIconMap.ic_gradle, "Gradle sticker icon reuses the WebUI SDK icon source");
