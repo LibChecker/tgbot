@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { timingSafeEqual } from "hono/utils/buffer";
 import { readAndroidPackageInfo } from "../../shared/src/apk.js";
+import { BUILD_FEATURE_ICON_NAMES } from "../../shared/src/build-feature-icons.js";
 import { assertTelegramApkReport } from "../../shared/src/contracts.js";
 import { buildFeatureIconUrl, buildSdkIconUrl, handleIconRequest } from "./icons.js";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, createI18n, normalizeLocale, resolveTelegramLocale } from "./i18n.js";
@@ -2161,19 +2162,19 @@ function formatFeatureChipsHtml(buildFeatures, sdkCustomEmojiIds = {}) {
   const chips = [];
 
   if (buildFeatures.kotlinDetected) {
-    chips.push(buildFeatureChip("ic_feature_kotlin", "🟣", buildFeatureLabel("Kotlin", buildFeatures.kotlinVersion), sdkCustomEmojiIds));
+    chips.push(buildFeatureChip(BUILD_FEATURE_ICON_NAMES.kotlin, "🟣", buildFeatureLabel("Kotlin", buildFeatures.kotlinVersion), sdkCustomEmojiIds));
   }
 
   if (buildFeatures.composeDetected) {
-    chips.push(buildFeatureChip("ic_feature_compose", "🎨", buildFeatureLabel("Compose", buildFeatures.composeVersion), sdkCustomEmojiIds));
+    chips.push(buildFeatureChip(BUILD_FEATURE_ICON_NAMES.compose, "🎨", buildFeatureLabel("Compose", buildFeatures.composeVersion), sdkCustomEmojiIds));
   }
 
   if (buildFeatures.gradleVersion) {
-    chips.push(buildFeatureChip("ic_feature_gradle", "🟢", `Gradle ${buildFeatures.gradleVersion}`, sdkCustomEmojiIds));
+    chips.push(buildFeatureChip(BUILD_FEATURE_ICON_NAMES.gradle, "🟢", `Gradle ${buildFeatures.gradleVersion}`, sdkCustomEmojiIds));
   }
 
   if (buildFeatures.agpVersion) {
-    chips.push(buildFeatureChip("ic_feature_agp", "🧱", `AGP ${buildFeatures.agpVersion}`, sdkCustomEmojiIds));
+    chips.push(buildFeatureChip(BUILD_FEATURE_ICON_NAMES.agp, "🧱", `AGP ${buildFeatures.agpVersion}`, sdkCustomEmojiIds));
   }
 
   return chips.join(" ");

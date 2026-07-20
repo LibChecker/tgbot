@@ -219,7 +219,7 @@ test("SDK marker summary lists bounded markers with icons and overflow", () => {
   ].join("\n"));
 });
 
-test("build feature summary uses synced custom emoji icons", () => {
+test("build feature summary uses canonical custom emoji icons", () => {
   assert.equal(
     formatFeatureChipsHtml({
       kotlinDetected: true,
@@ -229,16 +229,15 @@ test("build feature summary uses synced custom emoji icons", () => {
       gradleVersion: "8.13",
       agpVersion: "8.8.0",
     }, {
-      ic_feature_kotlin: "101",
-      ic_feature_compose: "102",
-      ic_feature_gradle: "103",
-      ic_feature_agp: "104",
+      ic_lib_kotlin: "101",
+      ic_lib_jetpack_compose: "102",
+      ic_gradle: "103",
     }),
     [
       '<tg-emoji emoji-id="101">🟣</tg-emoji> <code>Kotlin 2.1.0</code>',
       '<tg-emoji emoji-id="102">🎨</tg-emoji> <code>Compose 1.8.0</code>',
       '<tg-emoji emoji-id="103">🟢</tg-emoji> <code>Gradle 8.13</code>',
-      '<tg-emoji emoji-id="104">🧱</tg-emoji> <code>AGP 8.8.0</code>',
+      '<tg-emoji emoji-id="103">🧱</tg-emoji> <code>AGP 8.8.0</code>',
     ].join(" "),
   );
 });
