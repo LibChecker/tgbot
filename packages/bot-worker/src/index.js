@@ -2092,7 +2092,7 @@ function formatApkSummary(report, sdkCustomEmojiIds = {}) {
     lines.push(t("summary.sdk_markers", { value: sdkMarkerSummary }));
   }
 
-  const featureHtml = formatFeatureChipsHtml(report.apkInfo.buildFeatures);
+  const featureHtml = formatFeatureChipsHtml(report.apkInfo.buildFeatures, sdkCustomEmojiIds);
   if (featureHtml) {
     lines.push(t("summary.features", { value: featureHtml }));
   }
@@ -2157,26 +2157,32 @@ function formatSdkMarkerListItem(entry, sdkCustomEmojiIds = {}) {
   return `${icon}<code>${escapeHtml(entry.label)}</code>${count}`;
 }
 
-function formatFeatureChipsHtml(buildFeatures) {
+function formatFeatureChipsHtml(buildFeatures, sdkCustomEmojiIds = {}) {
   const chips = [];
 
   if (buildFeatures.kotlinDetected) {
-    chips.push(buildHtmlChip(`🟣 ${buildFeatureLabel("Kotlin", buildFeatures.kotlinVersion)}`));
+    chips.push(buildFeatureChip("ic_feature_kotlin", "🟣", buildFeatureLabel("Kotlin", buildFeatures.kotlinVersion), sdkCustomEmojiIds));
   }
 
   if (buildFeatures.composeDetected) {
-    chips.push(buildHtmlChip(`🎨 ${buildFeatureLabel("Compose", buildFeatures.composeVersion)}`));
+    chips.push(buildFeatureChip("ic_feature_compose", "🎨", buildFeatureLabel("Compose", buildFeatures.composeVersion), sdkCustomEmojiIds));
   }
 
   if (buildFeatures.gradleVersion) {
-    chips.push(buildHtmlChip(`🟢 Gradle ${buildFeatures.gradleVersion}`));
+    chips.push(buildFeatureChip("ic_feature_gradle", "🟢", `Gradle ${buildFeatures.gradleVersion}`, sdkCustomEmojiIds));
   }
 
   if (buildFeatures.agpVersion) {
-    chips.push(buildHtmlChip(`🧱 AGP ${buildFeatures.agpVersion}`));
+    chips.push(buildFeatureChip("ic_feature_agp", "🧱", `AGP ${buildFeatures.agpVersion}`, sdkCustomEmojiIds));
   }
 
   return chips.join(" ");
+}
+
+function buildFeatureChip(iconName, fallbackIcon, text, sdkCustomEmojiIds) {
+  const emojiId = sdkCustomEmojiIds[iconName];
+  const icon = emojiId ? `<tg-emoji emoji-id="${escapeHtml(emojiId)}">${fallbackIcon}</tg-emoji>` : fallbackIcon;
+  return `${icon} ${buildHtmlChip(text)}`;
 }
 
 function buildHtmlChip(text) {
@@ -2431,6 +2437,7 @@ export const __botWorkerTestInternals = {
   buildLinkReplyMarkup,
   buildWebUiReportUrl,
   formatApkSummary,
+  formatFeatureChipsHtml,
   formatSdkMarkerSummary,
   getManagedCommandLanguageCodes,
   stripTelegramCustomEmojiTags,

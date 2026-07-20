@@ -6,6 +6,7 @@ import app, { __botWorkerTestInternals } from "../src/index.js";
 const {
   buildLinkReplyMarkup,
   buildWebUiReportUrl,
+  formatFeatureChipsHtml,
   formatSdkMarkerSummary,
   getManagedCommandLanguageCodes,
   stripTelegramCustomEmojiTags,
@@ -216,6 +217,30 @@ test("SDK marker summary lists bounded markers with icons and overflow", () => {
     "<code>X5</code> <b>x2</b>",
     "+1 more",
   ].join("\n"));
+});
+
+test("build feature summary uses synced custom emoji icons", () => {
+  assert.equal(
+    formatFeatureChipsHtml({
+      kotlinDetected: true,
+      kotlinVersion: "2.1.0",
+      composeDetected: true,
+      composeVersion: "1.8.0",
+      gradleVersion: "8.13",
+      agpVersion: "8.8.0",
+    }, {
+      ic_feature_kotlin: "101",
+      ic_feature_compose: "102",
+      ic_feature_gradle: "103",
+      ic_feature_agp: "104",
+    }),
+    [
+      '<tg-emoji emoji-id="101">🟣</tg-emoji> <code>Kotlin 2.1.0</code>',
+      '<tg-emoji emoji-id="102">🎨</tg-emoji> <code>Compose 1.8.0</code>',
+      '<tg-emoji emoji-id="103">🟢</tg-emoji> <code>Gradle 8.13</code>',
+      '<tg-emoji emoji-id="104">🧱</tg-emoji> <code>AGP 8.8.0</code>',
+    ].join(" "),
+  );
 });
 
 test("report data route handles CORS preflight through Hono middleware", async () => {
