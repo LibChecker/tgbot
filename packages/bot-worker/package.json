@@ -26,7 +26,7 @@
     "check": "node scripts/check.mjs && npm run typecheck && npm test && npm run test:runtime"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.18.5",
+    "@cloudflare/vitest-pool-workers": "0.18.6",
     "vitest": "^4.1.10",
     "wrangler": "4.111.0"
   },
