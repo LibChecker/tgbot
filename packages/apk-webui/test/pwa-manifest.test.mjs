@@ -35,6 +35,17 @@ test("PWA manifest declares install metadata and Android package file handling",
     },
     launch_type: "multiple-clients",
   }]);
+  assert.deepEqual(manifest.share_target, {
+    action: "/share-target",
+    method: "POST",
+    enctype: "multipart/form-data",
+    params: {
+      files: [{
+        name: "apk",
+        accept: ["application/vnd.android.package-archive", ".apk"],
+      }],
+    },
+  });
 });
 
 for (const size of [192, 512]) {

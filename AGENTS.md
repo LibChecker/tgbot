@@ -131,9 +131,9 @@ and recurring pitfalls only.
   handling progressive and route received `File` objects through the existing
   local analyzer flow; Safari and Firefox must retain picker/drag-and-drop
   fallback behavior.
-- The PWA currently has no offline guarantee and intentionally has no service
-  worker. Add one only with an explicit cache/update design for the analyzer,
-  locale, report, and generated-rule chunks.
+- The PWA service worker only hands Android Web Share Target APKs to the page.
+  It does not cache the app shell, analyzer, locale, report, or generated-rule
+  chunks, so there is still intentionally no offline guarantee.
 - Liquid/glass effects must be capability- and power-mode gated, not OS-name
   gated. Keep fallback reasons in `liquid-glass-support.js`.
 - Web UI CSS/JS budgets are intentionally tight. Before raising a budget, prefer

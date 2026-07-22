@@ -1241,6 +1241,32 @@ function initPwaFileHandling() {
     .catch(handlePwaFileLaunchError);
 }
 
+function initPwaShareTarget() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+
+  const isShareLaunch = new URL(window.location.href).searchParams.has("share-target");
+  void import("./app/pwa-share-target.js")
+    .then(({ initializePwaShareTarget }) => initializePwaShareTarget(handlePwaLaunchedFile, {
+      serviceWorkerContainer: navigator.serviceWorker,
+      onRegistrationError: logPwaShareTargetError,
+    }))
+    .catch((error) => {
+      if (isShareLaunch) {
+        handlePwaFileLaunchError(error);
+        return;
+      }
+      logPwaShareTargetError(error);
+    });
+}
+
+function logPwaShareTargetError(error) {
+  appendRuntimeLog("warn", "PWA share target unavailable", {
+    ...getClientErrorTelemetryFields(error),
+  });
+}
+
 async function handlePwaLaunchedFile(file) {
   if (!(file instanceof File)) {
     throw new TypeError("The launched item is not a file");
@@ -1371,6 +1397,7 @@ async function initializeApp() {
   updateAppMode();
   bindEvents();
   initPwaFileHandling();
+  initPwaShareTarget();
   initWebMcpWhenAvailable();
   syncMobileBottomControls();
   scheduleColorOrbBackground();

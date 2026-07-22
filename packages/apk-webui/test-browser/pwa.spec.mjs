@@ -89,6 +89,43 @@ test("opens a launchQueue APK in the analyzer automatically", async ({ page }) =
   await expect(page.locator("#tab-panel")).toContainText("com.example.smoke");
 });
 
+test("opens an APK received through the Android share target", async ({ browserName, page }) => {
+  test.skip(browserName !== "chromium", "Android Web Share Target is Chromium-specific");
+
+  await page.goto("/");
+  await expect(page.locator("#analyze-form")).toBeVisible();
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+  const invalidRedirectUrl = await page.evaluate(async () => {
+    const formData = new FormData();
+    formData.set("apk", new File(["not an APK"], "notes.txt", { type: "text/plain" }));
+    return (await fetch("/share-target", { method: "POST", body: formData })).url;
+  });
+  expect(invalidRedirectUrl).toContain("?share-target=invalid");
+
+  const redirectUrl = await page.evaluate(async ({ base64 }) => {
+    const binary = atob(base64);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const formData = new FormData();
+    formData.set("apk", new File([bytes], "shared-smoke.apk", {
+      type: "application/vnd.android.package-archive",
+    }));
+    return (await fetch("/share-target", { method: "POST", body: formData })).url;
+  }, { base64: smokeApkBase64 });
+  expect(redirectUrl).toContain("?share-target=ready");
+
+  const workerStarted = page.waitForEvent("worker");
+  await page.goto(redirectUrl);
+  const worker = await workerStarted;
+
+  expect(worker.url()).toContain("analyzer-worker");
+  await expect(page).toHaveURL("/");
+  await expect(page.locator("#result-view")).toBeVisible();
+  await expect(page.locator("#report-hero")).toContainText("Smoke APK");
+  await expect(page.locator("#tab-panel")).toContainText("com.example.smoke");
+});
+
 test("dismisses the macOS install guide for 30 days across reloads", async ({ page }) => {
   await openPwaCapablePage(page);
   await analyzeSmokeApk(page);
