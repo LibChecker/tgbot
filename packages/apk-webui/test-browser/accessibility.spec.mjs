@@ -30,6 +30,7 @@ test("ELF detail dialog has no automatically detectable WCAG A or AA violations"
   await page.locator("[data-elf-details]").first().click();
   await expect(page.locator("#elf-detail-dialog")).toBeVisible();
   await expect(page.locator("#elf-detail-body")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator("#elf-detail-dialog .elf-detail-panel")).toHaveCSS("opacity", "1");
   await expectNoWcagViolations(page, testInfo, "#elf-detail-dialog");
 });
 

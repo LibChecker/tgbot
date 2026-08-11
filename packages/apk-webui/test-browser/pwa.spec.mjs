@@ -214,7 +214,7 @@ test("fully masks the report checkmark until its reveal phase", async ({ page })
 
   expect(mask.badgeOpacity).toBe(0);
   expect(mask.dasharray).toBeCloseTo(mask.length, 3);
-  expect(mask.offset).toBeGreaterThanOrEqual(mask.length);
+  expect(mask.offset).toBeCloseTo(mask.length, 3);
 });
 
 test("shows the install guide only after the first successful analysis in a page session", async ({ page }) => {
