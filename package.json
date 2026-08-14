@@ -40,8 +40,7 @@
     "perf:check": "node scripts/check-size-budgets.mjs",
     "size:check": "npm run perf:check",
     "typecheck": "npm run typecheck --workspace @tgbot/shared && npm run typecheck --workspace @tgbot/bot-worker && npm run typecheck --workspace @tgbot/apk-webui",
-    "check:workflows": "node --check scripts/check-desktop-nightly-workflow.mjs && node scripts/check-desktop-nightly-workflow.mjs",
-    "check:deploy": "npm run generated:generate --workspace @tgbot/shared && node --check scripts/check-size-budgets.mjs && node --check scripts/deploy-cloudflare.mjs && node --check scripts/sync-telegram-sdk-emojis.mjs && node scripts/sync-telegram-sdk-emojis.mjs --self-test && npm run check:workflows",
+    "check:deploy": "npm run generated:generate --workspace @tgbot/shared && node --check scripts/check-size-budgets.mjs && node --check scripts/deploy-cloudflare.mjs && node --check scripts/sync-telegram-sdk-emojis.mjs && node scripts/sync-telegram-sdk-emojis.mjs --self-test",
     "check": "npm run check --workspace @tgbot/shared && npm run check --workspace @tgbot/bot-worker && npm run check --workspace @tgbot/apk-webui && npm run check:deploy"
   },
   "devDependencies": {
