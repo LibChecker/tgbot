@@ -225,6 +225,9 @@ and recurring pitfalls only.
   branch preview alias; do not fall back to the production Web UI origin.
 - Do not hard-code private preview or production hostnames in repo config,
   workflows, bot links, or `site-config.mjs`.
+- Worker and Pages Wrangler configs are JSONC. Keep dynamic deploy-only
+  bindings, such as the resolved `SDK_EMOJI_KV` namespace id, in generated
+  temporary config files rather than hard-coding resource ids.
 - Windows Node deploy scripts must spawn command shims explicitly, such as
   `npm.cmd` and `node_modules/.bin/wrangler.cmd`.
 

@@ -7,11 +7,11 @@
     "predev": "npm run generated:generate --workspace @tgbot/shared",
     "predeploy": "npm run generated:generate --workspace @tgbot/shared",
     "predeploy:setup": "npm run generated:generate --workspace @tgbot/shared",
-    "dev": "wrangler dev --config wrangler.toml --env preview",
+    "dev": "wrangler dev --config wrangler.jsonc --env preview",
     "deploy": "npm run deploy:production",
-    "deploy:preview": "wrangler deploy --config wrangler.toml --env preview",
-    "deploy:production": "wrangler deploy --config wrangler.toml --env production",
-    "deploy:dry-run": "wrangler deploy --config wrangler.toml --env production --dry-run",
+    "deploy:preview": "wrangler deploy --config wrangler.jsonc --env preview",
+    "deploy:production": "wrangler deploy --config wrangler.jsonc --env production",
+    "deploy:dry-run": "wrangler deploy --config wrangler.jsonc --env production --dry-run",
     "deploy:setup": "npm run deploy:production && node scripts/manage-webhook.mjs set && node scripts/manage-webhook.mjs commands:set",
     "webhook:set": "node scripts/manage-webhook.mjs set",
     "webhook:info": "node scripts/manage-webhook.mjs info",
@@ -19,19 +19,19 @@
     "commands:set": "node scripts/manage-webhook.mjs commands:set",
     "commands:info": "node scripts/manage-webhook.mjs commands:info",
     "commands:delete": "node scripts/manage-webhook.mjs commands:delete",
-    "types:generate": "node -e \"require('node:fs').mkdirSync('.wrangler/types',{recursive:true})\" && wrangler types .wrangler/types/worker-configuration.d.ts --config wrangler.toml --strict-vars=false",
+    "types:generate": "node -e \"require('node:fs').mkdirSync('.wrangler/types',{recursive:true})\" && wrangler types .wrangler/types/worker-configuration.d.ts --config wrangler.jsonc --strict-vars=false",
     "typecheck": "npm run types:generate && tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs",
     "test:runtime": "vitest run --config vitest.config.mjs",
     "check": "node scripts/check.mjs && npm run typecheck && npm test && npm run test:runtime"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.18.6",
-    "vitest": "^4.1.10",
-    "wrangler": "4.111.0"
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "vitest": "^4.1.11",
+    "wrangler": "4.125.0"
   },
   "dependencies": {
-    "hono": "^4.12.30",
-    "ipaddr.js": "^2.4.0"
+    "hono": "^4.13.3",
+    "ipaddr.js": "^2.5.0"
   }
 }

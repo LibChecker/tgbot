@@ -66,12 +66,12 @@ npm run pages:dev
 Configure Worker secrets:
 
 ```bash
-npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml --env production
-npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.toml --env preview
-npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml --env production
-npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.toml --env preview
-npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml --env production
-npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.toml --env preview
+npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.jsonc --env production
+npx wrangler secret put BOT_TOKEN --config packages/bot-worker/wrangler.jsonc --env preview
+npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.jsonc --env production
+npx wrangler secret put ADMIN_TOKEN --config packages/bot-worker/wrangler.jsonc --env preview
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.jsonc --env production
+npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config packages/bot-worker/wrangler.jsonc --env preview
 ```
 
 Use a dedicated test bot token for the preview environment. In GitHub Actions,
@@ -81,7 +81,7 @@ set `TEST_BOT_TOKEN`; the workflow syncs it into the preview Worker as
 `TELEGRAM_WEBHOOK_SECRET` is optional, but recommended for production.
 
 Report sharing uses the `REPORT_DATA_BUCKET` R2 binding declared in
-`packages/bot-worker/wrangler.toml`. Deploys use separate preview and
+`packages/bot-worker/wrangler.jsonc`. Deploys use separate preview and
 production buckets, and the deploy script creates the target bucket when it is
 missing during a real deploy. The deploy `CLOUDFLARE_API_TOKEN` must include
 R2 Admin Read & Write permission for bucket creation.
@@ -112,7 +112,7 @@ Deploy production and register the Telegram webhook:
 npm run deploy:setup
 ```
 
-The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.toml`:
+The Worker has explicit Wrangler environments in `packages/bot-worker/wrangler.jsonc`:
 
 - `preview`: deploys `tgbot-preview` on `workers.dev`, binds the custom domain from repository variable `PREVIEW_WORKER_URL`, uses `Libchecker_TG_Bot_Preview`, uses `TEST_BOT_TOKEN` for preview bot testing, points report buttons at `PREVIEW_WEBUI_SITE_URL` or the fixed Cloudflare Pages preview alias, registers the preview Web UI Pages custom domain when configured, and injects the preview Worker origin so Web UI report links can resolve `?r=...`.
 - `production`: deploys `tgbot`, binds the custom domain from repository variable `WORKER_URL`, uses `Libchecker_TG_Bot`, injects that URL as `PUBLIC_WEBHOOK_URL`, points report buttons at `WEBUI_SITE_URL`, registers the production Web UI Pages custom domain when configured, and injects the production Worker origin so Web UI report links can resolve `?r=...`.
@@ -259,7 +259,7 @@ packages/
       report-store.js R2 report data storage
       observability.js Logs and Analytics Engine events
     scripts/         Worker admin and webhook helpers
-    wrangler.toml    Worker deployment config
+    wrangler.jsonc   Worker deployment config
   apk-webui/         Web UI Pages workspace package
     src/             Browser UI and analyzer worker
     functions/       Pages Functions endpoints

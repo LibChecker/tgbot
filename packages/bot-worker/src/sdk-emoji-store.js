@@ -1,5 +1,8 @@
 export const SDK_EMOJI_KV_KEY = "telegram-sdk-emojis:manifest:v1";
 
+/**
+ * @param {Pick<Env, "SDK_EMOJI_KV">} env
+ */
 export async function loadSdkCustomEmojiIds(env) {
   const namespace = env?.SDK_EMOJI_KV;
   if (!namespace || typeof namespace.get !== "function") {

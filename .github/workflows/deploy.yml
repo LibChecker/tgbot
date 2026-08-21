@@ -104,9 +104,10 @@ jobs:
 
       - name: Sync preview Worker secrets
         run: |
-          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.TEST_BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TEST_TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
-          npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml --env preview
-          rm .cloudflare-secrets.json
+          secrets_file="$(mktemp)"
+          trap 'rm -f "$secrets_file"' EXIT
+          SECRETS_FILE="$secrets_file" node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.TEST_BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TEST_TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET || undefined }).filter(([, value]) => value)); fs.writeFileSync(process.env.SECRETS_FILE, JSON.stringify(payload));"
+          npx wrangler secret bulk "$secrets_file" --config packages/bot-worker/wrangler.jsonc --env preview
 
       - name: Register preview test bot webhook
         if: ${{ env.PREVIEW_WORKER_URL != '' }}
@@ -161,9 +162,10 @@ jobs:
 
       - name: Sync production Worker secrets
         run: |
-          node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || undefined }).filter(([, value]) => value)); fs.writeFileSync('.cloudflare-secrets.json', JSON.stringify(payload));"
-          npx wrangler secret bulk .cloudflare-secrets.json --config packages/bot-worker/wrangler.toml --env production
-          rm .cloudflare-secrets.json
+          secrets_file="$(mktemp)"
+          trap 'rm -f "$secrets_file"' EXIT
+          SECRETS_FILE="$secrets_file" node -e "const fs=require('fs'); const payload=Object.fromEntries(Object.entries({ BOT_TOKEN: process.env.BOT_TOKEN, ADMIN_TOKEN: process.env.ADMIN_TOKEN, TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET || undefined }).filter(([, value]) => value)); fs.writeFileSync(process.env.SECRETS_FILE, JSON.stringify(payload));"
+          npx wrangler secret bulk "$secrets_file" --config packages/bot-worker/wrangler.jsonc --env production
 
       - name: Register Telegram webhook
         env:
