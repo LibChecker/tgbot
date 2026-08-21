@@ -7,7 +7,7 @@ const REPORT_DATA_CONTENT_TYPE = "application/json; charset=UTF-8";
 const COMPONENT_SECTION_NAMES = ["activities", "services", "receivers", "providers"];
 
 /**
- * @param {Record<string, unknown>} env
+ * @param {Env} env
  * @param {unknown} report
  */
 export async function createApkReportDataEntry(env, report) {
@@ -33,7 +33,7 @@ export async function createApkReportDataEntry(env, report) {
 }
 
 /**
- * @param {Record<string, unknown>} env
+ * @param {Env} env
  * @param {string} ref
  */
 export async function fetchReportData(ref, env) {

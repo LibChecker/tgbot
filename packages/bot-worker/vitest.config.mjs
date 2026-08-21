@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: {
-        configPath: fileURLToPath(new URL("./wrangler.toml", import.meta.url)),
+        configPath: fileURLToPath(new URL("./wrangler.jsonc", import.meta.url)),
         environment: "preview",
       },
       miniflare: {

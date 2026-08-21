@@ -45,8 +45,8 @@
   },
   "devDependencies": {
     "fast-check": "4.9.0",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.3",
     "typescript": "^7.0.2",
-    "wrangler": "4.111.0"
+    "wrangler": "4.125.0"
   }
 }

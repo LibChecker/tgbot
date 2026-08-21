@@ -99,7 +99,7 @@ export function extendTelemetryContext(baseContext, extra = {}) {
 }
 
 /**
- * @param {Record<string, unknown>} env
+ * @param {Env} env
  * @param {Record<string, unknown>} context
  * @param {string} event
  * @param {AnalyticsEventFields} [fields]
@@ -109,7 +109,7 @@ export function logInfoEvent(env, context, event, fields = {}, options = {}) {
 }
 
 /**
- * @param {Record<string, unknown>} env
+ * @param {Env} env
  * @param {Record<string, unknown>} context
  * @param {string} event
  * @param {AnalyticsEventFields} [fields]
@@ -119,7 +119,7 @@ export function logWarnEvent(env, context, event, fields = {}, options = {}) {
 }
 
 /**
- * @param {Record<string, unknown>} env
+ * @param {Env} env
  * @param {Record<string, unknown>} context
  * @param {string} event
  * @param {AnalyticsEventFields} [fields]

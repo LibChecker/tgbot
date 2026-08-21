@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const repoDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const workerConfigPath = resolve(repoDir, "packages/bot-worker/wrangler.toml");
+const workerConfigPath = resolve(repoDir, "packages/bot-worker/wrangler.jsonc");
 const webuiDir = resolve(repoDir, "packages/apk-webui");
 const webuiDistDir = resolve(webuiDir, "dist");
 const pagesProjectName = "tgbot-apk-webui";
@@ -174,11 +174,24 @@ async function prepareWorkerConfig(targetValue) {
     return workerConfigPath;
   }
 
-  const configText = await readFile(workerConfigPath, "utf8");
-  temporaryWorkerConfigPath = resolve(repoDir, "packages/bot-worker", `wrangler.generated.${process.pid}.toml`);
+  const config = JSON.parse(await readFile(workerConfigPath, "utf8"));
+  const targetEnv = config.env?.[targetValue.workerEnv];
+  if (!targetEnv) {
+    fail(`Missing Worker environment in config: ${targetValue.workerEnv}`);
+  }
+
+  targetEnv.kv_namespaces = [
+    ...(Array.isArray(targetEnv.kv_namespaces) ? targetEnv.kv_namespaces : []),
+    {
+      binding: "SDK_EMOJI_KV",
+      id: namespaceId,
+    },
+  ];
+
+  temporaryWorkerConfigPath = resolve(repoDir, "packages/bot-worker", `wrangler.generated.${process.pid}.jsonc`);
   await writeFile(
     temporaryWorkerConfigPath,
-    `${configText.trimEnd()}\n\n[[env.${targetValue.workerEnv}.kv_namespaces]]\nbinding = "SDK_EMOJI_KV"\nid = "${escapeTomlString(namespaceId)}"\n`,
+    `${JSON.stringify(config, null, 2)}\n`,
     "utf8",
   );
   process.stdout.write(`Using SDK emoji KV namespace for ${targetValue.workerEnv}: ${namespaceId}\n`);
@@ -425,10 +438,6 @@ function normalizeOptionalUrl(value, envName) {
 function normalizeText(value) {
   const text = value == null ? "" : String(value).trim();
   return text || "";
-}
-
-function escapeTomlString(value) {
-  return String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
 function cleanupTemporaryWorkerConfig() {

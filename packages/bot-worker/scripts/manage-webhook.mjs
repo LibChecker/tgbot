@@ -68,7 +68,7 @@ const actionHandlers = {
       requireBotToken();
       if (!webhookUrl) {
         fail(
-          "Missing webhook URL. Set WEBHOOK_URL, PUBLIC_WEBHOOK_URL, WORKER_URL, or configure PUBLIC_WEBHOOK_URL in wrangler.toml.",
+          "Missing webhook URL. Set WEBHOOK_URL, PUBLIC_WEBHOOK_URL, WORKER_URL, or configure PUBLIC_WEBHOOK_URL in wrangler.jsonc.",
         );
       }
 
@@ -252,9 +252,9 @@ function normalizeWebhookUrl(value) {
 
 function readPublicWebhookUrlFromWrangler() {
   try {
-    const content = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
-    const match = content.match(/^\s*PUBLIC_WEBHOOK_URL\s*=\s*["']([^"']+)["']/mu);
-    return match?.[1] || null;
+    const content = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+    const config = JSON.parse(content);
+    return config?.vars?.PUBLIC_WEBHOOK_URL || null;
   } catch {
     return null;
   }
