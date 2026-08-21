@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { createWorkerConfigWithSdkEmojiKvNamespace } from "./deploy-worker-config.mjs";
 
 const repoDir = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const workerConfigPath = resolve(repoDir, "packages/bot-worker/wrangler.jsonc");
@@ -28,6 +29,12 @@ process.on("unhandledRejection", (error) => {
   fail(error instanceof Error ? error.message : String(error));
 });
 process.on("exit", cleanupTemporaryWorkerConfig);
+for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) {
+  process.once(signal, () => {
+    cleanupTemporaryWorkerConfig();
+    process.exit(exitCode);
+  });
+}
 
 const previewPagesBranch = resolvePreviewBranch();
 
@@ -174,25 +181,17 @@ async function prepareWorkerConfig(targetValue) {
     return workerConfigPath;
   }
 
-  const config = JSON.parse(await readFile(workerConfigPath, "utf8"));
-  const targetEnv = config.env?.[targetValue.workerEnv];
-  if (!targetEnv) {
-    fail(`Missing Worker environment in config: ${targetValue.workerEnv}`);
-  }
-
-  targetEnv.kv_namespaces = [
-    ...(Array.isArray(targetEnv.kv_namespaces) ? targetEnv.kv_namespaces : []),
-    {
-      binding: "SDK_EMOJI_KV",
-      id: namespaceId,
-    },
-  ];
+  const config = createWorkerConfigWithSdkEmojiKvNamespace(
+    JSON.parse(await readFile(workerConfigPath, "utf8")),
+    targetValue.workerEnv,
+    namespaceId,
+  );
 
   temporaryWorkerConfigPath = resolve(repoDir, "packages/bot-worker", `wrangler.generated.${process.pid}.jsonc`);
   await writeFile(
     temporaryWorkerConfigPath,
     `${JSON.stringify(config, null, 2)}\n`,
-    "utf8",
+    { encoding: "utf8", mode: 0o600 },
   );
   process.stdout.write(`Using SDK emoji KV namespace for ${targetValue.workerEnv}: ${namespaceId}\n`);
   return temporaryWorkerConfigPath;
