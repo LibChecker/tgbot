@@ -2,17 +2,23 @@
 
 Root instructions for coding agents in this repository. Keep this file
 operational: durable project decisions, validation commands, module boundaries,
-and recurring pitfalls only.
+and project-specific constraints only.
 
-## First Read
+## Task scope and completion
 
-- This is a private npm workspace for a Cloudflare Telegram APK bot and a
-  separate Cloudflare Pages APK Web UI.
-- Read this file first, then use `README.md` for human-facing product and deploy
-  overview.
-- Run commands from the repository root unless a package-specific command is
-  clearly needed.
-- Be careful in dirty worktrees. Never revert unrelated user changes.
+- This private npm workspace contains a Cloudflare Telegram APK bot and a
+  separate Cloudflare Pages APK Web UI. Run commands from the repository root
+  unless a package-specific command is needed.
+- Use `README.md` for product and deployment context when relevant to the task;
+  no full repository survey or fixed reading sequence is required.
+- Investigation and review requests produce findings. Implementation requests
+  authorize the change and relevant local checks: fix failures caused by the
+  change and verify the affected behavior before finishing. Report any blocker
+  and what remains unverified.
+- Resolve reversible implementation details within the requested scope. Ask
+  when missing information materially affects correctness or an action needs
+  authorization. Deployment and webhook changes follow Deploy Rules below.
+- Preserve unrelated user changes and keep fixes scoped to the requested work.
 
 ## Project Map
 
@@ -23,26 +29,6 @@ and recurring pitfalls only.
 | Shared analyzer | `packages/shared/` | Worker + browser | APK parsing, signatures, SDK marker matching, shared contracts, i18n runtime, generated rule/icon/catalog bundles. |
 | Translations | `locales/` | Shared | Source-of-truth locale JSON for both bot and Web UI. |
 | Deploy orchestration | `scripts/` | Node | Root Cloudflare preflight/deploy and size budget checks. |
-
-## High-Value Entry Points
-
-- Worker entry and Telegram flow: `packages/bot-worker/src/index.js`
-- APK link preview/range parsing: `packages/bot-worker/src/apk-url-preview.js`
-- Worker R2 report storage: `packages/bot-worker/src/report-store.js`
-- Web UI shell: `packages/apk-webui/src/index.html`
-- Web UI controller: `packages/apk-webui/src/app.js`
-- Web UI view helpers: `packages/apk-webui/src/app/view.js`
-- Web UI report rendering: `packages/apk-webui/src/app/report-renderer.js`
-- Web UI history: `packages/apk-webui/src/app/history.js`
-- Web UI compare mode: `packages/apk-webui/src/app/compare-controller.js`
-- Web UI analyzer worker: `packages/apk-webui/src/analyzer-worker.js`
-- Web UI build/check scripts: `packages/apk-webui/scripts/build.mjs`,
-  `packages/apk-webui/scripts/check.mjs`
-- Shared APK parser: `packages/shared/src/apk.js`
-- Shared signing parser: `packages/shared/src/apk-signatures.js`
-- Shared SDK markers: `packages/shared/src/sdk-markers.js`
-- Shared report model: `packages/shared/src/report-model.js`
-- Shared i18n runtime: `packages/shared/src/i18n.js`
 
 ## Common Commands
 
@@ -206,8 +192,7 @@ and recurring pitfalls only.
 - Root deploy commands are preferred because they run checks, Web UI build,
   performance budgets, and Worker dry-run size budgets.
 - Cloudflare Pages deploys must run from `packages/apk-webui/` with relative
-  `dist`, or `functions/` may not deploy. If production `/url-report` returns
-  `405`, verify deploy cwd first.
+  `dist`, so Pages Functions are included in the deployment.
 - Do not deploy or change Cloudflare/Telegram webhook state unless explicitly
   asked.
 - Preview bot deployments use `TEST_BOT_TOKEN` for `tgbot-preview`; never point
@@ -233,6 +218,9 @@ and recurring pitfalls only.
 
 ## Validation Guidance
 
+- Docs-only changes: run `git diff --check`; no build or deploy preflight is
+  needed. For other changes, choose the affected checks below. Once they pass,
+  repeat or broaden validation only for new changes or unresolved concerns.
 - Web UI UI-only changes: run `npm run pages:check`; prefer
   `npm run pages:build` when HTML/CSS/assets or bundle behavior changes.
 - Web UI bundle-size or first-screen changes: also run `npm run perf:check`.
@@ -247,9 +235,6 @@ and recurring pitfalls only.
   behavior changes: run the relevant deploy preflight command.
 - Before trusting `npm run perf:check` or preflight output, scan the full budget
   table and verify every row is `OK`.
-- Wrangler may emit non-fatal `EPERM` log-write warnings under sandboxed macOS
-  paths. Treat them as noise only when exit status is 0, preflight reports
-  passed, and all budget/check rows are `OK`.
 - For rendered Web UI validation, use the exact Vite `Local:` URL and confirm it
   returns `200 OK` before browser checks. Restart stale Vite servers or use a new
   port before drawing conclusions.
@@ -258,33 +243,10 @@ and recurring pitfalls only.
 
 ## Commit Rules
 
-- Before committing, run `npm run deploy:preflight -- --target=preview`.
-- If the change affects production deploy behavior or production-only config,
-  also run `npm run deploy:preflight -- --target=production`.
+- Before committing, complete the checks selected by Validation Guidance.
+  Deploy-related changes require preview preflight; production deploy behavior
+  or production-only config also requires production preflight.
 - Inspect `git diff --cached --stat` before committing.
 - Consider whether this file needs durable updates, but avoid one-off notes.
 - Do not commit generated bundles, build output, caches, `.DS_Store`, or local
   temporary files.
-- In this sandbox, `git add` and `git commit` may need escalation because
-  writing `.git/index.lock` can be blocked.
-
-## Agent Workflow
-
-1. Start with `git status --short`.
-2. Inspect the smallest relevant area with `rg` or `rg --files`.
-3. Read existing local patterns before editing.
-4. Keep edits focused and avoid unrelated refactors or generated-output churn.
-5. Run the narrowest relevant validation command, then report exactly what
-   passed, failed, or was skipped.
-
-## Compact Instructions
-
-If context is compacted, preserve these facts:
-
-- Current user request and exact screenshots, paths, URLs, issue links, or
-  commits.
-- Files read and files changed.
-- Commands run and pass/fail/blocker results.
-- Current dev server URL and whether it may be stale.
-- Current git status and whether changes are user-owned or agent-owned.
-- Any Cloudflare, Telegram webhook, or deployment state that must not be guessed.
