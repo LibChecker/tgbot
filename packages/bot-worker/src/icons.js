@@ -1,3 +1,4 @@
+import rulesLock from "../../shared/rules.lock.json" with { type: "json" };
 import { BUILD_FEATURE_ICON_NAMES } from "../../shared/src/build-feature-icons.js";
 
 const SVG_HEADERS = {
@@ -5,8 +6,8 @@ const SVG_HEADERS = {
   "cache-control": "public, max-age=300",
 };
 
-const ICON_VERSION = "libchecker-20260412";
-const SDK_ICON_VERSION = "libchecker-rules-20260412";
+const ICON_VERSION = rulesLock.manifest.artifacts.portable.sha256;
+const SDK_ICON_VERSION = ICON_VERSION;
 let sdkIconSvgMapPromise = null;
 
 export function handleIconRequest(pathname) {

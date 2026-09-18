@@ -144,6 +144,7 @@
  * @property {boolean} singleColorIcon
  * @property {boolean} isRegexRule
  * @property {string | null} regexName
+ * @property {string=} detailKey
  */
 
 /** @typedef {LibCheckerRuleCore & { ruleDetail?: LibCheckerRuleDetail | null }} LibCheckerRule */

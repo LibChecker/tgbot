@@ -18,7 +18,7 @@
     "i18n:check": "node scripts/generate_i18n_catalogs.mjs --check",
     "generated:generate": "node scripts/generate_shared_assets.mjs",
     "generated:refresh": "node scripts/generate_shared_assets.mjs --refresh",
-    "rules:update": "python scripts/generate_libchecker_bundle.py",
+    "rules:update": "node scripts/generate_shared_assets.mjs --refresh",
     "benchmark:parser": "node scripts/benchmark_apk_parser.mjs",
     "syntax:check": "node scripts/check.mjs",
     "typecheck": "tsc -p tsconfig.json",
