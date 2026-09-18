@@ -45,7 +45,8 @@ and project-specific constraints only.
 | Web UI Chromium smoke tests | `npm run test:browser --workspace @tgbot/apk-webui` |
 | Web UI WebKit smoke tests | `npm run test:browser:webkit --workspace @tgbot/apk-webui` |
 | Generate ignored shared bundles | `npm run generated:generate` |
-| Refresh LibChecker bundles | `npm run generated:refresh` |
+| Reconvert locked LibChecker bundles | `npm run generated:refresh` |
+| Propose a newer data lock | `npm run rules:update -- --manifest` |
 | Check translations | `npm run i18n:check` |
 | Preview deploy preflight | `npm run deploy:preflight -- --target=preview` |
 | Production deploy preflight | `npm run deploy:preflight -- --target=production` |
@@ -181,10 +182,20 @@ and project-specific constraints only.
   generated output. Package `typecheck` scripts regenerate them from the
   current Wrangler config before running `tsc`; do not commit or hand-edit them.
 - Scripts usually run `generated:generate` before checks/builds.
-- Keep LibChecker rules/icon generation archive-based, not one
-  raw.githubusercontent.com request per file; GitHub Actions can hit HTTP 429.
-- Keep `generate_libchecker_bundle.py` compatible with current upstream
-  `IconResMap.kt` formats and fail fast on suspiciously low icon counts.
+- LibChecker rules/details/icons come only from the verified Rules v5 portable
+  ZIP pinned in `packages/shared/rules.lock.json`. Normal builds and refreshes
+  must never select a floating release or fetch Bundle/App source archives.
+- The lock records the real manifest, artifact hash/size, reader version, and
+  source revision. A cache is valid only with matching lock, converter and output
+  hashes. Keep the three generated ESM modules ignored and lazily loaded.
+- Use `npm run rules:update -- --manifest` for an explicit version update; the
+  own-repo update workflow opens a reviewable data PR without deploying. The
+  bootstrap ZIP is a real compiler output, removed on the first HTTPS update.
+- Preserve `ic_lib_*` IDs and the independent Telegram emoji/KV mapping flow.
+  Local Gradle/placeholder SVGs and provenance live in `packages/shared/assets/`.
+- Supported rule types are 0, 1, 2, 3, 4, 9. Preserve exact-first lookup and
+  producer `(priority,id)` ordering, full-string regex parity and native evidence
+  policy. Run producer fixtures embedded in the locked ZIP with importer tests.
 - Do not add custom metadata fields to Crowdin JSON locale files.
 
 ## Deploy Rules

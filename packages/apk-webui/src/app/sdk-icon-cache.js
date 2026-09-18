@@ -316,6 +316,10 @@ function buildSdkTypedRuleDetailKey(sdk) {
 }
 
 function buildGeneratedRuleDetailKey(rule) {
+  if (typeof rule?.detailKey === "string") {
+    return rule.detailKey;
+  }
+
   if (!rule || !Number.isFinite(rule.type)) {
     return "";
   }

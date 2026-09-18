@@ -1,857 +1,374 @@
+"""Import a hash-locked Rules v5 portable release. No floating source downloads."""
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import os
 import re
-import sqlite3
-import sys
+import subprocess
 import tempfile
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 from io import BytesIO
-from pathlib import Path
-from urllib.parse import quote
-
+from pathlib import Path, PurePosixPath
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = PACKAGE_DIR / "src" / "generated"
-RULES_CORE_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules-core.js"
-RULE_DETAILS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-rules-detail.js"
-ICONS_OUTPUT_PATH = OUTPUT_DIR / "libchecker-sdk-icons.js"
-
-DEFAULT_RULES_REF = "main"
-DEFAULT_RULE_DETAILS_REF = "v4"
-DEFAULT_LIBCHECKER_REF = "master"
-MIN_EXPECTED_SDK_ICON_COUNT = 50
-
-RELEVANT_RULE_TYPES = {0, 1, 2, 3, 4, 9}
-
-RULE_DETAIL_DIR_TYPES = {
-    "native-libs": 0,
-    "services-libs": 1,
-    "activities-libs": 2,
-    "receivers-libs": 3,
-    "providers-libs": 4,
-    "actions-libs": 9,
-}
-
-ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
-AAAPT_NS = "{http://schemas.android.com/aapt}"
-
-COLOR_KEY_TO_SVG = {
-    "fill": "fill",
-    "stroke": "stroke",
-}
-
-FILL_TYPE_MAP = {
-    "evenOdd": "evenodd",
-    "nonZero": "nonzero",
-}
-
-LINE_CAP_MAP = {
-    "butt": "butt",
-    "round": "round",
-    "square": "square",
-}
-
-LINE_JOIN_MAP = {
-    "bevel": "bevel",
-    "miter": "miter",
-    "round": "round",
-}
-
-REQUIRED_RULES_BUNDLE_ICON_NAMES = {"ic_lib_kotlin"}
-LIBCHECKER_FEATURE_ICON_PATHS = {
-    "ic_gradle": "app/src/main/res/drawable/ic_gradle.xml",
-}
+DEFAULT_LOCK = PACKAGE_DIR / 'rules.lock.json'
+DEFAULT_MANIFEST = 'https://raw.githubusercontent.com/LibChecker/LibChecker-Rules/rules-data/manifest.json'
+OUTPUT_DIR = PACKAGE_DIR / 'src/generated'
+CACHE_DIR = PACKAGE_DIR / '.cache/rules'
+TYPES = {0, 1, 2, 3, 4, 9}
+METADATA_FIELDS = ('schemaVersion', 'dataVersion', 'sourceRevision', 'compilerRevision',
+                   'contentSha256', 'ruleCount', 'minimumReader')
+OUTPUTS = ('libchecker-rules-core.js', 'libchecker-rules-detail.js', 'libchecker-sdk-icons.js')
+MAX_ARCHIVE = 32 * 1024 * 1024
+MAX_EXPANDED = 64 * 1024 * 1024
 
 
-def main() -> int:
-    if "--self-test" in sys.argv[1:]:
-        run_self_test()
-        return 0
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
 
-    rules_ref = parse_rules_ref(sys.argv[1:])
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    temp_rule_db_path: Path | None = None
 
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def read_json(data):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, f'duplicate JSON key: {key}')
+            result[key] = value
+        return result
+    return json.loads(data, object_pairs_hook=unique)
+
+
+def atomic_write(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+        temp = Path(stream.name)
+        stream.write(data)
     try:
-        print(f"Using LibChecker-Rules-Bundle ref: {rules_ref}")
-        archive_bytes = fetch_bytes(build_rules_bundle_archive_url(rules_ref))
-        with zipfile.ZipFile(BytesIO(archive_bytes)) as rules_archive:
-            temp_rule_db_path = write_rule_db_to_temp(
-                read_archive_bytes(rules_archive, "library/src/main/assets/lcrules/rules.db")
-            )
-            icon_map_text = read_archive_text(
-                rules_archive,
-                "library/src/main/java/com/absinthe/rulesbundle/IconResMap.kt",
-            )
-            icon_index_map, single_color_indexes = parse_icon_res_map(icon_map_text)
-            missing_required_icons = REQUIRED_RULES_BUNDLE_ICON_NAMES - set(icon_index_map.values())
-            if missing_required_icons:
-                raise ValueError(
-                    "required SDK icons are missing from IconResMap: "
-                    f"{', '.join(sorted(missing_required_icons))}"
-                )
-            rules = load_rules(temp_rule_db_path, icon_index_map, single_color_indexes)
-            detail_count = attach_rule_details(rules, DEFAULT_RULE_DETAILS_REF)
-            icon_names = sorted(
-                {
-                    rule["iconName"]
-                    for rule in rules
-                    if rule.get("iconName")
-                }
-                | REQUIRED_RULES_BUNDLE_ICON_NAMES
-            )
-            icon_svgs = {}
-            placeholder_svg = None
-
-            for icon_name in icon_names:
-                xml_text = read_archive_text(
-                    rules_archive,
-                    f"library/src/main/res/drawable/{icon_name}.xml",
-                )
-                svg = convert_vector_xml_to_svg(xml_text, icon_name)
-                if icon_name == "ic_sdk_placeholder":
-                    placeholder_svg = svg
-                icon_svgs[icon_name] = svg
-
-            if placeholder_svg:
-                for icon_name, svg in list(icon_svgs.items()):
-                    if not svg:
-                        icon_svgs[icon_name] = placeholder_svg
-
-            if len(icon_svgs) < MIN_EXPECTED_SDK_ICON_COUNT:
-                raise ValueError(
-                    f"parsed only {len(icon_svgs)} SDK icons from IconResMap; "
-                    "update parse_icon_res_map for the upstream format"
-                )
-
-        libchecker_archive_bytes = fetch_bytes(build_libchecker_archive_url(DEFAULT_LIBCHECKER_REF))
-        with zipfile.ZipFile(BytesIO(libchecker_archive_bytes)) as libchecker_archive:
-            for icon_name, icon_path in LIBCHECKER_FEATURE_ICON_PATHS.items():
-                xml_text = read_archive_text(libchecker_archive, icon_path)
-                svg = convert_vector_xml_to_svg(xml_text, icon_name)
-                if not svg:
-                    raise ValueError(f"failed to convert required feature icon: {icon_name}")
-                icon_svgs[icon_name] = svg
-    except Exception as exc:
-        print(f"Failed to sync rules bundle from GitHub: {exc}", file=sys.stderr)
-        return 1
+        temp.replace(path)
     finally:
-        cleanup_temp_rule_db(temp_rule_db_path)
-
-    rule_detail_count = write_rules_modules(
-        rules,
-        RULES_CORE_OUTPUT_PATH,
-        RULE_DETAILS_OUTPUT_PATH,
-    )
-    write_icons_module(icon_svgs, ICONS_OUTPUT_PATH)
-
-    print(f"Wrote {len(rules)} core rules to {RULES_CORE_OUTPUT_PATH}")
-    print(f"Wrote {rule_detail_count} rule details to {RULE_DETAILS_OUTPUT_PATH}")
-    print(f"Attached {detail_count} rule details from LibChecker-Rules ref: {DEFAULT_RULE_DETAILS_REF}")
-    print(f"Wrote {len(icon_svgs)} icons to {ICONS_OUTPUT_PATH}")
-    return 0
+        temp.unlink(missing_ok=True)
 
 
-def parse_rules_ref(args: list[str]) -> str:
-    if "--refresh" in args:
-        args = [arg for arg in args if arg != "--refresh"]
-
-    if not args:
-        return DEFAULT_RULES_REF
-
-    if len(args) == 2 and args[0] == "--ref":
-        return args[1]
-
-    for arg in args:
-        if arg.startswith("--ref="):
-            return arg.split("=", 1)[1]
-
-    raise SystemExit("Usage: python packages/shared/scripts/generate_libchecker_bundle.py [--ref <branch|tag|commit>]")
+def valid_path(path):
+    return (isinstance(path, str) and bool(path) and '\\' not in path
+            and '\x00' not in path and not path.startswith('/') and all(p not in ('', '.', '..') for p in path.split('/')))
 
 
-def build_rules_bundle_archive_url(rules_ref: str) -> str:
-    return (
-        "https://github.com/LibChecker/LibChecker-Rules-Bundle/archive/"
-        f"{quote(rules_ref, safe='/')}.zip"
-    )
+def validate_lock(lock):
+    require(lock.get('lockVersion') == 1, 'unsupported lockVersion')
+    manifest = lock['manifest']
+    require(manifest['schemaVersion'] == 5, 'unsupported schemaVersion')
+    require(type(manifest['dataVersion']) is int and manifest['dataVersion'] > 0, 'invalid dataVersion')
+    require(type(manifest['ruleCount']) is int and manifest['ruleCount'] > 0, 'invalid ruleCount')
+    require(re.fullmatch(r'[0-9a-f]{40}', manifest['sourceRevision']), 'invalid sourceRevision')
+    for key in ('compilerRevision', 'contentSha256'):
+        require(re.fullmatch(r'[0-9a-f]{64}', manifest[key]), f'invalid {key}')
+    require(type(manifest['minimumReader']['portable']) is int
+            and 0 < manifest['minimumReader']['portable'] <= 5, 'incompatible portable reader')
+    artifact = manifest['artifacts']['portable']
+    require(artifact['schemaVersion'] == 5 and type(artifact['minimumReaderVersion']) is int
+            and 0 < artifact['minimumReaderVersion'] <= 5,
+            'incompatible portable artifact')
+    require(valid_path(artifact['path']), 'unsafe artifact path')
+    require(re.fullmatch(r'[0-9a-f]{64}', artifact['sha256']), 'invalid artifact sha256')
+    require(type(artifact['size']) is int and 0 < artifact['size'] <= MAX_ARCHIVE, 'invalid artifact size')
+    source = lock['source']
+    parsed = urllib.parse.urlsplit(source)
+    if parsed.scheme:
+        require(parsed.scheme == 'https' and parsed.hostname and not parsed.username
+                and not parsed.password and not parsed.query and not parsed.fragment, 'source must be HTTPS without credentials/query')
+        require(parsed.path.endswith('/' + artifact['path']), 'source must name the manifest artifact path')
+    else:
+        require(valid_path(source), 'local source must be relative to the lock')
+    return artifact
 
 
-def build_libchecker_archive_url(libchecker_ref: str) -> str:
-    return (
-        "https://codeload.github.com/LibChecker/LibChecker/zip/refs/heads/"
-        f"{quote(libchecker_ref, safe='')}"
-    )
+def verify_archive_bytes(data, artifact):
+    require(len(data) == artifact['size'], 'artifact size mismatch')
+    require(sha256(data) == artifact['sha256'], 'artifact sha256 mismatch')
+    return data
 
 
-def write_rule_db_to_temp(rule_db_bytes: bytes) -> Path:
-    fd, temp_path = tempfile.mkstemp(prefix="libchecker-rules-", suffix=".db")
-    os.close(fd)
-    db_path = Path(temp_path)
+def load_archive(lock, lock_path, cache_dir, offline=False):
+    artifact = validate_lock(lock)
+    cached = cache_dir / (artifact['sha256'] + '.zip')
+    if cached.exists():
+        return verify_archive_bytes(cached.read_bytes(), artifact)
+    source = lock['source']
+    if source.startswith('https://'):
+        require(not offline, 'offline cache miss for locked artifact')
+        with urllib.request.urlopen(source, timeout=60) as response:
+            require(urllib.parse.urlsplit(response.url).scheme == 'https', 'insecure artifact redirect')
+            data = response.read(artifact['size'] + 1)
+    else:
+        data = (lock_path.parent / source).read_bytes()
+    verify_archive_bytes(data, artifact)
+    atomic_write(cached, data)
+    return data
 
-    db_path.write_bytes(rule_db_bytes)
 
-    return db_path
+def archive_files(data):
+    with zipfile.ZipFile(BytesIO(data)) as archive:
+        infos = archive.infolist()
+        require(len(infos) <= 10000, 'too many ZIP entries')
+        require(sum(i.file_size for i in infos) <= MAX_EXPANDED, 'expanded ZIP too large')
+        result = {}
+        for info in infos:
+            require(valid_path(info.filename) and not info.is_dir(), 'unsafe ZIP entry')
+            require(info.filename not in result, 'duplicate ZIP entry')
+            require((info.external_attr >> 16) & 0o170000 != 0o120000, 'ZIP symlink forbidden')
+            result[info.filename] = archive.read(info)
+    return result
 
 
-def cleanup_temp_rule_db(db_path: Path | None) -> None:
-    if not db_path:
-        return
+def validate_svg(data):
+    require(len(data) <= 256 * 1024 and b'<!' not in data, 'SVG size/DTD/entity rejected')
+    root = ET.fromstring(data)
+    tags = {'svg', 'g', 'path', 'defs', 'clipPath', 'linearGradient', 'radialGradient', 'stop'}
+    attrs = {'width', 'height', 'viewBox', 'fill', 'stroke', 'id', 'd', 'transform', 'clip-path',
+             'fill-rule', 'clip-rule', 'opacity', 'fill-opacity', 'stroke-opacity', 'stroke-width',
+             'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'x1', 'x2', 'y1', 'y2',
+             'cx', 'cy', 'r', 'fx', 'fy', 'gradientUnits', 'gradientTransform', 'offset',
+             'stop-color', 'stop-opacity', 'clipPathUnits', 'spreadMethod'}
+    ids, refs = {}, []
+    def visit(node, depth):
+        require(depth <= 32, 'SVG depth exceeded')
+        require(not (node.text or '').strip() and not (node.tail or '').strip(), 'SVG text forbidden')
+        require(node.tag.startswith('{http://www.w3.org/2000/svg}'), 'foreign SVG namespace')
+        tag = node.tag.split('}', 1)[1]
+        require(tag in tags, f'forbidden SVG element: {tag}')
+        for key, value in node.attrib.items():
+            require(key in attrs, f'forbidden SVG attribute: {key}')
+            if key == 'id':
+                require(re.fullmatch(r'[A-Za-z_][\w.-]*', value) and value not in ids, 'invalid SVG id')
+                ids[value] = tag
+            require(not any(c in value for c in ('<', '>', '&', '\\')), 'unsafe SVG value')
+            if 'url' in value.lower():
+                match = re.fullmatch(r'url\(#([A-Za-z_][\w.-]*)\)', value)
+                require(match is not None and key in ('fill', 'stroke', 'clip-path'), 'external SVG reference')
+                refs.append((key, match[1]))
+            require(not any(token in value.lower() for token in ('javascript:', 'https:', 'http:', 'file:', '//', 'data:', '@import')), 'external SVG value')
+        for child in node:
+            visit(child, depth + 1)
+    require(root.tag == '{http://www.w3.org/2000/svg}svg', 'missing SVG root')
+    require(sum(1 for _ in root.iter()) <= 4096, 'too many SVG elements')
+    visit(root, 1)
+    for key, target in refs:
+        require(target in ids and ids[target] in ({'clipPath'} if key == 'clip-path' else {'linearGradient', 'radialGradient'}), 'invalid local SVG reference')
+    # References inside definitions can create cycles; producer output never needs them.
+    for node in root.iter():
+        if node.tag.endswith(('}clipPath', '}linearGradient', '}radialGradient')):
+            require(not any('url' in value.lower() for child in node.iter() for value in child.attrib.values()), 'recursive SVG definition')
+    return data.decode('utf-8')
 
+
+def normalize_detail(payload):
+    locales = {}
+    for entry in payload['data']:
+        locale = entry['locale']
+        require(isinstance(locale, str) and locale, 'invalid detail locale')
+        values = entry['data']
+        detail = {target: values[source] for source, target in (
+            ('label', 'label'), ('dev_team', 'team'), ('description', 'description'),
+            ('source_link', 'source'), ('rule_contributors', 'contributors')) if values.get(source)}
+        if detail:
+            require(locale not in locales, 'duplicate detail locale')
+            locales[locale] = detail
+    return {'uuid': payload['uuid'], 'locales': locales}
+
+
+def convert_archive(data, lock):
+    files = archive_files(data)
+    metadata = read_json(files['metadata.json'])
+    require(all(metadata.get(k) == lock['manifest'][k] for k in METADATA_FIELDS), 'archive metadata mismatch')
+    core = read_json(files['core.json'])
+    require(core['schemaVersion'] == 5 and len(core['rules']) == metadata['ruleCount'], 'core schema/count mismatch')
+    icons = {}
+    for name, value in files.items():
+        if name.startswith('icons/') and name.endswith('.svg'):
+            require(re.fullmatch(r'icons/ic_lib_[a-z0-9_]+\.svg', name), 'invalid library icon ID')
+            icons[PurePosixPath(name).stem] = validate_svg(value)
+    for path in (PACKAGE_DIR / 'assets').glob('*.svg'):
+        icons[path.stem] = validate_svg(path.read_bytes())
+    require(all(name in icons for name in ('ic_sdk_placeholder', 'ic_lib_kotlin', 'ic_lib_jetpack_compose', 'ic_gradle')), 'required icons missing')
+    rules, details, names, ids = [], {}, set(), set()
+    for item in sorted(core['rules'], key=lambda row: (row['priority'], row['id'])):
+        require(type(item['id']) is int and item['id'] > 0 and item['id'] not in ids, 'invalid rule id')
+        ids.add(item['id'])
+        require(type(item['priority']) is int and item['priority'] >= 0, 'invalid rule priority')
+        require((item['type'], item['name']) not in names, 'duplicate rule name')
+        names.add((item['type'], item['name']))
+        require(type(item['isRegexRule']) is bool and type(item['isSimpleColorIcon']) is bool, 'invalid rule flags')
+        require(isinstance(item['label'], str) and isinstance(item['name'], str) and item['name'], 'invalid rule name/label')
+        require(type(item['type']) is int and item['type'] in range(10), 'invalid rule type')
+        icon = item['iconId'] or 'ic_sdk_placeholder'
+        require(icon in icons, f'missing icon: {icon}')
+        detail_path = item['detailPath']
+        detail = None
+        if detail_path is not None:
+            require(detail_path == f"details/{item['uuid']}/{item['id']}.json", 'invalid detail path')
+            payload = read_json(files[detail_path])
+            require(payload['uuid'] == item['uuid'], 'detail UUID mismatch')
+            detail = normalize_detail(payload)
+        if item['isRegexRule']:
+            pattern = item['name']
+            require(len(pattern) <= 1024 and not any(ord(c) > 65535 or c in '\n\r\x85\u2028\u2029' for c in pattern), 'unsupported regex literal')
+            require(not re.search(r'\\(?:[A-Za-ce-z0-9])', pattern)
+                    and not re.search(r'\(\?(?!:)|[*+?}]\+', pattern), 'unsupported portable regex')
+            re.compile(pattern, re.ASCII)
+        if item['type'] not in TYPES:
+            continue
+        require(type(item['iconIndex']) is int, 'invalid legacy icon index')
+        rule = {key: item[key] for key in ('name', 'label', 'type', 'iconIndex', 'isRegexRule', 'regexName')}
+        rule.update(iconName=icon, singleColorIcon=item['isSimpleColorIcon'])
+        key = f"{item['type']}::regex/{item['regexName']}" if item['isRegexRule'] and item['regexName'] else f"{item['type']}::{item['name']}"
+        if detail:
+            if key in details and details[key] != detail:
+                key = f"{key}::{item['id']}"
+                rule['detailKey'] = key
+            if item.get('legacyPath'):
+                detail['path'] = item['legacyPath']
+            details[key] = detail
+        rules.append(rule)
+    # Validate every generated pattern in the actual consumer runtime before writing outputs.
+    subprocess.run([os.environ.get('NODE', 'node'), '--input-type=module', '-e',
+        "let s='';for await(const c of process.stdin)s+=c;for(const r of JSON.parse(s))if(r.isRegexRule)new RegExp('^(?:'+r.name+')$','u');"],
+        input=json.dumps(rules), text=True, check=True)
+    return rules, details, icons
+
+
+def generate(lock_path=DEFAULT_LOCK, output_dir=OUTPUT_DIR, cache_dir=CACHE_DIR, offline=False, refresh=False):
+    lock_bytes = lock_path.read_bytes()
+    lock = read_json(lock_bytes)
+    data = load_archive(lock, lock_path, cache_dir, offline)
+    identity = sha256(lock_bytes + Path(__file__).read_bytes() + b''.join(
+        path.read_bytes() for path in sorted((PACKAGE_DIR / 'assets').glob('*.svg'))))
+    receipt_path = output_dir / 'libchecker-generation.json'
+    if not refresh and receipt_path.exists():
+        receipt = read_json(receipt_path.read_bytes())
+        if receipt.get('identity') == identity and all(
+            (output_dir / name).exists() and sha256((output_dir / name).read_bytes()) == receipt.get('outputs', {}).get(name)
+            for name in OUTPUTS):
+            print('LibChecker locked artifact and generated cache verified.')
+            return
+    rules, details, icons = convert_archive(data, lock)
+    version = lock['manifest']['artifacts']['portable']['sha256']
+    output_dir.mkdir(parents=True, exist_ok=True)
+    hashes = {}
+    for name, symbol, value in zip(OUTPUTS, ('LIBCHECKER_RULES_CORE', 'LIBCHECKER_RULE_DETAILS', 'LIBCHECKER_SDK_ICON_SVGS'), (rules, details, icons)):
+        body = '// Generated from hash-verified Rules v5 portable artifact.\n'
+        if name == OUTPUTS[0]:
+            body += f'export const LIBCHECKER_DATA_VERSION = {lock["manifest"]["dataVersion"]};\n'
+            body += f'export const LIBCHECKER_ASSET_VERSION = "{version}";\n'
+        body += f'export const {symbol} = {json.dumps(value, ensure_ascii=False, separators=(",", ":"))};\n'
+        encoded = body.encode('utf-8')
+        atomic_write(output_dir / name, encoded)
+        hashes[name] = sha256(encoded)
+    atomic_write(receipt_path, json.dumps({'identity': identity, 'outputs': hashes}).encode())
+    print(f'Generated {len(rules)} rules, {len(details)} details, {len(icons)} icons; dataVersion {lock["manifest"]["dataVersion"]}.')
+
+
+def update_report(previous_lock, previous_data, candidate, data):
+    before_files = archive_files(previous_data) if previous_data else {}
+    after_files = archive_files(data)
+    before_rules = {r['id']: r for r in read_json(before_files.get('core.json', b'{"rules":[]}'))['rules']}
+    after_rules = {r['id']: r for r in read_json(after_files['core.json'])['rules']}
+    def changes(before, after):
+        return (len(after.keys() - before.keys()), len(before.keys() - after.keys()),
+                sum(before[key] != after[key] for key in before.keys() & after.keys()))
+    old = previous_lock['manifest'] if previous_lock else {}
+    new = candidate['manifest']
+    lines = ['Update the pinned Rules v5 portable release.', '', '| Identity | Before | After |',
+             '| --- | --- | --- |']
+    for key in ('dataVersion', 'sourceRevision', 'compilerRevision', 'ruleCount'):
+        lines.append(f"| {key} | `{old.get(key, 'none')}` | `{new[key]}` |")
+    lines += ['', '| Data | Added | Removed | Changed |', '| --- | ---: | ---: | ---: |']
+    for label, before, after in [
+        ('All rules', before_rules, after_rules),
+        ('Supported rules (0/1/2/3/4/9)', {k:v for k,v in before_rules.items() if v['type'] in TYPES},
+         {k:v for k,v in after_rules.items() if v['type'] in TYPES}),
+        ('SVG icons', {k:v for k,v in before_files.items() if k.startswith('icons/') and k.endswith('.svg')},
+         {k:v for k,v in after_files.items() if k.startswith('icons/') and k.endswith('.svg')}),
+        ('Matcher details', {k:v for k,v in before_files.items() if k.startswith('details/')},
+         {k:v for k,v in after_files.items() if k.startswith('details/')})]:
+        added, removed, changed = changes(before, after)
+        lines.append(f'| {label} | {added} | {removed} | {changed} |')
+    artifact = new['artifacts']['portable']
+    lines += ['', f"Portable SHA-256: `{artifact['sha256']}` ({artifact['size']} bytes).",
+              '', 'Validated manifest/ZIP identity, reader compatibility, SHA-256, byte size, regex patterns and SVG assets.',
+              'No deployment or Telegram/KV changes. Stable icon IDs and the three generated ESM contracts are retained.']
+    if previous_lock and previous_lock['source'] == 'data/bootstrap-portable-v5.zip' and candidate['source'].startswith('https://'):
+        lines += ['', 'The first published release replaces and removes the vendored bootstrap ZIP in this PR.']
+    return '\n'.join(lines) + '\n'
+
+
+def update_lock(manifest_source, source, lock_path, report_path=None):
+    if manifest_source.startswith('https://'):
+        with urllib.request.urlopen(manifest_source, timeout=60) as response:
+            require(response.url.startswith('https://'), 'insecure manifest redirect')
+            raw = response.read(1024 * 1024 + 1)
+        require(len(raw) <= 1024 * 1024, 'manifest too large')
+    else:
+        raw = Path(manifest_source).read_bytes()
+    manifest = read_json(raw)
+    if source is None:
+        require(manifest_source.startswith('https://'), 'local manifest requires --source')
+        source = urllib.parse.urljoin(manifest_source, manifest['artifacts']['portable']['path'])
+    candidate = {'lockVersion': 1, 'source': source, 'manifest': manifest}
+    validate_lock(candidate)
+    previous_lock = read_json(lock_path.read_bytes()) if lock_path.exists() else None
+    if previous_lock:
+        previous = previous_lock['manifest']
+        require(manifest['dataVersion'] > previous['dataVersion'] or
+                (manifest['dataVersion'] == previous['dataVersion'] and manifest == previous),
+                'updates must increase dataVersion; published versions are immutable')
+    data = load_archive(candidate, lock_path, CACHE_DIR)
+    convert_archive(data, candidate)
+    previous_data = load_archive(previous_lock, lock_path, CACHE_DIR) if previous_lock else None
+    report = update_report(previous_lock, previous_data, candidate, data)
+    if report_path:
+        atomic_write(report_path, report.encode())
+    print(report)
+    atomic_write(lock_path, (json.dumps(candidate, indent=2) + '\n').encode())
+    if source.startswith('https://') and previous_lock and previous_lock['source'] == 'data/bootstrap-portable-v5.zip':
+        (lock_path.parent / previous_lock['source']).unlink(missing_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--lock', type=Path, default=DEFAULT_LOCK)
+    parser.add_argument('--offline', action='store_true')
+    parser.add_argument('--manifest', nargs='?', const=DEFAULT_MANIFEST, help='explicit manifest file or HTTPS URL to update the lock')
+    parser.add_argument('--source', help='immutable HTTPS artifact URL or lock-relative bootstrap ZIP')
+    parser.add_argument('--matching-fixtures', action='store_true')
+    parser.add_argument('--report', type=Path, help='write the update diff as a Markdown PR body')
+    parser.add_argument('--refresh', action='store_true', help='reconvert the locked release, never select latest')
+    args = parser.parse_args()
     try:
-        db_path.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-
-def fetch_text(url: str) -> str:
-    return fetch_bytes(url).decode("utf-8")
-
-
-def fetch_bytes(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310 - trusted upstream input
-        return response.read()
-
-
-def read_archive_text(archive: zipfile.ZipFile, relative_path: str) -> str:
-    return read_archive_bytes(archive, relative_path).decode("utf-8")
-
-
-def read_archive_bytes(archive: zipfile.ZipFile, relative_path: str) -> bytes:
-    suffix = f"/{relative_path.lstrip('/')}"
-    for item in archive.infolist():
-        if not item.is_dir() and item.filename.endswith(suffix):
-            return archive.read(item)
-    raise FileNotFoundError(relative_path)
-
-
-def parse_icon_res_map(text: str) -> tuple[dict[int, str], set[int]]:
-    icon_map: dict[int, str] = {}
-    single_color = set()
-
-    for match in re.finditer(r"put\((-?\d+),\s*R\.drawable\.(\w+)\)", text):
-        index = int(match.group(1))
-        icon_map[index] = match.group(2)
-
-    array_match = re.search(r"iconResIds\s*=\s*intArrayOf\((.*?)\)", text, flags=re.S)
-    if array_match:
-        array_body = array_match.group(1)
-        indexed_matches = list(re.finditer(r"/\*\s*(-?\d+)\s*\*/\s*R\.drawable\.(\w+)", array_body))
-        if indexed_matches:
-            for match in indexed_matches:
-                icon_map[int(match.group(1))] = match.group(2)
+        lock_path = args.lock.resolve()
+        if args.manifest:
+            require(not args.offline, '--manifest requires online mode')
+            update_lock(args.manifest, args.source, lock_path, args.report)
         else:
-            for index, icon_name in enumerate(re.findall(r"R\.drawable\.(\w+)", array_body)):
-                icon_map[index] = icon_name
-
-    set_match = re.search(
-        r"(?:SINGLE_COLOR_ICON_SET|singleColorIconIndexes)\s*=\s*setOf\((.*?)\)",
-        text,
-        flags=re.S,
-    )
-    if set_match:
-        set_body = set_match.group(1).replace("PLACEHOLDER_INDEX", "-1")
-        for number in re.findall(r"-?\d+", set_body):
-            single_color.add(int(number))
-
-    return icon_map, single_color
-
-
-def run_self_test() -> None:
-    old_format = """
-        object IconResMap {
-            val SINGLE_COLOR_ICON_SET = setOf(-1, 2)
-            init {
-                put(-1, R.drawable.ic_sdk_placeholder)
-                put(2, R.drawable.ic_lib_old)
-            }
-        }
-    """
-    old_map, old_single_color = parse_icon_res_map(old_format)
-    assert old_map == {-1: "ic_sdk_placeholder", 2: "ic_lib_old"}
-    assert old_single_color == {-1, 2}
-
-    new_format = """
-        object IconResMap {
-            private const val PLACEHOLDER_INDEX = -1
-            private val iconResIds = intArrayOf(
-                /* 0 */ R.drawable.ic_lib_zero,
-                /* 1 */ R.drawable.ic_lib_one,
-            )
-            private val singleColorIconIndexes = setOf(
-                PLACEHOLDER_INDEX, 1,
-            )
-        }
-    """
-    new_map, new_single_color = parse_icon_res_map(new_format)
-    assert new_map == {0: "ic_lib_zero", 1: "ic_lib_one"}
-    assert new_single_color == {-1, 1}
-
-    archive_buffer = BytesIO()
-    with zipfile.ZipFile(archive_buffer, "w") as archive:
-        archive.writestr("repo-main/library/src/main/file.txt", "ok")
-    with zipfile.ZipFile(BytesIO(archive_buffer.getvalue())) as archive:
-        assert read_archive_text(archive, "library/src/main/file.txt") == "ok"
-
-    print("generate_libchecker_bundle self-test passed")
-
-
-def load_rules(
-    db_path: Path,
-    icon_index_map: dict[int, str],
-    single_color_indexes: set[int],
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    with sqlite3.connect(db_path) as connection:
-        cursor = connection.execute(
-            """
-            select name, label, type, iconIndex, isRegexRule, coalesce(regexName, '')
-            from rules_table
-            where type in (0, 1, 2, 3, 4, 9)
-            order by _id
-            """
-        )
-        for name, label, rule_type, icon_index, is_regex_rule, regex_name in cursor:
-            icon_name = icon_index_map.get(icon_index, "ic_sdk_placeholder")
-            rows.append(
-                {
-                    "name": name,
-                    "label": label,
-                    "type": rule_type,
-                    "iconIndex": icon_index,
-                    "iconName": icon_name,
-                    "singleColorIcon": icon_index in single_color_indexes,
-                    "isRegexRule": bool(is_regex_rule),
-                    "regexName": regex_name or None,
-                }
-            )
-
-    return rows
-
-
-def attach_rule_details(rules: list[dict[str, object]], details_ref: str) -> int:
-    wanted_keys = {build_rule_detail_key(rule) for rule in rules}
-    wanted_keys.discard(None)
-    details_by_key = load_rule_detail_map(details_ref, wanted_keys)
-    if not details_by_key:
-        return 0
-
-    attached_count = 0
-    for rule in rules:
-        key = build_rule_detail_key(rule)
-        if not key:
-            continue
-
-        detail = details_by_key.get(key)
-        if not detail:
-            continue
-
-        rule["ruleDetail"] = detail
-        attached_count += 1
-
-    return attached_count
-
-
-def load_rule_detail_map(
-    details_ref: str,
-    wanted_keys: set[tuple[int, str] | None],
-) -> dict[tuple[int, str], dict[str, object]]:
-    archive_url = (
-        "https://codeload.github.com/LibChecker/LibChecker-Rules/zip/refs/heads/"
-        f"{quote(details_ref, safe='')}"
-    )
-    details: dict[tuple[int, str], dict[str, object]] = {}
-    archive_bytes = fetch_bytes(archive_url)
-    with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
-        for item in archive.infolist():
-            if item.is_dir() or not item.filename.endswith(".json"):
-                continue
-
-            _, _, relative_path = item.filename.partition("/")
-            if not relative_path:
-                continue
-
-            key = build_rule_detail_entry_key(relative_path)
-            if key not in wanted_keys:
-                continue
-
-            try:
-                payload = json.loads(archive.read(item).decode("utf-8"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                continue
-
-            detail = normalize_rule_detail(payload)
-            if detail:
-                detail["path"] = relative_path
-                details[key] = detail
-
-    return details
-
-
-def build_rule_detail_key(rule: dict[str, object]) -> tuple[int, str] | None:
-    rule_type = rule.get("type")
-    if not isinstance(rule_type, int):
-        return None
-
-    if rule.get("isRegexRule"):
-        regex_name = rule.get("regexName")
-        if isinstance(regex_name, str) and regex_name:
-            return rule_type, f"regex/{regex_name}"
-
-    name = rule.get("name")
-    if isinstance(name, str) and name:
-        return rule_type, name
-
-    return None
-
-
-def build_rule_detail_entry_key(path: str) -> tuple[int, str] | None:
-    if "/" not in path or not path.endswith(".json"):
-        return None
-
-    directory, relative_path = path.split("/", 1)
-    rule_type = RULE_DETAIL_DIR_TYPES.get(directory)
-    if rule_type is None:
-        return None
-
-    detail_name = relative_path[:-5]
-    if not detail_name.startswith("regex/"):
-        detail_name = detail_name.replace("/", ".")
-
-    return rule_type, detail_name
-
-
-def normalize_rule_detail(payload: object) -> dict[str, object] | None:
-    if not isinstance(payload, dict):
-        return None
-
-    locales: dict[str, dict[str, object]] = {}
-    for item in payload.get("data", []):
-        if not isinstance(item, dict):
-            continue
-
-        locale = normalize_detail_locale(item.get("locale"))
-        data = normalize_detail_data(item.get("data"))
-        if locale and data:
-            locales[locale] = data
-
-    if not locales:
-        return None
-
-    detail: dict[str, object] = {"locales": locales}
-    uuid = payload.get("uuid")
-    if isinstance(uuid, str) and uuid:
-        detail["uuid"] = uuid
-
-    return detail
-
-
-def normalize_detail_locale(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-
-    normalized = value.lower()
-    if normalized.startswith("zh"):
-        return "zh-CN"
-    if normalized.startswith("en"):
-        return "en"
-    return value
-
-
-def normalize_detail_data(value: object) -> dict[str, object] | None:
-    if not isinstance(value, dict):
-        return None
-
-    detail: dict[str, object] = {}
-    string_fields = {
-        "label": "label",
-        "dev_team": "team",
-        "description": "description",
-        "source_link": "source",
-    }
-    for source_key, target_key in string_fields.items():
-        field_value = value.get(source_key)
-        if isinstance(field_value, str) and field_value:
-            detail[target_key] = field_value
-
-    contributors = value.get("rule_contributors")
-    if isinstance(contributors, list):
-        clean_contributors = [
-            contributor
-            for contributor in contributors
-            if isinstance(contributor, str) and contributor
-        ]
-        if clean_contributors:
-            detail["contributors"] = clean_contributors
-
-    return detail or None
-
-
-def convert_vector_xml_to_svg(xml_text: str, icon_name: str) -> str | None:
-    try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError:
-        return None
-
-    if not root.tag.endswith("vector"):
-        return None
-
-    width = parse_dimension(root.attrib.get(f"{ANDROID_NS}width"), "24")
-    height = parse_dimension(root.attrib.get(f"{ANDROID_NS}height"), "24")
-    viewport_width = parse_dimension(root.attrib.get(f"{ANDROID_NS}viewportWidth"), width)
-    viewport_height = parse_dimension(root.attrib.get(f"{ANDROID_NS}viewportHeight"), height)
-
-    defs: list[str] = []
-    body = render_children(root, defs, icon_name)
-    defs_block = f"<defs>{''.join(defs)}</defs>" if defs else ""
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-        f'viewBox="0 0 {viewport_width} {viewport_height}" fill="none">'
-        f"{defs_block}{body}</svg>"
-    )
-
-
-def render_children(node: ET.Element, defs: list[str], icon_name: str) -> str:
-    parts: list[str] = []
-    for child in list(node):
-        rendered = render_node(child, defs, icon_name)
-        if rendered:
-            parts.append(rendered)
-    return "".join(parts)
-
-
-def render_node(node: ET.Element, defs: list[str], icon_name: str) -> str:
-    tag = strip_namespace(node.tag)
-    if tag == "group":
-        return render_group(node, defs, icon_name)
-    if tag == "path":
-        return render_path(node, defs, icon_name)
-    if tag == "clip-path":
-        clip_id, clip_path = build_clip_path(node, icon_name, defs)
-        return f'<g clip-path="url(#{clip_id})"></g>' if clip_path else ""
-    return ""
-
-
-def render_group(node: ET.Element, defs: list[str], icon_name: str) -> str:
-    transform = build_group_transform(node.attrib)
-    clip_paths: list[str] = []
-    children_parts: list[str] = []
-
-    for child in list(node):
-        child_tag = strip_namespace(child.tag)
-        if child_tag == "clip-path":
-            clip_id, clip_path = build_clip_path(child, icon_name, defs)
-            if clip_path:
-                clip_paths.append(clip_id)
-            continue
-        rendered = render_node(child, defs, icon_name)
-        if rendered:
-            children_parts.append(rendered)
-
-    content = "".join(children_parts)
-    if not content:
-        return ""
-
-    attrs = []
-    if transform:
-        attrs.append(f' transform="{transform}"')
-
-    for clip_id in clip_paths:
-        content = f'<g clip-path="url(#{clip_id})">{content}</g>'
-
-    return f"<g{''.join(attrs)}>{content}</g>"
-
-
-def build_group_transform(attrs: dict[str, str]) -> str:
-    rotation = parse_float(attrs.get(f"{ANDROID_NS}rotation"), 0.0)
-    pivot_x = parse_float(attrs.get(f"{ANDROID_NS}pivotX"), 0.0)
-    pivot_y = parse_float(attrs.get(f"{ANDROID_NS}pivotY"), 0.0)
-    scale_x = parse_float(attrs.get(f"{ANDROID_NS}scaleX"), 1.0)
-    scale_y = parse_float(attrs.get(f"{ANDROID_NS}scaleY"), 1.0)
-    translate_x = parse_float(attrs.get(f"{ANDROID_NS}translateX"), 0.0)
-    translate_y = parse_float(attrs.get(f"{ANDROID_NS}translateY"), 0.0)
-
-    transforms: list[str] = []
-    if translate_x or translate_y:
-        transforms.append(f"translate({format_number(translate_x)} {format_number(translate_y)})")
-    if rotation:
-        transforms.append(
-            f"translate({format_number(pivot_x)} {format_number(pivot_y)}) "
-            f"rotate({format_number(rotation)}) "
-            f"translate({format_number(-pivot_x)} {format_number(-pivot_y)})"
-        )
-    if scale_x != 1.0 or scale_y != 1.0:
-        transforms.append(
-            f"translate({format_number(pivot_x)} {format_number(pivot_y)}) "
-            f"scale({format_number(scale_x)} {format_number(scale_y)}) "
-            f"translate({format_number(-pivot_x)} {format_number(-pivot_y)})"
-        )
-
-    return " ".join(transforms)
-
-
-def build_clip_path(node: ET.Element, icon_name: str, defs: list[str]) -> tuple[str, str]:
-    path_data = node.attrib.get(f"{ANDROID_NS}pathData")
-    if not path_data:
-        return "", ""
-
-    clip_id = f"{icon_name}-clip-{len(defs)}"
-    defs.append(f'<clipPath id="{clip_id}"><path d="{escape_xml(path_data)}" /></clipPath>')
-    return clip_id, path_data
-
-
-def render_path(node: ET.Element, defs: list[str], icon_name: str) -> str:
-    path_data = node.attrib.get(f"{ANDROID_NS}pathData")
-    if not path_data:
-        return ""
-
-    attrs = [f'd="{escape_xml(path_data)}"']
-    alpha_multiplier = 1.0
-
-    fill_attr = None
-    stroke_attr = None
-    gradient_fill = extract_gradient_fill(node, defs, icon_name)
-
-    if gradient_fill:
-        fill_attr = f'fill="url(#{gradient_fill})"'
-    else:
-        fill_attr, fill_alpha = build_color_attribute(node.attrib.get(f"{ANDROID_NS}fillColor"), "fill")
-        alpha_multiplier *= fill_alpha
-
-    stroke_attr, stroke_alpha = build_color_attribute(node.attrib.get(f"{ANDROID_NS}strokeColor"), "stroke")
-
-    if fill_attr:
-        attrs.append(fill_attr)
-    else:
-        attrs.append('fill="none"')
-
-    if stroke_attr:
-        attrs.append(stroke_attr)
-        alpha_multiplier *= stroke_alpha
-        stroke_width = node.attrib.get(f"{ANDROID_NS}strokeWidth")
-        if stroke_width:
-            attrs.append(f'stroke-width="{format_number(parse_float(stroke_width, 0.0))}"')
-        stroke_cap = LINE_CAP_MAP.get(node.attrib.get(f"{ANDROID_NS}strokeLineCap", ""))
-        if stroke_cap:
-            attrs.append(f'stroke-linecap="{stroke_cap}"')
-        stroke_join = LINE_JOIN_MAP.get(node.attrib.get(f"{ANDROID_NS}strokeLineJoin", ""))
-        if stroke_join:
-            attrs.append(f'stroke-linejoin="{stroke_join}"')
-        stroke_miter = node.attrib.get(f"{ANDROID_NS}strokeMiterLimit")
-        if stroke_miter:
-            attrs.append(f'stroke-miterlimit="{format_number(parse_float(stroke_miter, 0.0))}"')
-
-    path_alpha = parse_float(node.attrib.get(f"{ANDROID_NS}fillAlpha"), 1.0)
-    if path_alpha != 1.0:
-        alpha_multiplier *= path_alpha
-
-    stroke_alpha_attr = node.attrib.get(f"{ANDROID_NS}strokeAlpha")
-    if stroke_attr and stroke_alpha_attr:
-        attrs.append(f'stroke-opacity="{format_number(parse_float(stroke_alpha_attr, 1.0))}"')
-
-    if alpha_multiplier != 1.0:
-        attrs.append(f'fill-opacity="{format_number(alpha_multiplier)}"')
-
-    fill_type = FILL_TYPE_MAP.get(node.attrib.get(f"{ANDROID_NS}fillType", ""))
-    if fill_type:
-        attrs.append(f'fill-rule="{fill_type}"')
-
-    return f"<path {' '.join(attrs)} />"
-
-
-def extract_gradient_fill(node: ET.Element, defs: list[str], icon_name: str) -> str | None:
-    for child in list(node):
-        if strip_namespace(child.tag) != "attr":
-            continue
-        if child.attrib.get("name") != "android:fillColor":
-            continue
-
-        gradient = next(iter(list(child)), None)
-        if gradient is None:
-            return None
-
-        gradient_id = f"{icon_name}-gradient-{len(defs)}"
-        defs.append(render_gradient(gradient, gradient_id))
-        return gradient_id
-
-    return None
-
-
-def render_gradient(node: ET.Element, gradient_id: str) -> str:
-    gradient_type = node.attrib.get(f"{ANDROID_NS}type", "linear")
-    if gradient_type == "radial":
-        center_x = format_number(parse_float(node.attrib.get(f"{ANDROID_NS}centerX"), 0.0))
-        center_y = format_number(parse_float(node.attrib.get(f"{ANDROID_NS}centerY"), 0.0))
-        radius = format_number(parse_float(node.attrib.get(f"{ANDROID_NS}gradientRadius"), 0.0))
-        attrs = (
-            f'id="{gradient_id}" cx="{center_x}" cy="{center_y}" r="{radius}" '
-            'gradientUnits="userSpaceOnUse"'
-        )
-        tag = "radialGradient"
-    else:
-        start_x = format_number(parse_float(node.attrib.get(f"{ANDROID_NS}startX"), 0.0))
-        start_y = format_number(parse_float(node.attrib.get(f"{ANDROID_NS}startY"), 0.0))
-        end_x = format_number(parse_float(node.attrib.get(f"{ANDROID_NS}endX"), 0.0))
-        end_y = format_number(parse_float(node.attrib.get(f"{ANDROID_NS}endY"), 0.0))
-        attrs = (
-            f'id="{gradient_id}" x1="{start_x}" y1="{start_y}" x2="{end_x}" y2="{end_y}" '
-            'gradientUnits="userSpaceOnUse"'
-        )
-        tag = "linearGradient"
-
-    items = []
-    for item in list(node):
-        if strip_namespace(item.tag) != "item":
-            continue
-        offset = format_number(parse_float(item.attrib.get(f"{ANDROID_NS}offset"), 0.0))
-        color_value = item.attrib.get(f"{ANDROID_NS}color")
-        color, opacity = parse_color(color_value)
-        item_attrs = [f'offset="{offset}"']
-        if color:
-            item_attrs.append(f'stop-color="{color}"')
-        if opacity is not None and opacity != 1.0:
-            item_attrs.append(f'stop-opacity="{format_number(opacity)}"')
-        items.append(f"<stop {' '.join(item_attrs)} />")
-
-    return f"<{tag} {attrs}>{''.join(items)}</{tag}>"
-
-
-def build_color_attribute(color_value: str | None, svg_attr: str) -> tuple[str | None, float]:
-    color, opacity = parse_color(color_value)
-    if not color:
-        return None, 1.0
-    attr = f'{svg_attr}="{color}"'
-    return attr, opacity if opacity is not None else 1.0
-
-
-def parse_color(color_value: str | None) -> tuple[str | None, float | None]:
-    if not color_value:
-        return None, None
-
-    value = color_value.strip()
-    if value.lower() == "@android:color/transparent":
-        return "none", 1.0
-
-    if not value.startswith("#"):
-        return None, None
-
-    hex_value = value[1:]
-    if len(hex_value) == 8:
-        alpha = int(hex_value[0:2], 16) / 255
-        return f"#{hex_value[2:]}", alpha
-    if len(hex_value) == 6:
-        return value, 1.0
-    if len(hex_value) == 4:
-        alpha = int(hex_value[0] * 2, 16) / 255
-        rgb = "".join(character * 2 for character in hex_value[1:])
-        return f"#{rgb}", alpha
-    if len(hex_value) == 3:
-        rgb = "".join(character * 2 for character in hex_value)
-        return f"#{rgb}", 1.0
-
-    return value, 1.0
-
-
-def parse_dimension(value: str | None, fallback: str) -> str:
-    if not value:
-        return fallback
-    match = re.match(r"(-?\d+(?:\.\d+)?)", value)
-    return match.group(1) if match else fallback
-
-
-def parse_float(value: str | None, default: float) -> float:
-    if value is None:
-        return default
-    try:
-        return float(str(value).replace("dp", ""))
-    except ValueError:
-        return default
-
-
-def strip_namespace(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
-
-
-def format_number(value: float) -> str:
-    if float(value).is_integer():
-        return str(int(value))
-    return f"{value:.4f}".rstrip("0").rstrip(".")
-
-
-def escape_xml(value: str) -> str:
-    return (
-        value.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-
-
-def write_rules_modules(
-    rules: list[dict[str, object]],
-    core_output_path: Path,
-    detail_output_path: Path,
-) -> int:
-    core_rules: list[dict[str, object]] = []
-    details_by_key: dict[str, object] = {}
-
-    for rule in rules:
-        core_rules.append(build_core_rule(rule))
-        detail = rule.get("ruleDetail")
-        key = build_rule_detail_key(rule)
-        if detail and key:
-            details_by_key[format_rule_detail_key(key)] = detail
-
-    core_body = json.dumps(core_rules, ensure_ascii=False, separators=(",", ":"))
-    core_output_path.write_text(
-        "// Generated from LibChecker-Rules-Bundle matching fields.\n"
-        f"export const LIBCHECKER_RULES_CORE = {core_body};\n",
-        encoding="utf-8",
-    )
-
-    detail_body = json.dumps(details_by_key, ensure_ascii=False, separators=(",", ":"))
-    detail_output_path.write_text(
-        "// Generated from LibChecker-Rules detail metadata.\n"
-        f"export const LIBCHECKER_RULE_DETAILS = {detail_body};\n",
-        encoding="utf-8",
-    )
-
-    return len(details_by_key)
-
-
-def build_core_rule(rule: dict[str, object]) -> dict[str, object]:
-    core: dict[str, object] = {}
-    for key in (
-        "name",
-        "label",
-        "type",
-        "iconIndex",
-        "iconName",
-        "singleColorIcon",
-        "isRegexRule",
-        "regexName",
-    ):
-        if key in rule:
-            core[key] = rule[key]
-    return core
-
-
-def format_rule_detail_key(key: tuple[int, str]) -> str:
-    return f"{key[0]}::{key[1]}"
-
-
-def write_icons_module(icon_svgs: dict[str, str | None], output_path: Path) -> None:
-    safe_svgs = {name: (svg or "") for name, svg in icon_svgs.items()}
-    body = json.dumps(safe_svgs, ensure_ascii=False, separators=(",", ":"))
-    output_path.write_text(
-        "// Generated from LibChecker icon drawables.\n"
-        f"export const LIBCHECKER_SDK_ICON_SVGS = {body};\n",
-        encoding="utf-8",
-    )
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+            require(args.source is None, '--source requires --manifest')
+        if args.matching_fixtures:
+            lock = read_json(lock_path.read_bytes())
+            data = load_archive(lock, lock_path, CACHE_DIR, args.offline)
+            print(archive_files(data)['matching-fixtures.json'].decode())
+            return
+        generate(lock_path, offline=args.offline, refresh=args.refresh)
+    except (ValueError, KeyError, OSError, re.error, ET.ParseError, zipfile.BadZipFile, subprocess.CalledProcessError) as error:
+        parser.exit(1, f'Rules import failed: {error}\n')
+
+
+if __name__ == '__main__':
+    main()
