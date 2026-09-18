@@ -177,12 +177,13 @@ function findRule(ruleIndex, name, type, useRegex) {
     return directRule;
   }
 
-  if (!useRegex) {
+  if (!useRegex || /[\n\r\u0085\u2028\u2029]/u.test(name)) {
     return null;
   }
 
   for (const item of group.regex) {
-    if (item.pattern.test(name)) {
+    const match = item.pattern.exec(name);
+    if (match?.[0] === name) {
       return item.rule;
     }
   }
@@ -422,15 +423,15 @@ function compileRuleIndex(rules) {
     if (normalizedRule.isRegexRule) {
       try {
         typeGroup.regex.push({
-          pattern: new RegExp(`^${normalizedRule.name}$`, "u"),
+          pattern: new RegExp(`^(?:${normalizedRule.name})$`, "u"),
           rule: normalizedRule,
         });
       } catch {
         // Skip malformed upstream regex rules.
       }
-    } else {
-      typeGroup.exact.set(normalizedRule.name, normalizedRule);
     }
+    // Legacy readers attempt literal equality even for regex rows.
+    typeGroup.exact.set(normalizedRule.name, normalizedRule);
 
     index.set(rule.type, typeGroup);
   }
@@ -448,6 +449,10 @@ function resolveRuleDetail(rule, ruleDetails) {
 }
 
 export function buildRuleDetailMapKey(rule) {
+  if (typeof rule?.detailKey === "string") {
+    return rule.detailKey;
+  }
+
   if (!rule || !Number.isFinite(rule.type)) {
     return "";
   }

@@ -28,7 +28,7 @@
     "i18n:check": "npm run i18n:check --workspace @tgbot/shared",
     "generated:generate": "npm run generated:generate --workspace @tgbot/shared",
     "generated:refresh": "npm run generated:refresh --workspace @tgbot/shared",
-    "rules:update": "npm run rules:update --workspace @tgbot/shared",
+    "rules:update": "npm run rules:update --workspace @tgbot/shared --",
     "telegram:emoji:sync": "npm run generated:generate --workspace @tgbot/shared && node scripts/sync-telegram-sdk-emojis.mjs",
     "telegram:emoji:check": "npm run generated:generate --workspace @tgbot/shared && node scripts/sync-telegram-sdk-emojis.mjs --dry-run",
     "pages:build": "npm run build --workspace @tgbot/apk-webui",

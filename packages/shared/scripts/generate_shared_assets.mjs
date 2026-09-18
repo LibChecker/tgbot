@@ -1,40 +1,14 @@
 import { spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoDir = resolve(packageDir, "../..");
-const refresh = process.argv.includes("--refresh");
-const generatedDir = resolve(packageDir, "src/generated");
-const libcheckerOutputs = [
-  resolve(generatedDir, "libchecker-rules-core.js"),
-  resolve(generatedDir, "libchecker-rules-detail.js"),
-  resolve(generatedDir, "libchecker-sdk-icons.js"),
-];
-
 await run(process.execPath, [resolve(packageDir, "scripts/generate_i18n_catalogs.mjs")], repoDir);
-
-if (refresh || !(await filesExist(libcheckerOutputs))) {
-  await runPythonScript([resolve(packageDir, "scripts/generate_libchecker_bundle.py")], repoDir);
-} else {
-  console.log("LibChecker generated bundles already exist.");
-}
-
-async function filesExist(paths) {
-  const results = await Promise.all(paths.map((path) => fileExists(path)));
-  return results.every(Boolean);
-}
-
-async function fileExists(path) {
-  try {
-    await access(path, constants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
+await runPythonScript([
+  resolve(packageDir, "scripts/generate_libchecker_bundle.py"),
+  ...process.argv.slice(2),
+], repoDir);
 
 async function runPythonScript(args, cwd) {
   const candidates = process.env.PYTHON ? [process.env.PYTHON] : ["python3", "python"];

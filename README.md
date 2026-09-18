@@ -168,10 +168,10 @@ The CI performance budget is intentionally lightweight and does not need a brows
 | `npm run webhook:delete` | tgbot | Delete the Telegram webhook. |
 | `npm run commands:set` | tgbot | Sync Telegram bot commands. |
 | `npm run generated:generate` | shared | Generate ignored runtime bundles under `packages/shared/src/generated/`. |
-| `npm run generated:refresh` | shared | Regenerate all ignored runtime bundles, including LibChecker rules and icons. |
+| `npm run generated:refresh` | shared | Reconvert the locked LibChecker release and regenerate ignored runtime bundles. |
 | `npm run i18n:generate` | shared | Generate runtime i18n catalogs from `locales/*.json`. |
 | `npm run i18n:check` | shared | Validate locale catalogs and any existing generated i18n catalog. |
-| `npm run rules:update` | shared | Refresh generated LibChecker rules. |
+| `npm run rules:update` | shared | Reconvert pinned rules; pass `-- --manifest` to validate and update to a newer release. |
 | `npm run pages:dev` | Web UI | Run the Pages app locally. |
 | `npm run pages:build` | Web UI | Build the Pages app. |
 | `npm run pages:deploy` | Web UI | Alias for production Pages deploy. |
@@ -275,3 +275,47 @@ packages/
     scripts/         Shared asset generation helpers
 locales/             Translation JSON catalogs
 ```
+
+## Locked LibChecker rules
+
+`packages/shared/rules.lock.json` pins a Rules v5 portable ZIP with the producer's
+manifest, SHA-256, byte size, source/compiler revisions, and minimum reader version.
+Normal builds never follow `latest` or source branches. `generated:refresh` rebuilds
+that same version. The generator verifies cached ZIP bytes and requires matching
+lock, converter, local icons, and output hashes before reusing generated files.
+The three generated ESM modules remain ignored; Web UI rules/details/icons retain
+their separate lazy chunks and existing report format. Types 0/1/2/3/4/9 are enabled;
+DEX/static analysis is not implicitly enabled by new portable data.
+
+The checked-in `packages/shared/data/bootstrap-portable-v5.zip` is the real initial
+compiler output from the frozen source commit, included only to make this migration
+reproducible before the first v5 release exists. `sourceRevision` records that commit
+and `contentSha256` binds the canonical source. It is not a claim
+that a remote release has been published. No unpacked duplicate or generated ESM
+is committed. Gradle and null-icon fallbacks have local attributed SVG sources in
+`packages/shared/assets/`.
+
+To use the first published release (or a later one):
+
+```sh
+npm run rules:update -- --manifest
+npm run check
+npm run pages:build
+npm run perf:check
+```
+
+The explicit updater reads the Rules `rules-data` branch's `manifest.json`, resolves
+its immutable `releases/<dataVersion>/portable-v5.zip`, validates the whole candidate,
+and then writes the lock. A changed release must increase `dataVersion`; rollbacks
+also use a new version. The first HTTPS update removes the bootstrap ZIP. The
+`Update Rules Data` workflow performs this operation and opens an own-repository PR
+using only `GITHUB_TOKEN`. Its refreshed PR body includes before/after versions and
+source revisions plus rule, SVG and matcher-detail additions/removals/changes. It never deploys or calls Telegram/KV; emoji sync remains
+independent and derives its existing stable ID/hash mapping from the pinned icons.
+
+For a real local compiler build, pass `--manifest /path/to/manifest.json --source
+<lock-relative-path-to-zip>` through `npm run rules:update --`. Absolute artifact
+paths are not saved in the lock. After one verified download, `python3
+packages/shared/scripts/generate_libchecker_bundle.py --offline` works without
+network access. A corrupt cache fails explicitly; delete that cache entry to fetch
+the same locked bytes again.

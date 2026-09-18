@@ -78,3 +78,20 @@ test("component SDK summaries retain the manifest component type", () => {
     { name: "com.example.DataProvider", kind: "provider" },
   ]);
 });
+
+test("regex rules match the entire name, including alternation, Unicode, and final newlines", () => {
+  const names = ["alpha", "βeta", "alphax", "xβeta", "alpha\n", "a.b", "axb"];
+  const common = { type: 2, iconIndex: -1, iconName: "ic_sdk_placeholder", singleColorIcon: true };
+  const rules = [
+    { ...common, name: "alpha|βeta", label: "regex", isRegexRule: true },
+    { ...common, name: "a\\.b", label: "escaped", isRegexRule: true },
+    { ...common, name: "alpha", label: "exact", isRegexRule: false },
+  ];
+  const annotated = annotateSdkMarkers({
+    nativeLibraries: [],
+    components: { activities: names.map((name) => ({ name })), services: [], receivers: [], providers: [] },
+    buildFeatures: {},
+  }, () => "", rules);
+  assert.deepEqual(annotated.components.activities.map(({ sdk }) => sdk?.label ?? null),
+    ["exact", "regex", null, null, null, "escaped", null]);
+});
