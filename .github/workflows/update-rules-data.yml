@@ -1,0 +1,72 @@
+name: Update Rules Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 5 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: tgbot-rules-data-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: npm ci
+      - name: Validate and pin published portable artifact
+        run: npm run rules:update -- --manifest --report .cache/rules-update.md
+      - name: Detect data changes
+        id: data
+        run: |
+          if ! git diff --quiet -- packages/shared/rules.lock.json; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check rules, consumers and size budgets
+        if: steps.data.outputs.changed == 'true'
+        run: |
+          npm run check
+          npm run pages:build
+          npm run perf:check
+          git diff --check
+      - name: Open own-repository update PR
+        if: steps.data.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=codex/rules-data-update
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add packages/shared/rules.lock.json
+          if git ls-files --error-unmatch packages/shared/data/bootstrap-portable-v5.zip >/dev/null 2>&1; then
+            git add -u packages/shared/data/bootstrap-portable-v5.zip
+          fi
+          git diff --cached --stat
+          git commit -m 'Update pinned LibChecker rules data'
+          git fetch origin "$branch" || true
+          git push --force-with-lease origin "HEAD:$branch"
+          body_file=.cache/rules-update.md
+          cat >> "$body_file" <<'EOF'
+
+          Validation: npm run check, npm run pages:build, npm run perf:check, git diff --check.
+          EOF
+          pr_number=$(gh pr list --head "$branch" --json number --jq '.[0].number // empty')
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" --body-file "$body_file"
+          else
+            gh pr create --head "$branch" --title 'Update pinned LibChecker rules data' --body-file "$body_file"
+          fi
