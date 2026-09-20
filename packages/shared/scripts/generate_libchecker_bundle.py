@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -313,9 +314,17 @@ def update_report(previous_lock, previous_data, candidate, data):
 
 def update_lock(manifest_source, source, lock_path, report_path=None):
     if manifest_source.startswith('https://'):
-        with urllib.request.urlopen(manifest_source, timeout=60) as response:
-            require(response.url.startswith('https://'), 'insecure manifest redirect')
-            raw = response.read(1024 * 1024 + 1)
+        try:
+            with urllib.request.urlopen(manifest_source, timeout=60) as response:
+                require(response.url.startswith('https://'), 'insecure manifest redirect')
+                raw = response.read(1024 * 1024 + 1)
+        except urllib.error.HTTPError as error:
+            if (error.code == 404 and manifest_source == DEFAULT_MANIFEST and source is None
+                    and lock_path.exists()
+                    and read_json(lock_path.read_bytes()).get('source') == 'data/bootstrap-portable-v5.zip'):
+                print('Rules manifest is not published yet; retaining the verified bootstrap lock.')
+                return
+            raise
         require(len(raw) <= 1024 * 1024, 'manifest too large')
     else:
         raw = Path(manifest_source).read_bytes()
@@ -329,7 +338,9 @@ def update_lock(manifest_source, source, lock_path, report_path=None):
     if previous_lock:
         previous = previous_lock['manifest']
         require(manifest['dataVersion'] > previous['dataVersion'] or
-                (manifest['dataVersion'] == previous['dataVersion'] and manifest == previous),
+                (manifest['dataVersion'] == previous['dataVersion']
+                 and all(manifest[key] == previous[key] for key in METADATA_FIELDS)
+                 and manifest['artifacts']['portable'] == previous['artifacts']['portable']),
                 'updates must increase dataVersion; published versions are immutable')
     data = load_archive(candidate, lock_path, CACHE_DIR)
     convert_archive(data, candidate)

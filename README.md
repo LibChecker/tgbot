@@ -319,3 +319,12 @@ paths are not saved in the lock. After one verified download, `python3
 packages/shared/scripts/generate_libchecker_bundle.py --offline` works without
 network access. A corrupt cache fails explicitly; delete that cache entry to fetch
 the same locked bytes again.
+
+While the local bootstrap is pinned, a 404 from the default Rules manifest means
+the first release is not published yet: the updater keeps the lock and verifies
+the bootstrap normally. Custom endpoints, published locks, artifact failures and
+other HTTP errors still fail; same-version immutability checks remain enforced.
+
+For same-version checks, tgbot compares all shared metadata and the portable
+artifact descriptor. Android and legacy artifact hashes are recorded but are not
+tgbot inputs; their differences alone do not invalidate an identical portable ZIP.
