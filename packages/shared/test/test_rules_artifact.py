@@ -15,6 +15,53 @@ spec.loader.exec_module(m)
 
 
 class ArtifactTest(unittest.TestCase):
+    def test_unpublished_manifest_only_skips_default_bootstrap_404(self):
+        lock = json.loads(m.DEFAULT_LOCK.read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'lock.json'
+            for source, url, status, explicit, skip in [
+                ('data/bootstrap-portable-v5.zip', m.DEFAULT_MANIFEST, 404, None, True),
+                ('https://example.test/release.zip', m.DEFAULT_MANIFEST, 404, None, False),
+                ('data/bootstrap-portable-v5.zip', 'https://example.test/manifest.json', 404, None, False),
+                ('data/bootstrap-portable-v5.zip', m.DEFAULT_MANIFEST, 503, None, False),
+                ('data/bootstrap-portable-v5.zip', m.DEFAULT_MANIFEST, 403, None, False),
+                ('data/bootstrap-portable-v5.zip', m.DEFAULT_MANIFEST, 404, 'custom.zip', False),
+            ]:
+                path.write_text(json.dumps({**lock, 'source': source}))
+                before = path.read_bytes()
+                error = m.urllib.error.HTTPError(url, status, 'test', {}, None)
+                with patch.object(m.urllib.request, 'urlopen', side_effect=error):
+                    if skip:
+                        m.update_lock(url, explicit, path)
+                    else:
+                        with self.assertRaises(m.urllib.error.HTTPError):
+                            m.update_lock(url, explicit, path)
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_same_version_only_compares_consumed_artifact_and_shared_metadata(self):
+        lock = json.loads(m.DEFAULT_LOCK.read_text())
+        data = m.load_archive(lock, m.DEFAULT_LOCK, m.CACHE_DIR, offline=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); path = root / 'lock.json'; manifest_path = root / 'manifest.json'
+            manifest = copy.deepcopy(lock['manifest'])
+            manifest['artifacts']['android']['sha256'] = 'a' * 64
+            manifest['artifacts']['legacy']['sha256'] = 'b' * 64
+            manifest_path.write_text(json.dumps(manifest)); path.write_text(json.dumps(lock))
+            with patch.object(m, 'load_archive', return_value=data):
+                m.update_lock(str(manifest_path), lock['source'], path)
+            self.assertEqual(json.loads(path.read_text())['manifest'], manifest)
+            for changed in ('portable', 'sourceRevision'):
+                candidate = copy.deepcopy(manifest)
+                if changed == 'portable':
+                    candidate['artifacts']['portable']['sha256'] = 'c' * 64
+                else:
+                    candidate['sourceRevision'] = 'd' * 40
+                manifest_path.write_text(json.dumps(candidate))
+                before = path.read_bytes()
+                with self.assertRaisesRegex(ValueError, 'immutable'):
+                    m.update_lock(str(manifest_path), lock['source'], path)
+                self.assertEqual(path.read_bytes(), before)
+
     def test_locked_archive_and_offline_cache(self):
         lock = json.loads(m.DEFAULT_LOCK.read_text())
         with tempfile.TemporaryDirectory() as tmp:
