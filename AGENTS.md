@@ -178,9 +178,9 @@ and project-specific constraints only.
   established by the surrounding catalog.
 - `packages/shared/src/generated/` is ignored generated output. Do not hand-edit
   it.
-- Wrangler `.wrangler/types/worker-configuration.d.ts` files are ignored
-  generated output. Package `typecheck` scripts regenerate them from the
-  current Wrangler config before running `tsc`; do not commit or hand-edit them.
+ - Wrangler and Cloudflare `.wrangler/types/` and `.cloudflare/types/` files are
+   ignored generated output. Package `typecheck` scripts regenerate them before
+   running `tsc`; do not commit or hand-edit them.
 - Scripts usually run `generated:generate` before checks/builds.
 - LibChecker rules/details/icons come only from the verified Rules v5 portable
   ZIP pinned in `packages/shared/rules.lock.json`. Normal builds and refreshes

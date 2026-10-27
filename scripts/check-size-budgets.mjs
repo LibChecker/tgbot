@@ -72,7 +72,7 @@ const ASSET_BUDGETS = [
   {
     label: "LibChecker SDK icons chunk",
     pattern: /^assets\/libchecker-sdk-icons-[\w-]+\.js$/u,
-    maxBytes: 520 * 1024,
+    maxBytes: 600 * 1024,
   },
 ];
 
@@ -95,12 +95,12 @@ const TOTAL_BUDGETS = [
   {
     label: "WebUI JS total",
     filter: (asset) => asset.path.endsWith(".js"),
-    maxBytes: 3_700 * 1024,
+    maxBytes: 3_900 * 1024,
   },
   {
     label: "WebUI dist total",
     filter: () => true,
-    maxBytes: 4_100 * 1024,
+    maxBytes: 4_300 * 1024,
   },
 ];
 

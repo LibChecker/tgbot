@@ -11,6 +11,7 @@
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "node -e \"const fs=require('node:fs'),path=require('node:path');const target=path.resolve('packages/bot-worker/node_modules/wrangler');if(!fs.existsSync(target)){fs.mkdirSync(path.dirname(target),{recursive:true});try{fs.symlinkSync(path.resolve('node_modules/wrangler'),target,'junction')}catch{}}\"",
     "predev": "npm run generated:generate",
     "dev": "npm run dev --workspace @tgbot/bot-worker",
     "deploy": "npm run deploy:production",
@@ -44,9 +45,10 @@
     "check": "npm run check --workspace @tgbot/shared && npm run check --workspace @tgbot/bot-worker && npm run check --workspace @tgbot/apk-webui && npm run check:deploy"
   },
   "devDependencies": {
+    "cf": "^1.0.0-beta.23",
     "fast-check": "4.10.2",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.5",
     "typescript": "^7.0.2",
-    "wrangler": "4.135.0"
+    "wrangler": "4.153.0"
   }
 }

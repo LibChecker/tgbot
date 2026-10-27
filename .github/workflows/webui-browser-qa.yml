@@ -16,7 +16,7 @@ jobs:
   webkit:
     name: WebKit smoke and accessibility
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7

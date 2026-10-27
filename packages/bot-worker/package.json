@@ -7,11 +7,11 @@
     "predev": "npm run generated:generate --workspace @tgbot/shared",
     "predeploy": "npm run generated:generate --workspace @tgbot/shared",
     "predeploy:setup": "npm run generated:generate --workspace @tgbot/shared",
-    "dev": "wrangler dev --config wrangler.jsonc --env preview",
+    "dev": "cf dev --mode preview",
     "deploy": "npm run deploy:production",
-    "deploy:preview": "wrangler deploy --config wrangler.jsonc --env preview",
-    "deploy:production": "wrangler deploy --config wrangler.jsonc --env production",
-    "deploy:dry-run": "wrangler deploy --config wrangler.jsonc --env production --dry-run",
+    "deploy:preview": "cf deploy --mode preview",
+    "deploy:production": "cf deploy --mode production",
+    "deploy:dry-run": "cf deploy --mode production --dry-run",
     "deploy:setup": "npm run deploy:production && node scripts/manage-webhook.mjs set && node scripts/manage-webhook.mjs commands:set",
     "webhook:set": "node scripts/manage-webhook.mjs set",
     "webhook:info": "node scripts/manage-webhook.mjs info",
@@ -19,19 +19,20 @@
     "commands:set": "node scripts/manage-webhook.mjs commands:set",
     "commands:info": "node scripts/manage-webhook.mjs commands:info",
     "commands:delete": "node scripts/manage-webhook.mjs commands:delete",
-    "types:generate": "node -e \"require('node:fs').mkdirSync('.wrangler/types',{recursive:true})\" && wrangler types .wrangler/types/worker-configuration.d.ts --config wrangler.jsonc --strict-vars=false",
+    "types:generate": "node -e \"require('node:fs').mkdirSync('.wrangler/types',{recursive:true})\" && wrangler types .wrangler/types/worker-configuration.d.ts --config wrangler.jsonc --strict-vars=false && cf workers types --include-runtime false",
     "typecheck": "npm run types:generate && tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs",
     "test:runtime": "vitest run --config vitest.config.mjs",
     "check": "node scripts/check.mjs && npm run typecheck && npm test && npm run test:runtime"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "0.22.0",
-    "vitest": "^4.1.11",
-    "wrangler": "4.135.0"
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "cf": "^1.0.0-beta.23",
+    "vitest": "^4.1.12",
+    "wrangler": "4.153.0"
   },
   "dependencies": {
-    "hono": "^4.13.3",
+    "hono": "^4.13.14",
     "ipaddr.js": "^2.5.0"
   }
 }

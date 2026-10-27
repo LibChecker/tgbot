@@ -19,12 +19,12 @@
     "size:check": "npm run perf:check"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.13.0",
-    "@cloudflare/vitest-pool-workers": "0.22.0",
-    "@playwright/test": "^1.62.1",
-    "vite": "^8.2.2",
-    "vitest": "^4.1.11",
-    "wrangler": "4.135.0"
+    "@axe-core/playwright": "4.14.0",
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@playwright/test": "^1.64.1",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12",
+    "wrangler": "4.153.0"
   },
   "dependencies": {
     "fflate": "^0.8.3"

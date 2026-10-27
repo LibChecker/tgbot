@@ -259,6 +259,7 @@ packages/
       report-store.js R2 report data storage
       observability.js Logs and Analytics Engine events
     scripts/         Worker admin and webhook helpers
+    cloudflare.config.ts Worker deployment config (cf CLI)
     wrangler.jsonc   Worker deployment config
   apk-webui/         Web UI Pages workspace package
     src/             Browser UI and analyzer worker
