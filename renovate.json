@@ -11,7 +11,7 @@
         "npm"
       ],
       "matchPackageNames": [
-        "@cloudflare/vitest-pool-workers",
+        "@cloudflare/vitest-plugin",
         "vitest"
       ]
     }
