@@ -29,7 +29,7 @@
     "@cloudflare/vitest-plugin": "^1.0.0",
     "cf": "^1.0.0-beta.23",
     "vitest": "^5.0.5",
-    "wrangler": "4.153.0"
+    "wrangler": "4.156.0"
   },
   "dependencies": {
     "hono": "^4.13.14",
