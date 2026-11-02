@@ -81,7 +81,7 @@ test("analyzes a small APK, saves history, reopens the report, and compares it",
   await expect(page.locator("#compare-result")).toContainText(/No differences|无差异/u);
 });
 
-test("opens ELF details on demand and degrades safely for history reports", async ({ page }, testInfo) => {
+test("opens ELF details on demand and degrades safely for history reports", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   const workerStarted = page.waitForEvent("worker");
   await page.locator("#file-input").setInputFiles(validApk);
@@ -152,15 +152,22 @@ test("opens ELF details on demand and degrades safely for history reports", asyn
     spinner.className = "elf-detail-spinner";
     element.append(spinner);
     const style = getComputedStyle(spinner);
-    const result = { cornerShape: style.cornerShape, width: spinner.offsetWidth, height: spinner.offsetHeight };
+    const result = {
+      supportsCornerShape: CSS.supports("corner-shape", "round"),
+      cornerShape: style.cornerShape,
+      width: spinner.offsetWidth,
+      height: spinner.offsetHeight,
+    };
     spinner.remove();
     return result;
   });
-  expect(spinnerShape).toEqual({
-    cornerShape: testInfo.project.name === "webkit" ? undefined : "round",
-    width: 22,
-    height: 22,
-  });
+  expect(spinnerShape).toMatchObject({ width: 22, height: 22 });
+  if (spinnerShape.supportsCornerShape) {
+    // Computed styles may serialize the round keyword as its equivalent superellipse.
+    expect(["round", "superellipse(1)"]).toContain(spinnerShape.cornerShape);
+  } else {
+    expect(spinnerShape.cornerShape).toBeUndefined();
+  }
   await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
   await body.evaluate((element) => {
     element.scrollTop = 120;
