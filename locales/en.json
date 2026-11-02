@@ -288,6 +288,26 @@
     "compareChanged": "Changed",
     "compareMoved": "Moved",
     "compareNoItems": "None",
-    "compareMoreItems": "{count} more items hidden"
+    "compareMoreItems": "{count} more items hidden",
+    "mcpGuideTitle": "Connect MCP",
+    "mcpGuideRemote": "Remote links",
+    "mcpGuideRemoteHelp": "Add this URL as an HTTP MCP server in your client. No token required. Use public download links only.",
+    "mcpGuideCodex": "Using Codex? Add this to your configuration:",
+    "mcpGuideLocal": "Local files",
+    "mcpGuideLocalHelp": "Clone the repository and install Node.js 24+. Run these commands in the repository root.",
+    "mcpGuideLocalConfig": "Replace the repository path below with your absolute path. If node is not on PATH, use its absolute executable path.",
+    "mcpGuideDocs": "Setup docs",
+    "mcpGuideSubtitle": "APK analysis in your AI client",
+    "mcpGuideRemoteTry": "Reconnect, then ask your client to analyze a public URL with analyze_apk_url. Local paths are not supported.",
+    "mcpGuideLocalTry": "Reconnect, then ask your client to use analyze_apk_file with an absolute file path. APKs are never uploaded.",
+    "mcpGuideCopy": "Copy",
+    "mcpGuideCopied": "Copied to clipboard",
+    "mcpGuideCopyFailed": "Could not copy. Select the code and copy it manually.",
+    "mcpGuideTerminal": "Terminal",
+    "mcpGuideFooter": "Works with MCP desktop clients",
+    "mcpGuidePrompt": "AI setup",
+    "mcpGuidePromptHelp": "Copy this prompt into an AI client such as Codex that can configure MCP servers.",
+    "mcpGuidePromptText": "Help me connect the LibChecker APK analysis MCP.\n\nRemote server: {url}\nTransport: Streamable HTTP. No token required.\n\nCheck how this client configures MCP, preserve existing servers, and add this server (suggested name: apk_remote). Connect and list tools to verify analyze_apk_url is available, then explain how to submit a public APK download URL. Report actual connection results; generating configuration alone is not success.\n\nIf local APK analysis is needed, follow {docs} to configure the local stdio component without uploading files. If you cannot edit this client’s configuration, give precise manual steps and explain whether reconnection or restart is needed.",
+    "mcpGuidePromptHint": "Automatic setup depends on the client’s capabilities and permissions."
   }
 }

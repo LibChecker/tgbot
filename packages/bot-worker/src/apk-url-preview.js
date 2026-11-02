@@ -66,6 +66,8 @@ export async function readApkInfoFromUrl(rawUrl, options = {}) {
     downloadedBytes: 0,
     rangeCacheHitCount: 0,
   };
+  // Cancellation belongs to the request, not serialized report statistics.
+  Object.defineProperty(stats, "signal", { value: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000) });
   const diagnostics = {
     analysis_stage: "url_parse",
     link_preview_mode: stats.mode,
@@ -207,7 +209,7 @@ async function fetchRemoteMetadata(url, stats) {
     return probeResult;
   }
 
-  const headResult = await fetchHeadMetadata(url);
+  const headResult = await fetchHeadMetadata(url, stats);
   if (headResult?.contentLength > 0 && headResult.supportsRange) {
     return headResult;
   }
@@ -215,12 +217,12 @@ async function fetchRemoteMetadata(url, stats) {
   throw new Error("The remote link does not support HTTP Range, so it cannot be parsed without a full download");
 }
 
-async function fetchHeadMetadata(url) {
+async function fetchHeadMetadata(url, stats) {
   try {
-    const response = await fetch(url, {
+    const response = await fetchPublicApk(url, {
       method: "HEAD",
       headers: buildRemoteHeaders(),
-    });
+    }, stats.signal);
 
     if (!response.ok) {
       return null;
@@ -238,19 +240,19 @@ async function fetchHeadMetadata(url) {
 
 async function fetchRangeProbeMetadata(url, stats) {
   stats.rangeRequestCount += 1;
-  const response = await fetch(url, {
+  const response = await fetchPublicApk(url, {
     headers: {
       ...buildRemoteHeaders(),
       range: `bytes=0-${METADATA_PROBE_BYTES - 1}`,
     },
-  });
+  }, stats.signal);
 
   if (response.status !== 206) {
     await cancelResponseBody(response);
     return null;
   }
 
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  const bytes = await readBoundedRange(response, METADATA_PROBE_BYTES, stats.signal);
   stats.downloadedBytes += bytes.byteLength;
 
   return {
@@ -566,6 +568,10 @@ async function downloadRemoteZipEntry(url, entry, stats, options) {
     throw new Error("Encrypted ZIP entries are not supported");
   }
 
+  if (entry.uncompressedSize > DEFAULT_MAX_ENTRY_COMPRESSED_BYTES) {
+    throw new Error("Remote APK entry exceeds the 24 MiB extraction limit");
+  }
+
   if (entry.compressedSize > options.maxEntryCompressedBytes) {
     throw new Error(`Remote APK entry ${entry.name || ""} is too large; the current preview limit is ${formatBytes(options.maxEntryCompressedBytes)}`);
   }
@@ -588,7 +594,7 @@ async function downloadRemoteZipEntry(url, entry, stats, options) {
   }
 
   if (compressionMethod === ZIP_COMPRESSION_DEFLATE) {
-    return inflateRaw(compressedBytes);
+    return inflateRaw(compressedBytes, entry.uncompressedSize, stats.signal);
   }
 
   throw new Error(`Unsupported ZIP compression method: ${compressionMethod}`);
@@ -801,19 +807,19 @@ async function downloadRange(url, offset, length, stats) {
 
   const end = offset + length - 1;
   stats.rangeRequestCount += 1;
-  const response = await fetch(url, {
+  const response = await fetchPublicApk(url, {
     headers: {
       ...buildRemoteHeaders(),
       range: `bytes=${offset}-${end}`,
     },
-  });
+  }, stats.signal);
 
   if (response.status !== 206) {
     await cancelResponseBody(response);
     throw new Error("The remote link does not support HTTP Range, so it cannot be parsed without a full download");
   }
 
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  const bytes = await readBoundedRange(response, length, stats.signal);
   stats.downloadedBytes += bytes.byteLength;
   return bytes;
 }
@@ -932,7 +938,7 @@ function parseEocd(bytes, offset) {
   };
 }
 
-async function inflateRaw(bytes) {
+async function inflateRaw(bytes, expectedSize, signal) {
   if (bytes.byteLength === 0) {
     return new Uint8Array();
   }
@@ -940,8 +946,7 @@ async function inflateRaw(bytes) {
   const decompressed = new Response(
     new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")),
   );
-  const buffer = await decompressed.arrayBuffer();
-  return new Uint8Array(buffer);
+  return readBoundedRange(decompressed, expectedSize, signal);
 }
 
 export const __apkUrlPreviewTestInternals = {
@@ -957,7 +962,7 @@ export function parseHttpUrl(rawUrl) {
     throw createUrlAnalysisError("Only HTTP/HTTPS APK download links are supported", "invalid_download_url");
   }
 
-  if (isBlockedDownloadHost(url.hostname)) {
+  if (url.username || url.password || isBlockedDownloadHost(url.hostname)) {
     throw createUrlAnalysisError("This download host is not allowed", "invalid_download_url");
   }
 
@@ -1097,5 +1102,47 @@ function parseIpAddress(hostname) {
     return ipaddr.process(hostname);
   } catch {
     return null;
+  }
+}
+
+// Validate every redirect before contacting it; never forward URL credentials.
+async function fetchPublicApk(rawUrl, init, signal) {
+  let url = parseHttpUrl(rawUrl);
+  for (let redirects = 0; redirects <= 5; redirects += 1) {
+    signal?.throwIfAborted();
+    const response = await fetch(url, { ...init, redirect: "manual", signal });
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    const location = response.headers.get("location");
+    await cancelResponseBody(response);
+    if (!location) throw new Error("APK redirect has no location");
+    url = parseHttpUrl(new URL(location, url).href);
+  }
+  throw new Error("Too many APK redirects");
+}
+
+async function readBoundedRange(response, maxBytes, signal) {
+  if (Number(response.headers.get("content-length")) > maxBytes) {
+    await cancelResponseBody(response);
+    throw new Error("APK range response exceeds requested size");
+  }
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const output = new Uint8Array(maxBytes);
+  let size = 0;
+  const abort = () => { void reader.cancel().catch(() => {}); };
+  signal?.addEventListener("abort", abort, { once: true });
+  try {
+    while (true) {
+      signal?.throwIfAborted();
+      const { done, value } = await reader.read();
+      signal?.throwIfAborted();
+      if (done) return output.subarray(0, size);
+      if (size + value.byteLength > maxBytes) throw new Error("APK range response exceeds requested size");
+      output.set(value, size);
+      size += value.byteLength;
+    }
+  } finally {
+    signal?.removeEventListener("abort", abort);
+    await reader.cancel();
   }
 }

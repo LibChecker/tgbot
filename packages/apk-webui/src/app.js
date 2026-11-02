@@ -1530,6 +1530,15 @@ function bindEvents() {
     setDownloadUrl("", { syncInput: true });
     elements.linkInput?.focus();
   });
+  elements.mcpGuideOpen.addEventListener("click", async () => {
+    try {
+      const { openMcpGuide } = await import("./app/mcp-guide.js");
+      openMcpGuide(elements.mcpGuide, t);
+    } catch (error) {
+      showError(getErrorMessage(error) || t("unknownError"));
+    }
+  });
+  elements.mcpGuideOpen.disabled = false;
   elements.runtimeLogOpen?.addEventListener("click", openRuntimeLogModal);
   elements.runtimeLogExport?.addEventListener("click", exportRuntimeLogs);
   elements.runtimeLogClose?.addEventListener("click", closeRuntimeLogModal);

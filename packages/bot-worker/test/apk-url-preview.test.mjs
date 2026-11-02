@@ -281,3 +281,23 @@ function createLocalFileHeader(name, options = {}) {
   view.setUint16(28, options.extraLength ?? 0, true);
   return bytes;
 }
+
+test("URL preview rejects credentials and stops an aborted request before fetch", async (t) => {
+  const { readApkInfoFromUrl } = await import("../src/apk-url-preview.js");
+  assert.throws(() => parseHttpUrl("https://user:password@example.com/app.apk"), /not allowed/);
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("Unexpected fetch"); });
+  await assert.rejects(readApkInfoFromUrl("https://example.com/app.apk", { signal: AbortSignal.abort() }));
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test("URL preview cancels a stalled range read when its request is aborted", async (t) => {
+  const { readApkInfoFromUrl } = await import("../src/apk-url-preview.js");
+  const controller = new AbortController();
+  let bodyCancelled = false;
+  t.mock.method(globalThis, "fetch", async () => new Response(new ReadableStream({
+    start() { queueMicrotask(() => controller.abort()); },
+    cancel() { bodyCancelled = true; },
+  }), { status: 206 }));
+  await assert.rejects(readApkInfoFromUrl("https://example.com/app.apk", { signal: controller.signal }));
+  assert.equal(bodyCancelled, true);
+});

@@ -36,6 +36,10 @@ export function createApiCatalog(siteOrigin) {
           },
         ],
       },
+      {
+        anchor: `${siteOrigin}/mcp`,
+        "service-doc": [{ href: `${siteOrigin}/api-docs.md`, type: "text/markdown" }],
+      },
     ],
   };
 }
@@ -46,7 +50,7 @@ export function createOpenApiDocument(siteOrigin) {
     info: {
       title: "LibChecker WebUI URL Analysis API",
       version: "1.0.0",
-      description: "Analyze a public Android package download URL using remote range requests. Local file analysis remains browser-only.",
+      description: "Analyze a public Android package download URL using remote range requests. Local file analysis runs in the browser or the separate local stdio MCP.",
     },
     servers: [
       {
@@ -158,7 +162,7 @@ export function createOpenApiDocument(siteOrigin) {
 export function createApiDocsMarkdown(siteOrigin) {
   return `# LibChecker WebUI API
 
-LibChecker WebUI exposes one unauthenticated public API for analyzing a public Android package download URL.
+LibChecker WebUI exposes an unauthenticated URL analysis API and an MCP endpoint backed by the same analyzer.
 
 ## Analyze a URL
 
@@ -174,6 +178,16 @@ Send a \`POST\` request to \`${siteOrigin}/url-report\` with JSON:
 Use \`Accept: application/json\` for a single response or \`Accept: application/x-ndjson\` for progress events followed by the result. The response contains a LibChecker package report when analysis succeeds.
 
 The endpoint only accepts public HTTP or HTTPS download URLs. Do not send credentials, private URLs, or private package data. For complete local analysis, open the Web UI and select a file in the browser.
+
+## MCP
+
+Connect using Streamable HTTP at \`${siteOrigin}/mcp\` and call \`analyze_apk_url\`.
+Protocol revision 2026-07-28 and legacy 2025 handshakes are supported through SDK v2.
+The tool takes \`url\`, optional \`locale\`, and optional \`sections\`, \`offset\`, \`limit\` (1–50).
+Sections: permissions, components, nativeLibraries, metaData, buildFeatures, archive.
+Responses include structured metadata and JSON text; truncated fields are listed explicitly.
+This is remote range preview, not full local analysis. APK uploads and local paths are not accepted.
+The separate repository stdio MCP exposes \`analyze_apk_file\` for local files without uploading them.
 
 ## Discovery
 
@@ -195,7 +209,7 @@ Agents may use the public URL analysis API to inspect Android packages that are 
 
 No agent registration, OAuth flow, API key, or bearer token is required for \`POST ${siteOrigin}/url-report\`. Do not attach credentials to requests and do not submit private package URLs or private package data.
 
-LibChecker WebUI does not operate an OAuth authorization server or an MCP server. Separate Telegram bot administration endpoints are private operator surfaces and are intentionally excluded from public discovery metadata.
+LibChecker WebUI offers an anonymous Streamable HTTP MCP endpoint at \`${siteOrigin}/mcp\` and does not operate an OAuth authorization server. Separate Telegram bot administration endpoints are private operator surfaces and are intentionally excluded from public discovery metadata.
 
 ## API documentation
 

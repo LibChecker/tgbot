@@ -899,6 +899,16 @@ svg {
   box-shadow: 0 0 0 2px var(--topbar-focus);
 }
 
+#mcp-guide-open {
+  flex: 0 0 auto;
+}
+
+#mcp-guide-open svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+}
+
 .icon-button svg {
   width: 20px;
   height: 20px;
@@ -3137,7 +3147,7 @@ svg {
     mask-image: none;
   }
 
-  .topbar-actions > :not(.mode-chip-group) {
+  .topbar-actions > :not(.mode-chip-group):not(#mcp-guide-open) {
     display: none;
   }
 }

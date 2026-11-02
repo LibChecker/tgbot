@@ -26,6 +26,7 @@ and project-specific constraints only.
 | --- | --- | --- | --- |
 | Telegram bot / Worker | `packages/bot-worker/` | Cloudflare Workers + Hono | Telegram webhook, APK URL preview, WebUI upload guidance, report data, admin APIs, observability. |
 | Browser Web UI | `packages/apk-webui/` | Cloudflare Pages + Vite | Browser-first APK analyzer UI, local Web Worker analysis, history, compare, report rendering, Pages Functions. |
+| Local MCP | `packages/apk-mcp/` | Node >=24, stdio | Desktop local-file analysis, disposable worker, no APK uploads. |
 | Shared analyzer | `packages/shared/` | Worker + browser | APK parsing, signatures, SDK marker matching, shared contracts, i18n runtime, generated rule/icon/catalog bundles. |
 | Translations | `locales/` | Shared | Source-of-truth locale JSON for both bot and Web UI. |
 | Deploy orchestration | `scripts/` | Node | Root Cloudflare preflight/deploy and size budget checks. |
@@ -125,6 +126,19 @@ and project-specific constraints only.
   gated. Keep fallback reasons in `liquid-glass-support.js`.
 - Web UI CSS/JS budgets are intentionally tight. Before raising a budget, prefer
   lazy loading, deleting duplicate rules, or consolidating existing tokens.
+
+## MCP Rules
+
+- Remote MCP lives at Pages `/mcp`, using the same URL preview engine as `/url-report`.
+  Use official SDK v2 with legacy stateless compatibility; do not hand-roll JSON-RPC.
+- Local MCP starts with `node packages/apk-mcp/src/server.mjs`; generate shared bundles
+  before first use. Keep stdout protocol-only and Node filesystem APIs in this package.
+- Local analysis stays offline in a disposable worker. Preserve file/extraction/output
+  budgets, cancellation, and the distinction between local analysis and remote preview.
+- Shared `mcp-report.js` controls bounded result projection; do not include binary icons
+  or private filesystem paths in tool results. Treat package metadata as untrusted data.
+- `npm run check` includes local stdio integration tests; Pages checks cover HTTP and
+  workerd. Actual desktop client acceptance and deployment are separate checks.
 
 ## Worker Rules
 

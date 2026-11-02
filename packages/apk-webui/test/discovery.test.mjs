@@ -16,7 +16,8 @@ const siteOrigin = "https://webui.example";
 
 test("API catalog links the public API to its spec, docs, and health endpoint", () => {
   const catalog = createApiCatalog(siteOrigin);
-  assert.equal(catalog.linkset.length, 1);
+  assert.equal(catalog.linkset.length, 2);
+  assert.equal(catalog.linkset[1].anchor, `${siteOrigin}/mcp`);
   assert.deepEqual(catalog.linkset[0], {
     anchor: `${siteOrigin}/url-report`,
     "service-desc": [{
@@ -65,5 +66,5 @@ test("auth.md truthfully documents the unauthenticated public API", () => {
   const markdown = createAuthMarkdown(siteOrigin);
   assert.match(markdown, /^# .*auth\.md/mu);
   assert.match(markdown, /No agent registration, OAuth flow, API key, or bearer token is required/u);
-  assert.match(markdown, /does not operate an OAuth authorization server or an MCP server/u);
+  assert.match(markdown, /offers an anonymous Streamable HTTP MCP endpoint/u);
 });

@@ -99,7 +99,7 @@ await writeFile(
   resolve(distDir, "_routes.json"),
   `${JSON.stringify({
     version: 1,
-    include: ["/", "/index.html", "/url-report", "/analytics", "/health"],
+    include: ["/", "/index.html", "/url-report", "/mcp", "/analytics", "/health"],
     exclude: [],
   }, null, 2)}\n`,
 );
@@ -132,6 +132,7 @@ async function writeSeoFiles() {
       "User-agent: *",
       "Allow: /",
       "Disallow: /url-report",
+      "Disallow: /mcp",
       `Sitemap: ${WEBUI_SITE_ORIGIN}/sitemap.xml`,
       "",
     ].join("\n"),

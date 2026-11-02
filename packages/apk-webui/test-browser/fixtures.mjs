@@ -160,7 +160,7 @@ function getStringIndex(indexes, value) {
   return index;
 }
 
-function createStoredZip(entries) {
+export function createStoredZip(entries) {
   const localChunks = [];
   const centralChunks = [];
   let localOffset = 0;
