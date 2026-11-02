@@ -6,6 +6,7 @@ This repository contains two deployable parts:
 | --- | --- | --- | --- |
 | tgbot | `packages/bot-worker/` | Cloudflare Workers | Telegram bot, APK link preview, WebUI upload guidance, report rendering, webhook/admin APIs. |
 | Web UI | `packages/apk-webui/` | Cloudflare Pages | Standalone browser APK analyzer powered by the same parser and LibChecker rules. |
+| Local MCP | `packages/apk-mcp/` | Node >=24 / stdio | Offline local APK analysis for desktop MCP clients. |
 | Shared analyzer | `packages/shared/` | Worker and Pages | APK parser, signature parser, SDK marker runtime, and generated local bundles. |
 
 ## tgbot
@@ -143,7 +144,49 @@ DNS-AID is an external DNS-zone operation and is not changed by the Pages deploy
 _index._agents.<webui-host>. 3600 IN SVCB 1 <webui-host>. mandatory=alpn,port alpn="h2" port=443 key65400="/.well-known/agent-skills/index.json"
 ```
 
-Do not advertise `mcp` or `a2a` in DNS and do not publish OAuth or MCP discovery documents unless those real protocol endpoints are deployed.
+Do not advertise `mcp` in DNS until the `/mcp` endpoint is deployed and verified. Do not advertise `a2a` or OAuth services that do not exist.
+
+### MCP clients
+
+The Web UI includes a Streamable HTTP endpoint at `<webui-origin>/mcp`, using
+MCP TypeScript SDK v2 and protocol revision `2026-07-28`. Legacy 2025 handshakes
+remain supported. This endpoint becomes available after deploying Pages Functions;
+Vite alone does not serve it.
+
+The Web UI topbar MCP button opens remote and local setup instructions, with
+copyable configuration and an AI setup prompt using the current site origin.
+Prompt-assisted setup depends on the desktop client’s capabilities and permissions.
+
+- **Remote connection:** configure an HTTP MCP server URL ending in `/mcp`.
+  No token is required. `analyze_apk_url` accepts a public HTTP(S) `url` and optional
+  `locale`. It performs bounded range preview, not full local analysis. Do not
+  submit credentials or private download URLs. Requests time out after 30 seconds.
+- **Local connection:** install repository dependencies with Node >=24 and run
+  `npm run generated:generate` once. Configure a stdio MCP with command `node`
+  (or its absolute executable path) and argument
+  `<absolute-repository-path>/packages/apk-mcp/src/server.mjs`.
+  Launch Node directly: npm startup messages must not enter protocol stdout.
+  `analyze_apk_file` accepts an absolute `path` to APK/APKS/APKM/XAPK. It reads only
+  that file, uses bundled rules, and does not upload the APK or fetch remote data.
+  The file is analyzed in a disposable worker with a 512 MiB file limit, 1 GiB
+  cumulative extraction budget, one concurrent analysis, and a 60-second deadline.
+
+Both tools return structured content and equivalent JSON text. The default result
+contains package metadata, signatures, SDK matches, ABIs, and coverage limitations.
+Optional `sections` selects `permissions`, `components`, `nativeLibraries`,
+`metaData`, `buildFeatures`, or `archive`. Array details use `offset` (default 0)
+and `limit` (default/max 50); component arrays are paged per component kind.
+Nested fields are bounded and `truncatedFields` identifies omitted data. A request
+that still exceeds the response budget returns an error asking for smaller pages.
+Each call analyzes the package afresh; results are not persisted. Package strings
+are untrusted data, never instructions or a malware verdict. Container support
+selects the main APK and does not promise complete split manifest/resource merging.
+
+Run `npm run check --workspace @tgbot/apk-mcp` for real stdio client tests covering
+both protocol eras. The Web UI checks include HTTP and Cloudflare runtime tests.
+Before release, connect the target desktop client to both endpoints and call each
+tool with a known APK; SDK tests alone do not establish desktop compatibility.
+Rollback removes the MCP route/client configuration; no stored data migration is needed.
 
 The CI performance budget is intentionally lightweight and does not need a browser. It checks the built WebUI `dist/` output for:
 

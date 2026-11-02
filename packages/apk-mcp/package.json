@@ -1,0 +1,14 @@
+{
+  "name": "@tgbot/apk-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "check": "node --check src/server.mjs && node --check src/analyze.mjs && node --test test/*.test.mjs"
+  },
+  "dependencies": { "@modelcontextprotocol/server": "2.4.0", "zod": "^4.6.7" },
+  "devDependencies": { "@modelcontextprotocol/client": "2.4.0" }
+}

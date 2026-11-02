@@ -7,6 +7,15 @@ description: Analyze a public APK/APKS/APKM/XAPK download URL with LibChecker We
 
 Use this skill when a user wants package metadata, permissions, components, signatures, native libraries, or known SDK markers from an Android package that is already available at a public download URL.
 
+## MCP clients
+
+Connect a remote MCP client to `/mcp` on this origin (Streamable HTTP). Call
+`analyze_apk_url` with `url`; optionally request `sections`, `offset`, and `limit`
+for paged details. The endpoint supports protocol revision 2026-07-28 and legacy
+2025 client handshakes. It uses the same public URL preview engine described below.
+For local files, use the repository's separate stdio MCP `analyze_apk_file` tool;
+remote MCP cannot read a local path and does not accept APK uploads.
+
 ## Request
 
 Resolve this skill file's origin and send a `POST` request to `/url-report` on that origin.

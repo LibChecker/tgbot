@@ -30,6 +30,8 @@ export function collectAppElements(root = document) {
     themeButtons: queryAppElements(root, ".theme-chip[data-theme-choice]"),
     themeChipGroup: queryAppElement(root, "#theme-chip-group"),
     languageSelect: queryAppElement(root, "#language-select"),
+    mcpGuideOpen: queryAppElement(root, "#mcp-guide-open"),
+    mcpGuide: /** @type {HTMLDialogElement} */ (root.querySelector("#mcp-guide")),
     topbarGithubLink: queryAppElement(root, ".topbar-github-link"),
     clearButton: queryAppElement(root, "#clear-button"),
     backgroundCanvas: queryAppElement(root, "#color-orb-background"),

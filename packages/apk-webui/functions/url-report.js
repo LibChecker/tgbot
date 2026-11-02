@@ -119,9 +119,9 @@ async function handlePost({ request, env }) {
 }
 
 /**
- * @param {{ env: Env, url: string, locale: string, requestId: string, startedAt: number, onProgress?: (event: Record<string, unknown>) => void }} options
+ * @param {{ env: Env, url: string, locale: string, requestId: string, startedAt: number, signal?: AbortSignal, onProgress?: (event: Record<string, unknown>) => void }} options
  */
-async function createUrlReportPayload({ env, url, locale, requestId, startedAt, onProgress = () => {} }) {
+export async function createUrlReportPayload({ env, url, locale, requestId, startedAt, signal, onProgress = () => {} }) {
   const terminalSystem = resolveAnalysisTerminalSystem();
   let stageStartedAt = Date.now();
   onProgress({ stage: "url_preview", progress: 0.05 });
@@ -134,6 +134,7 @@ async function createUrlReportPayload({ env, url, locale, requestId, startedAt, 
   });
   const preview = await readApkInfoFromUrl(url, {
     ...getLinkPreviewOptions(env),
+    signal,
     onProgress,
   });
   logUrlReportEvent("info", "url_report.preview.succeeded", {

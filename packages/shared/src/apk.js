@@ -112,25 +112,33 @@ const ADAPTIVE_ICON_EDGE_FEATHER = 1;
 
 /**
  * @param {ArrayBuffer | Uint8Array} packageBuffer
- * @param {{ parserProfile?: object, scanDex?: boolean }} [options]
+ * @param {{ parserProfile?: object, scanDex?: boolean, maxExtractedBytes?: number }} [options]
  * @returns {Promise<ApkInfo>}
  */
 export async function readAndroidPackageInfo(packageBuffer, options = {}) {
   const packageBytes = toUint8Array(packageBuffer);
-  return withParserProfileStage(options.parserProfile, "read-android-package-info", {
-    bytes: packageBytes.byteLength,
-  }, async () => {
-    const zipEntries = parseZipEntries(packageBytes, options.parserProfile, {
-      source: "package",
+  const extractionBudget = options.maxExtractedBytes == null ? null : {
+    remaining: options.maxExtractedBytes,
+    error: null,
+  };
+  if (extractionBudget && (!Number.isSafeInteger(extractionBudget.remaining) || extractionBudget.remaining <= 0)) {
+    throw new Error("Invalid extraction budget");
+  }
+  const boundedOptions = { ...options, extractionBudget };
+  try {
+    return await withParserProfileStage(options.parserProfile, "read-android-package-info", {
+      bytes: packageBytes.byteLength,
+    }, async () => {
+      const zipEntries = parseZipEntries(packageBytes, options.parserProfile, { source: "package" });
+      if (isDirectApkZip(zipEntries)) {
+        return readApkInfoFromParsedZip(packageBytes, zipEntries, boundedOptions);
+      }
+      return readPackageContainerInfo(packageBytes, collectContainedApkEntries(zipEntries), boundedOptions);
     });
-
-    if (isDirectApkZip(zipEntries)) {
-      return readApkInfoFromParsedZip(packageBytes, zipEntries, options);
-    }
-
-    const apkEntries = collectContainedApkEntries(zipEntries);
-    return readPackageContainerInfo(packageBytes, apkEntries, options);
-  });
+  } finally {
+    // Optional resource parsers can swallow errors; a budget breach must fail the whole analysis.
+    if (extractionBudget?.error) throw extractionBudget.error;
+  }
 }
 
 /**
@@ -191,7 +199,7 @@ function readApkInfoFromParsedZip(apkBytes, zipEntries, options = {}) {
   return readApkInfoFromZipSource(
     {
       zipEntries,
-      extractEntry: (entry) => extractZipEntry(apkBytes, entry),
+      extractEntry: (entry) => extractZipEntry(apkBytes, entry, options.extractionBudget),
       apkBytes,
     },
     {
@@ -204,7 +212,7 @@ function readApkInfoFromParsedZip(apkBytes, zipEntries, options = {}) {
 async function readPackageContainerInfo(packageBytes, apkEntries, options = {}) {
   const apkSources = await withParserProfileStage(options.parserProfile, "extract-contained-apks", {
     apkEntries: apkEntries.length,
-  }, () => extractContainedApkSources(packageBytes, apkEntries, options.parserProfile));
+  }, () => extractContainedApkSources(packageBytes, apkEntries, options.parserProfile, options.extractionBudget));
   const selectedSource = withParserProfileStageSync(options.parserProfile, "select-contained-apk", {
     apkSources: apkSources.length,
   }, () => selectContainedApkSource(apkSources));
@@ -257,7 +265,7 @@ function buildArchiveApkEntryDetail(apkEntry, analyzedPath) {
   };
 }
 
-async function extractContainedApkSources(packageBytes, apkEntries, parserProfile) {
+async function extractContainedApkSources(packageBytes, apkEntries, parserProfile, extractionBudget) {
   const sources = new Array(apkEntries.length);
   let nextIndex = 0;
 
@@ -268,7 +276,7 @@ async function extractContainedApkSources(packageBytes, apkEntries, parserProfil
       const apkEntry = apkEntries[index];
 
       try {
-        sources[index] = await extractContainedApkSource(packageBytes, apkEntry, parserProfile);
+        sources[index] = await extractContainedApkSource(packageBytes, apkEntry, parserProfile, extractionBudget);
       } catch {
         // Keep parsing other entries in APKS/APKM/XAPK containers when one split is unusable.
       }
@@ -291,12 +299,12 @@ async function extractContainedApkSources(packageBytes, apkEntries, parserProfil
   return extractedSources;
 }
 
-async function extractContainedApkSource(packageBytes, apkEntry, parserProfile) {
+async function extractContainedApkSource(packageBytes, apkEntry, parserProfile, extractionBudget) {
   const apkBytes = await withParserProfileStage(parserProfile, "extract-contained-apk-entry", {
     path: apkEntry.path,
     compressedSize: apkEntry.entry.compressedSize || 0,
     uncompressedSize: apkEntry.entry.uncompressedSize || 0,
-  }, () => extractZipEntry(packageBytes, apkEntry.entry));
+  }, () => extractZipEntry(packageBytes, apkEntry.entry, extractionBudget));
   const zipEntries = parseZipEntries(apkBytes, parserProfile, {
     source: "contained-apk",
     path: apkEntry.path,
@@ -305,7 +313,7 @@ async function extractContainedApkSource(packageBytes, apkEntry, parserProfile) 
     path: apkEntry.path,
     apkBytes,
     zipEntries,
-    extractEntry: (entry) => extractZipEntry(apkBytes, entry),
+    extractEntry: (entry) => extractZipEntry(apkBytes, entry, extractionBudget),
   };
 }
 
@@ -394,7 +402,7 @@ function buildContainedIconSource(apkSources, selectedSource) {
     zipEntries,
     extractEntry(entry) {
       const source = sourcesByPath.get(entry.sourceEntry) || selectedSource;
-      return extractZipEntry(source.apkBytes, entry);
+      return source.extractEntry(entry);
     },
   };
 }
@@ -3751,7 +3759,16 @@ function getZipEntryCompressedData(zipBytes, entry) {
   return zipBytes.subarray(dataOffset, dataOffset + entry.compressedSize);
 }
 
-async function extractZipEntry(zipBytes, entry) {
+async function extractZipEntry(zipBytes, entry, budget = null) {
+  if (budget) {
+    if (budget.error) throw budget.error;
+    const size = entry.compressionMethod === ZIP_COMPRESSION_STORE ? entry.compressedSize : entry.uncompressedSize;
+    budget.remaining -= size;
+    if (budget.remaining < 0) {
+      budget.error = new Error("APK extraction budget exceeded");
+      throw budget.error;
+    }
+  }
   const compressedData = getZipEntryCompressedData(zipBytes, entry);
 
   if (entry.compressionMethod === ZIP_COMPRESSION_STORE) {
@@ -3759,7 +3776,12 @@ async function extractZipEntry(zipBytes, entry) {
   }
 
   if (entry.compressionMethod === ZIP_COMPRESSION_DEFLATE) {
-    return inflateRaw(compressedData, entry.uncompressedSize);
+    try {
+      return await inflateRaw(compressedData, entry.uncompressedSize, budget ? entry.uncompressedSize : Infinity);
+    } catch (error) {
+      if (budget) budget.error = error;
+      throw error;
+    }
   }
 
   throw new Error(`不支持的 ZIP 压缩方式: ${entry.compressionMethod}`);
@@ -3784,7 +3806,7 @@ async function extractZipEntryPrefix(zipBytes, entry, maxOutputBytes) {
   throw new Error(`不支持的 ZIP 压缩方式: ${entry.compressionMethod}`);
 }
 
-async function inflateRaw(bytes, expectedSize = 0) {
+async function inflateRaw(bytes, expectedSize = 0, maxBytes = Infinity) {
   if (bytes.byteLength === 0) {
     return new Uint8Array();
   }
@@ -3798,6 +3820,7 @@ async function inflateRaw(bytes, expectedSize = 0) {
   return collectReadableBytes(
     stream.pipeThrough(new DecompressionStream("deflate-raw")),
     expectedSize,
+    maxBytes,
   );
 }
 
@@ -3852,13 +3875,14 @@ async function collectReadableBytesPrefix(stream, maxBytes) {
   return written === output.byteLength ? output : output.slice(0, written);
 }
 
-async function collectReadableBytes(stream, expectedSize = 0) {
+async function collectReadableBytes(stream, expectedSize = 0, maxBytes = Infinity) {
   const reader = stream.getReader();
   const usePreallocatedOutput = Number.isFinite(expectedSize) && expectedSize > 0;
   const output = usePreallocatedOutput ? new Uint8Array(expectedSize) : null;
   const chunks = [];
   let written = 0;
   let totalSize = 0;
+  let received = 0;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -3870,6 +3894,11 @@ async function collectReadableBytes(stream, expectedSize = 0) {
       continue;
     }
 
+    received += value.byteLength;
+    if (received > maxBytes) {
+      await reader.cancel();
+      throw new Error("APK entry exceeds declared extraction size");
+    }
     if (output && chunks.length === 0 && written + value.byteLength <= output.byteLength) {
       output.set(value, written);
       written += value.byteLength;

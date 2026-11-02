@@ -288,6 +288,26 @@
     "compareChanged": "已變更",
     "compareMoved": "已移動",
     "compareNoItems": "無",
-    "compareMoreItems": "另有 {count} 個項目未顯示"
+    "compareMoreItems": "另有 {count} 個項目未顯示",
+    "mcpGuideTitle": "接入 MCP",
+    "mcpGuideRemote": "遠端連結",
+    "mcpGuideRemoteHelp": "在用戶端中新增 HTTP MCP 服務，填入以下位址。無需權杖，僅支援公開下載連結。",
+    "mcpGuideCodex": "使用 Codex？將以下內容加入設定檔：",
+    "mcpGuideLocal": "本機檔案",
+    "mcpGuideLocalHelp": "複製儲存庫並安裝 Node.js 24 或更新版本，在儲存庫根目錄執行：",
+    "mcpGuideLocalConfig": "將下方儲存庫路徑改為絕對路徑。若用戶端找不到 node，也請使用其執行檔的絕對路徑。",
+    "mcpGuideDocs": "接入文件",
+    "mcpGuideSubtitle": "讓 AI 用戶端幫你分析 APK",
+    "mcpGuideRemoteTry": "重新連線後，讓用戶端呼叫 analyze_apk_url 分析公開連結，不支援本機路徑。",
+    "mcpGuideLocalTry": "重新連線後，讓用戶端呼叫 analyze_apk_file 分析絕對路徑對應的檔案。APK 不會上傳。",
+    "mcpGuideCopy": "複製",
+    "mcpGuideCopied": "已複製到剪貼簿",
+    "mcpGuideCopyFailed": "複製失敗，請選取程式碼手動複製。",
+    "mcpGuideTerminal": "終端機",
+    "mcpGuideFooter": "適用於支援 MCP 的桌面用戶端",
+    "mcpGuidePrompt": "提示詞接入",
+    "mcpGuidePromptHelp": "複製下方提示詞，傳送給 Codex 等可設定 MCP 的 AI 用戶端。",
+    "mcpGuidePromptText": "請幫我接入 LibChecker APK 分析 MCP。\n\n遠端服務：{url}\n傳輸方式：Streamable HTTP，無需權杖。\n\n先確認用戶端的 MCP 設定方式，保留現有服務，新增此服務（建議名稱 apk_remote）。連線後列出工具，確認 analyze_apk_url 可用，再說明如何提交公開 APK 下載連結。請以實際連線結果為準，不要只產生設定就宣稱成功。\n\n如需分析本機 APK，請依 {docs} 設定本機 stdio 元件，不要上傳檔案。若無法修改用戶端設定，請提供正確的手動步驟，並說明是否需要重新連線或啟動。",
+    "mcpGuidePromptHint": "能否自動設定取決於用戶端的能力與權限。"
   }
 }

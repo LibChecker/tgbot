@@ -288,6 +288,26 @@
     "compareChanged": "改变",
     "compareMoved": "移动",
     "compareNoItems": "无",
-    "compareMoreItems": "还有 {count} 项未展示"
+    "compareMoreItems": "还有 {count} 项未展示",
+    "mcpGuideTitle": "接入 MCP",
+    "mcpGuideRemote": "远程链接",
+    "mcpGuideRemoteHelp": "在客户端中添加 HTTP MCP 服务，填入以下地址。无需令牌，仅支持公开下载链接。",
+    "mcpGuideCodex": "使用 Codex？将以下内容加入配置文件：",
+    "mcpGuideLocal": "本地文件",
+    "mcpGuideLocalHelp": "克隆仓库并安装 Node.js 24 或更新版本，在仓库根目录运行：",
+    "mcpGuideLocalConfig": "将下方仓库路径改为绝对路径。若客户端找不到 node，也请使用其可执行文件的绝对路径。",
+    "mcpGuideDocs": "接入文档",
+    "mcpGuideSubtitle": "让 AI 客户端帮你分析 APK",
+    "mcpGuideRemoteTry": "重新连接后，让客户端调用 analyze_apk_url 分析公开链接，不支持本地路径。",
+    "mcpGuideLocalTry": "重新连接后，让客户端调用 analyze_apk_file 分析绝对路径对应的文件。APK 不会上传。",
+    "mcpGuideCopy": "复制",
+    "mcpGuideCopied": "已复制到剪贴板",
+    "mcpGuideCopyFailed": "复制失败，请选中代码手动复制。",
+    "mcpGuideTerminal": "终端",
+    "mcpGuideFooter": "适用于支持 MCP 的桌面客户端",
+    "mcpGuidePrompt": "提示词接入",
+    "mcpGuidePromptHelp": "复制下面的提示词，发送给 Codex 等具备 MCP 配置能力的 AI 客户端。",
+    "mcpGuidePromptText": "请帮我接入 LibChecker APK 分析 MCP。\n\n远程服务：{url}\n传输方式：Streamable HTTP，无需令牌。\n\n先检查当前客户端的 MCP 配置方式，保留已有服务，添加此服务（建议名称 apk_remote）。连接后列出工具，确认 analyze_apk_url 可用，再告诉我如何提交公开 APK 下载链接。请以实际连接结果为准，不要只生成配置就宣称成功。\n\n如需分析本地 APK，请按 {docs} 配置本地 stdio 组件，文件不要上传。若你无法修改客户端配置，请提供准确的手动步骤，并说明是否需要重连或重启。",
+    "mcpGuidePromptHint": "提示词不能替代客户端权限；是否能自动配置，取决于所用客户端。"
   }
 }

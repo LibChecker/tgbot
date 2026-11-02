@@ -288,6 +288,26 @@
     "compareChanged": "変更",
     "compareMoved": "移動",
     "compareNoItems": "なし",
-    "compareMoreItems": "ほか {count} 件を非表示"
+    "compareMoreItems": "ほか {count} 件を非表示",
+    "mcpGuideTitle": "MCP に接続",
+    "mcpGuideRemote": "公開リンク",
+    "mcpGuideRemoteHelp": "この URL を HTTP MCP サーバーとして追加します。トークンは不要です。公開ダウンロードリンクのみ対応します。",
+    "mcpGuideCodex": "Codex の設定ファイルに以下を追加します：",
+    "mcpGuideLocal": "ローカルファイル",
+    "mcpGuideLocalHelp": "リポジトリをクローンして Node.js 24 以降をインストールし、ルートで実行します：",
+    "mcpGuideLocalConfig": "リポジトリのパスを絶対パスに置き換えます。node が見つからない場合は実行ファイルの絶対パスも指定してください。",
+    "mcpGuideDocs": "接続ガイド",
+    "mcpGuideSubtitle": "AI クライアントで APK を分析",
+    "mcpGuideRemoteTry": "再接続後、analyze_apk_url で公開 URL を分析するよう依頼します。ローカルパスには対応しません。",
+    "mcpGuideLocalTry": "再接続後、analyze_apk_file に絶対パスを指定して分析を依頼します。APK はアップロードされません。",
+    "mcpGuideCopy": "コピー",
+    "mcpGuideCopied": "クリップボードにコピーしました",
+    "mcpGuideCopyFailed": "コピーできませんでした。コードを選択して手動でコピーしてください。",
+    "mcpGuideTerminal": "ターミナル",
+    "mcpGuideFooter": "MCP 対応デスクトップクライアント向け",
+    "mcpGuidePrompt": "AI で設定",
+    "mcpGuidePromptHelp": "MCP を設定できる Codex などの AI クライアントに、このプロンプトを送信してください。",
+    "mcpGuidePromptText": "LibChecker APK 分析 MCP への接続を設定してください。\n\nリモートサーバー：{url}\n通信方式：Streamable HTTP。トークンは不要です。\n\nこのクライアントの MCP 設定方法を確認し、既存のサーバーを保持して追加してください（推奨名：apk_remote）。接続してツール一覧を取得し、analyze_apk_url が利用可能か確認してから、公開 APK URL の指定方法を説明してください。設定の生成だけで成功とせず、実際の接続結果を報告してください。\n\nローカル APK の分析が必要な場合は {docs} に従って stdio コンポーネントを設定し、ファイルをアップロードしないでください。設定を変更できない場合は手動手順と、再接続や再起動の必要性を説明してください。",
+    "mcpGuidePromptHint": "自動設定の可否はクライアントの機能と権限に依存します。"
   }
 }
