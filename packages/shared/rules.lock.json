@@ -1,39 +1,39 @@
 {
   "lockVersion": 1,
-  "source": "https://raw.githubusercontent.com/LibChecker/LibChecker-Rules/rules-data/releases/45/portable-v5.zip",
+  "source": "https://raw.githubusercontent.com/LibChecker/LibChecker-Rules/rules-data/releases/50/portable-v5.zip",
   "manifest": {
     "artifacts": {
       "android": {
         "minimumReaderVersion": 5,
-        "path": "releases/45/android-v5.zip",
+        "path": "releases/50/android-v5.zip",
         "schemaVersion": 5,
-        "sha256": "dc3864ebde7668fa724936bbb12a409715037e00a9fe86a4dbe0e935a2bc5f2e",
-        "size": 205342
+        "sha256": "7f4506eab1117766a7378dfb74ecb61da7fcd2ebdb4228d5c6c4682e2e93039a",
+        "size": 217630
       },
       "legacy": {
         "minimumReaderVersion": 4,
-        "path": "releases/45/legacy-v4.zip",
+        "path": "releases/50/legacy-v4.zip",
         "schemaVersion": 4,
-        "sha256": "1ac9a66c70ef1c7c1f2898c4fc521407ad0c54a87b91cc024353a41e5a6d16e6",
-        "size": 3020555
+        "sha256": "7849bd5276d7f91c55bd425a6e5caa501776b3d97a40d54fca9a8adc5fa458da",
+        "size": 3221092
       },
       "portable": {
         "minimumReaderVersion": 5,
-        "path": "releases/45/portable-v5.zip",
+        "path": "releases/50/portable-v5.zip",
         "schemaVersion": 5,
-        "sha256": "8c1e444fa4f365341f4486d5b78f961006e7faae575310885e1777ece469a934",
-        "size": 4263747
+        "sha256": "9c7acc036dc628ae0cfd27604b1ccf8ee3deadd7d3cddea2e66b9b42b40edbd7",
+        "size": 4651175
       }
     },
     "compilerRevision": "d09fc13240cd92fca9c7b5abb2baf4f3a9c4122db1f1e67e110e336383b4e0c2",
-    "contentSha256": "5708a55f2c3bf9ebefa36afe84606a10bcbe23633be3c37b9e6605fbe502831d",
-    "dataVersion": 45,
+    "contentSha256": "cfe37f088d456620d2251901c6e5b5ff7d1d9aeaa9198b1ac252f73ab5ffe6c5",
+    "dataVersion": 50,
     "minimumReader": {
       "android": 5,
       "portable": 5
     },
-    "ruleCount": 2832,
+    "ruleCount": 3053,
     "schemaVersion": 5,
-    "sourceRevision": "e48a42108e4ec9caba2d7d808e8731742a01dac7"
+    "sourceRevision": "50b60fe3381e02b6f6078df36f4c72aa7bc599f8"
   }
 }
