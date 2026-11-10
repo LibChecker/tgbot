@@ -117,6 +117,8 @@
     "runtimeLogClose": "로그 닫기",
     "runtimeLogEmpty": "아직 로그가 없습니다",
     "runtimeLogVersionLabel": "WebUI 버전 {version}",
+    "footerRulesVersion": "규칙 v{version} ({count}개)",
+    "footerRulesVersionLabel": "LibChecker 규칙 버전 {version}, {count}개",
     "analyze": "분석",
     "analyzing": "분석 중",
     "progressReady": "파일 대기 중",

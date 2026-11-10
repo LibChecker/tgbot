@@ -59,6 +59,8 @@ export function collectAppElements(root = document) {
     runtimeLogClose: queryAppElement(root, "#runtime-log-close"),
     runtimeLogList: queryAppElement(root, "#runtime-log-list"),
     appVersion: queryAppElement(root, "#app-version"),
+    rulesVersionSeparator: queryAppElement(root, "#rules-version-separator"),
+    rulesVersion: queryAppElement(root, "#rules-version"),
     historyPanel: queryAppElement(root, "#history-panel"),
     historyToggleButton: queryAppElement(root, "#history-toggle-button"),
     historyViewGroup: queryAppElement(root, "#history-view-switch"),

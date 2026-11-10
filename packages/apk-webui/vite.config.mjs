@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { defineConfig, minify } from "vite";
 import {
   BOT_REPORT_DATA_ORIGIN,
@@ -19,6 +19,7 @@ const srcDir = resolve(projectDir, "src");
 const sharedDir = resolve(projectDir, "../shared/src");
 const rootPackageJson = JSON.parse(readFileSync(resolve(repoDir, "package.json"), "utf8"));
 const webuiVersion = resolveWebuiVersion(rootPackageJson.version);
+const rulesMetadata = await resolveRulesMetadata();
 
 function manualChunks(id) {
   if (id.includes("/packages/shared/src/generated/libchecker-sdk-icons.js")) {
@@ -61,6 +62,25 @@ function normalizeVersionPart(value) {
   return Number.isFinite(number) && number >= 0 ? String(number) : "0";
 }
 
+async function resolveRulesMetadata() {
+  try {
+    const { LIBCHECKER_DATA_VERSION, LIBCHECKER_RULES_CORE } = await import(
+      pathToFileURL(resolve(sharedDir, "generated/libchecker-rules-core.js")).href
+    );
+    if (
+      Number.isInteger(LIBCHECKER_DATA_VERSION) &&
+      LIBCHECKER_DATA_VERSION > 0 &&
+      Array.isArray(LIBCHECKER_RULES_CORE) &&
+      LIBCHECKER_RULES_CORE.length > 0
+    ) {
+      return { version: LIBCHECKER_DATA_VERSION, count: LIBCHECKER_RULES_CORE.length };
+    }
+  } catch {
+    // Generated rules may be absent before shared assets are built.
+  }
+  return { version: null, count: null };
+}
+
 export default defineConfig({
   root: srcDir,
   base: "./",
@@ -77,6 +97,8 @@ export default defineConfig({
   },
   define: {
     __APK_WEBUI_VERSION__: JSON.stringify(webuiVersion),
+    __LIBCHECKER_RULES_VERSION__: JSON.stringify(rulesMetadata.version),
+    __LIBCHECKER_RULES_COUNT__: JSON.stringify(rulesMetadata.count),
     __BOT_REPORT_DATA_ORIGIN__: JSON.stringify(BOT_REPORT_DATA_ORIGIN),
   },
   server: {

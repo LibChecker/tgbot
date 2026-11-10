@@ -117,6 +117,8 @@
     "runtimeLogClose": "Close logs",
     "runtimeLogEmpty": "No logs yet.",
     "runtimeLogVersionLabel": "WebUI version {version}",
+    "footerRulesVersion": "Rules v{version} ({count})",
+    "footerRulesVersionLabel": "LibChecker rules version {version}, {count} rules",
     "analyze": "Analyze",
     "analyzing": "Analyzing",
     "progressReady": "Waiting for file",

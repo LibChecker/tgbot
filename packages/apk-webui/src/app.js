@@ -69,6 +69,12 @@ const URL_REPORT_PROGRESS_KEYS = Object.freeze({
 const ANALYZE_PANEL_HEIGHT_ANIMATION_MS = 240;
 const ANALYZE_PANEL_HEIGHT_ANIMATION_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const APP_VERSION = typeof __APK_WEBUI_VERSION__ === "string" ? __APK_WEBUI_VERSION__ : "dev";
+const RULES_VERSION = typeof __LIBCHECKER_RULES_VERSION__ === "number" && __LIBCHECKER_RULES_VERSION__ > 0
+  ? __LIBCHECKER_RULES_VERSION__
+  : null;
+const RULES_COUNT = typeof __LIBCHECKER_RULES_COUNT__ === "number" && __LIBCHECKER_RULES_COUNT__ > 0
+  ? __LIBCHECKER_RULES_COUNT__
+  : null;
 const MAX_RUNTIME_LOGS = 200;
 const RUNTIME_LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 const RUNTIME_LOG_DETAIL_KEYS = new Set([
@@ -3106,6 +3112,21 @@ function applyLocale() {
   if (elements.appVersion) {
     elements.appVersion.textContent = `v${APP_VERSION}`;
     elements.appVersion.setAttribute("aria-label", t("runtimeLogVersionLabel", { version: APP_VERSION }));
+  }
+  if (elements.rulesVersion) {
+    const hasRulesInfo = RULES_VERSION !== null && RULES_COUNT !== null;
+    elements.rulesVersion.hidden = !hasRulesInfo;
+    if (elements.rulesVersionSeparator) {
+      elements.rulesVersionSeparator.hidden = !hasRulesInfo;
+    }
+    if (hasRulesInfo) {
+      const variables = {
+        version: RULES_VERSION,
+        count: new Intl.NumberFormat(state.locale).format(RULES_COUNT),
+      };
+      elements.rulesVersion.textContent = t("footerRulesVersion", variables);
+      elements.rulesVersion.setAttribute("aria-label", t("footerRulesVersionLabel", variables));
+    }
   }
   renderLinkStatus();
   updateReportShareControls();

@@ -117,6 +117,8 @@
     "runtimeLogClose": "关闭日志",
     "runtimeLogEmpty": "暂无日志",
     "runtimeLogVersionLabel": "WebUI 版本 {version}",
+    "footerRulesVersion": "规则库 v{version}（{count} 条）",
+    "footerRulesVersionLabel": "LibChecker 规则库版本 {version}，共 {count} 条规则",
     "analyze": "开始分析",
     "analyzing": "分析中",
     "progressReady": "等待文件",

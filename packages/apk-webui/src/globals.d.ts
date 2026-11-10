@@ -1,4 +1,6 @@
 declare const __APK_WEBUI_VERSION__: string;
+declare const __LIBCHECKER_RULES_VERSION__: number | null;
+declare const __LIBCHECKER_RULES_COUNT__: number | null;
 declare const __BOT_REPORT_DATA_ORIGIN__: string;
 
 interface LaunchParams {

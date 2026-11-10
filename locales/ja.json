@@ -117,6 +117,8 @@
     "runtimeLogClose": "ログを閉じる",
     "runtimeLogEmpty": "ログはまだありません",
     "runtimeLogVersionLabel": "WebUI バージョン {version}",
+    "footerRulesVersion": "ルール v{version}（{count} 件）",
+    "footerRulesVersionLabel": "LibChecker ルールバージョン {version}、{count} 件",
     "analyze": "解析",
     "analyzing": "解析中",
     "progressReady": "ファイルを待機中",

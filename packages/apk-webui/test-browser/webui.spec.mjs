@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { LIBCHECKER_DATA_VERSION, LIBCHECKER_RULES_CORE } from "../../shared/src/generated/libchecker-rules-core.js";
 import { createSmokeApk } from "./fixtures.mjs";
 
 const validApk = {
@@ -17,6 +18,20 @@ test("renders the first screen without starting analysis", async ({ page }) => {
   await expect(page.locator("#analyze-button")).toBeDisabled();
   await expect(page.locator("#empty-state")).toBeVisible();
   await expect(page.locator("#result-view")).toBeHidden();
+
+  const rulesVersion = page.locator("#rules-version");
+  await expect(rulesVersion).toBeVisible();
+  await page.locator("#language-select").selectOption("en");
+  const enCount = new Intl.NumberFormat("en").format(LIBCHECKER_RULES_CORE.length);
+  await expect(rulesVersion).toHaveText(`Rules v${LIBCHECKER_DATA_VERSION} (${enCount})`);
+  await expect(rulesVersion).toHaveAttribute(
+    "aria-label",
+    `LibChecker rules version ${LIBCHECKER_DATA_VERSION}, ${enCount} rules`,
+  );
+
+  await page.locator("#language-select").selectOption("zh-Hans");
+  const zhCount = new Intl.NumberFormat("zh-Hans").format(LIBCHECKER_RULES_CORE.length);
+  await expect(rulesVersion).toHaveText(`规则库 v${LIBCHECKER_DATA_VERSION}（${zhCount} 条）`);
 });
 
 test("history accordion hides inert content after collapsing and restores it", async ({ page }) => {
